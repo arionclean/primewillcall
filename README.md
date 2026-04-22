@@ -44,6 +44,13 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 const supabase = getSupabaseBrowserClient();
 ```
 
+## Supabase Auth Model
+
+- Auth identities are stored in `auth.users`.
+- App-level roles are stored in `public.app_users`.
+- Roles supported: `merchant`, `kiosk`.
+- Migration file: [supabase/migrations/20260422184000_app_users_roles.sql](/Users/main/Primewillcall(new platform)/supabase/migrations/20260422184000_app_users_roles.sql)
+
 ## UI Consistency
 
 Team UI standards live in [`docs/shadcn-foundation.md`](/Users/main/Primewillcall(new platform)/docs/shadcn-foundation.md).  
