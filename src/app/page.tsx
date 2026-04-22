@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 
 export default function Home() {
   return (
@@ -17,21 +17,30 @@ export default function Home() {
         </p>
 
         <div className="flex flex-wrap items-center justify-center gap-3">
-          <Button asChild size="lg">
-            <Link href="https://vercel.com/new" target="_blank">
-              Deploy on Vercel
-            </Link>
-          </Button>
-          <Button asChild size="lg" variant="secondary">
-            <Link href="https://ui.shadcn.com/docs" target="_blank">
-              Open shadcn Docs
-            </Link>
-          </Button>
-          <Button asChild size="lg" variant="outline">
-            <Link href="https://supabase.com/docs" target="_blank">
-              Open Supabase Docs
-            </Link>
-          </Button>
+          <Link
+            className={buttonVariants({ size: "lg" })}
+            href="https://vercel.com/new"
+            rel="noreferrer"
+            target="_blank"
+          >
+            Deploy on Vercel
+          </Link>
+          <Link
+            className={buttonVariants({ size: "lg", variant: "secondary" })}
+            href="https://ui.shadcn.com/docs"
+            rel="noreferrer"
+            target="_blank"
+          >
+            Open shadcn Docs
+          </Link>
+          <Link
+            className={buttonVariants({ size: "lg", variant: "outline" })}
+            href="https://supabase.com/docs"
+            rel="noreferrer"
+            target="_blank"
+          >
+            Open Supabase Docs
+          </Link>
         </div>
 
         <div className="w-full rounded-xl border bg-card p-6 text-left">
