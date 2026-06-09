@@ -1,8 +1,14 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createBrowserClient } from "@supabase/ssr";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "./database.types";
 
-let supabaseClient: SupabaseClient | null = null;
+let supabaseClient: SupabaseClient<Database> | null = null;
 
-export function getSupabaseBrowserClient() {
+/**
+ * Browser-side Supabase client (cookie-based session, SSR-aware).
+ * Cached so a single instance is reused across the app.
+ */
+export function getSupabaseBrowserClient(): SupabaseClient<Database> {
   if (supabaseClient) {
     return supabaseClient;
   }
@@ -16,6 +22,6 @@ export function getSupabaseBrowserClient() {
     );
   }
 
-  supabaseClient = createClient(url, anonKey);
+  supabaseClient = createBrowserClient<Database>(url, anonKey);
   return supabaseClient;
 }

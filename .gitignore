@@ -39,3 +39,5 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+dbo-bookings-*.csv
+/tmp/pwc_import*.log

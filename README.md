@@ -1,63 +1,66 @@
-# PrimeWillCall Web
+# PrimeWillCall
 
-Starter project with:
-- Next.js 15 (App Router)
-- TypeScript
-- Tailwind CSS v4
-- shadcn/ui
-- Supabase JavaScript client
-- Ready to deploy on Vercel
+Operations platform for Prime, a tour and scheduled-experience operator. Prime is a
+single platform-level owner that runs multiple businesses (for example Miami Skyline
+Cruises and Key West Sightseeing Tours). Staff create and manage per-passenger bookings
+against scheduled tours.
 
-## Getting Started
+This repo is the new platform, migrated from a live Bubble.io + Xano stack to
+Supabase + Vercel. See [`docs/platform-migration.md`](docs/platform-migration.md) for
+the migration guardrails (the old stack is still live in production).
 
-1. Install dependencies:
+## Stack
+
+- Next.js 15 (App Router, Turbopack), React 19, TypeScript (strict)
+- Tailwind CSS v4, shadcn-style UI primitives, lucide-react icons
+- Supabase: Postgres + Row Level Security, Auth, Storage, Realtime
+- Leaflet + CARTO tiles (meeting-point map), Google Places API (server-proxied)
+- Deploys on Vercel
+
+## Getting started
 
 ```bash
 npm install
+cp .env.example .env.local   # then fill in the values
+npm run dev                  # http://localhost:3000
 ```
 
-2. Configure environment variables:
+Required env vars (see `.env.example` for the full list and notes):
 
-```bash
-cp .env.example .env.local
-```
+- `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` — browser + server client
+- `SUPABASE_SERVICE_ROLE_KEY` — server-only admin client (bypasses RLS, never ship to the browser)
+- `GOOGLE_MAPS_API_KEY` — server-only, used by the Places proxy routes
 
-Set:
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+The Supabase project is `qbnizuhozzwkiitfkjee`.
 
-3. Start dev server:
+## How the app is organized
 
-```bash
-npm run dev
-```
+- Roles (`staff.role` enum): `owner` (Prime, platform-wide), `business_manager`
+  (one business), `check_in` (desk staff).
+- All app pages live under the `(app)` route group, which renders the shared shell
+  (topbar, sidebar, global search) and enforces auth.
+- Data access is scoped by Postgres RLS, not by client-side filtering. The signed-in
+  user only ever reads or writes rows their role allows.
 
-Open [http://localhost:3000](http://localhost:3000).
+For the full picture, read:
 
-## Supabase Client
+- [`CLAUDE.md`](CLAUDE.md) — architecture, conventions, and how to debug. Start here.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — routes, data flow, and patterns.
+- [`docs/DATABASE.md`](docs/DATABASE.md) — schema, relationships, and RLS model.
+- [`docs/shadcn-foundation.md`](docs/shadcn-foundation.md) — UI consistency rules.
 
-Use the browser client helper:
+## Scripts
 
-```ts
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+- `npm run dev` — dev server (Turbopack) on port 3000
+- `npm run build` — production build
+- `npm run start` — serve the production build
+- `npm run lint` — ESLint
 
-const supabase = getSupabaseBrowserClient();
-```
-
-## Supabase Auth Model
-
-- Auth identities are stored in `auth.users`.
-- App-level roles are stored in `public.app_users`.
-- Roles supported: `merchant`, `kiosk`.
-- Migration file: [supabase/migrations/20260422184000_app_users_roles.sql](/Users/main/Primewillcall(new platform)/supabase/migrations/20260422184000_app_users_roles.sql)
-
-## UI Consistency
-
-Team UI standards live in [`docs/shadcn-foundation.md`](/Users/main/Primewillcall(new platform)/docs/shadcn-foundation.md).  
-Follow this guide for all new screens/components to keep a unified design system.
+The project should always be green: `npx tsc --noEmit` (0 errors) and `npm run lint`
+(0 warnings).
 
 ## Deploy on Vercel
 
-1. Push this repository to GitHub.
-2. Import the repo in [Vercel](https://vercel.com/new).
-3. Add the same Supabase env vars in Vercel Project Settings.
+1. Push to GitHub and import the repo in Vercel.
+2. Add the same env vars in Vercel project settings (mark the service-role and Google
+   keys as server-only / not exposed to the browser).

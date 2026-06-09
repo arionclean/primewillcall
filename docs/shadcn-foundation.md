@@ -28,6 +28,28 @@ Use these as defaults:
 - Overlays: `Dialog`, `Sheet`, `DropdownMenu`, `Popover`
 - Data display: `Table`
 
+## PrimeWillCall primitives and conventions
+
+This project uses a small, hand-built set of shadcn-style primitives in
+`src/components/ui/` rather than the full CLI catalog. Reach for these first:
+
+- `Button`, `Input`, `Textarea`, `Select`, `Card`, `Badge` — base primitives.
+- `Field` — wraps a control with its label, hint, and inline error. Use for every form field.
+- `FormSection` — a titled section (title sits outside the card) for grouping fields.
+- `PhoneInput` — masked US phone (`(XXX) XXX-XXXX` while typing, digits stored). Use for
+  every phone field. Never a raw `Input` for phones.
+- `DateField` — date input that opens the native calendar and blocks manual typing. Use
+  for every date field. Booking times come from the tour's timeslots, not a free input.
+
+Hard copy conventions (see `../CLAUDE.md`):
+
+- No em dashes anywhere. Use periods, commas, or parentheses.
+- Never expose internal data jargon (for example "variant" or "master tour") to
+  managers or check-in staff. Use plain, customer-facing language.
+- Icon-only buttons (lucide-react) require an `aria-label` or an `sr-only` label.
+
+Before adding a brand-new primitive, confirm one of the above does not already cover it.
+
 ## Standard Patterns
 
 ### Page Shell
@@ -53,9 +75,29 @@ Use these as defaults:
 - Use shadcn `Table` primitives only.
 - Row actions should use `DropdownMenu` or an action `Button` with clear labels.
 
+### Popups And Modal Motion
+
+- Use shadcn `Dialog`, `Sheet`, `Popover`, or `DropdownMenu` primitives for popup behavior whenever possible.
+- All modal-style popups should open with the same motion pattern used in the bookings product filter.
+- Render fixed, modal-style popups through a portal to `document.body` when the trigger is inside a sidebar, sticky element, card, or any other stacking context.
+- Backdrop/overlay classes:
+
+```tsx
+className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 px-4 py-6 animate-in fade-in duration-200"
+```
+
+- Modal panel classes:
+
+```tsx
+className="rounded-xl border bg-card shadow-2xl animate-in fade-in zoom-in-95 slide-in-from-bottom-4 duration-300"
+```
+
+- Keep popup surfaces on app tokens (`bg-card`, `text-foreground`, `border`, `bg-muted/40`) and use the default `Button` primary action in the footer.
+- Do not mount modal popups with no entrance animation unless the interaction is intentionally instant, such as a tiny dropdown menu.
+
 ## Theming
 
-- Theme colors and scales are controlled in [`src/app/globals.css`](/Users/main/Primewillcall(new platform)/src/app/globals.css).
+- Theme colors and scales are controlled in [`src/app/globals.css`](../src/app/globals.css).
 - Do not define ad-hoc color values in components unless product-approved.
 - If a new token is required, add it centrally in `globals.css` and document why in the PR.
 
