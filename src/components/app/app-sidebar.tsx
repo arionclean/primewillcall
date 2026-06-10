@@ -73,6 +73,12 @@ const SECTIONS: NavSection[] = [
         matchPrefix: "/analytics",
       },
       {
+        href: "/admin/unmatched",
+        label: "Unrecognized",
+        roles: ["owner"],
+        matchPrefix: "/admin/unmatched",
+      },
+      {
         href: "/admin/staff",
         label: "Team",
         roles: ["owner"],

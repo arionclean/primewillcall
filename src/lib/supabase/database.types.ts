@@ -74,10 +74,13 @@ export type Database = {
           customer_id: string
           ends_at: string
           id: string
+          legacy_id: string | null
+          legacy_reference: string | null
           notes: string | null
           pax_adult: number
           pax_child: number
           pax_infant: number
+          source_channel: string | null
           starts_at: string
           status: Database["public"]["Enums"]["booking_status"]
           stripe_payment_intent_id: string | null
@@ -96,10 +99,13 @@ export type Database = {
           customer_id: string
           ends_at: string
           id?: string
+          legacy_id?: string | null
+          legacy_reference?: string | null
           notes?: string | null
           pax_adult?: number
           pax_child?: number
           pax_infant?: number
+          source_channel?: string | null
           starts_at: string
           status?: Database["public"]["Enums"]["booking_status"]
           stripe_payment_intent_id?: string | null
@@ -118,10 +124,13 @@ export type Database = {
           customer_id?: string
           ends_at?: string
           id?: string
+          legacy_id?: string | null
+          legacy_reference?: string | null
           notes?: string | null
           pax_adult?: number
           pax_child?: number
           pax_infant?: number
+          source_channel?: string | null
           starts_at?: string
           status?: Database["public"]["Enums"]["booking_status"]
           stripe_payment_intent_id?: string | null
@@ -167,12 +176,31 @@ export type Database = {
           },
         ]
       }
+      bookings_legacy_raw: {
+        Row: {
+          id: number
+          imported_at: string
+          row: Json
+        }
+        Insert: {
+          id?: never
+          imported_at?: string
+          row: Json
+        }
+        Update: {
+          id?: never
+          imported_at?: string
+          row?: Json
+        }
+        Relationships: []
+      }
       business_tours: {
         Row: {
           business_id: string
           created_at: string
           id: string
           is_active: boolean
+          legacy_product_id: string | null
           name: string
           tour_id: string
           updated_at: string
@@ -182,6 +210,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          legacy_product_id?: string | null
           name: string
           tour_id: string
           updated_at?: string
@@ -191,6 +220,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          legacy_product_id?: string | null
           name?: string
           tour_id?: string
           updated_at?: string
@@ -217,6 +247,7 @@ export type Database = {
           address: string | null
           created_at: string
           id: string
+          legacy_company_id: string | null
           logo_url: string | null
           name: string
           phone: string | null
@@ -228,6 +259,7 @@ export type Database = {
           address?: string | null
           created_at?: string
           id?: string
+          legacy_company_id?: string | null
           logo_url?: string | null
           name: string
           phone?: string | null
@@ -239,6 +271,7 @@ export type Database = {
           address?: string | null
           created_at?: string
           id?: string
+          legacy_company_id?: string | null
           logo_url?: string | null
           name?: string
           phone?: string | null
@@ -255,6 +288,7 @@ export type Database = {
           email: string | null
           full_name: string
           id: string
+          legacy_source: string | null
           notes: string | null
           phone: string | null
           stripe_customer_id: string | null
@@ -266,6 +300,7 @@ export type Database = {
           email?: string | null
           full_name: string
           id?: string
+          legacy_source?: string | null
           notes?: string | null
           phone?: string | null
           stripe_customer_id?: string | null
@@ -277,6 +312,7 @@ export type Database = {
           email?: string | null
           full_name?: string
           id?: string
+          legacy_source?: string | null
           notes?: string | null
           phone?: string | null
           stripe_customer_id?: string | null
@@ -288,6 +324,89 @@ export type Database = {
             columns: ["business_id"]
             isOneToOne: false
             referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      email_match_queue: {
+        Row: {
+          ai_confidence: string | null
+          booking_channel: string | null
+          business_id: string | null
+          created_at: string
+          id: string
+          legacy_company_id: string | null
+          original_product_name: string | null
+          parsed: Json | null
+          reason: string
+          resolved_at: string | null
+          resolved_by_staff_id: string | null
+          resolved_tour_id: string | null
+          status: string
+          suggested_tour_id: string | null
+          supplier: string | null
+        }
+        Insert: {
+          ai_confidence?: string | null
+          booking_channel?: string | null
+          business_id?: string | null
+          created_at?: string
+          id?: string
+          legacy_company_id?: string | null
+          original_product_name?: string | null
+          parsed?: Json | null
+          reason: string
+          resolved_at?: string | null
+          resolved_by_staff_id?: string | null
+          resolved_tour_id?: string | null
+          status?: string
+          suggested_tour_id?: string | null
+          supplier?: string | null
+        }
+        Update: {
+          ai_confidence?: string | null
+          booking_channel?: string | null
+          business_id?: string | null
+          created_at?: string
+          id?: string
+          legacy_company_id?: string | null
+          original_product_name?: string | null
+          parsed?: Json | null
+          reason?: string
+          resolved_at?: string | null
+          resolved_by_staff_id?: string | null
+          resolved_tour_id?: string | null
+          status?: string
+          suggested_tour_id?: string | null
+          supplier?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_match_queue_ai_suggested_tour_id_fkey"
+            columns: ["suggested_tour_id"]
+            isOneToOne: false
+            referencedRelation: "tours"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_match_queue_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_match_queue_resolved_by_staff_id_fkey"
+            columns: ["resolved_by_staff_id"]
+            isOneToOne: false
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_match_queue_resolved_tour_id_fkey"
+            columns: ["resolved_tour_id"]
+            isOneToOne: false
+            referencedRelation: "tours"
             referencedColumns: ["id"]
           },
         ]
@@ -438,6 +557,41 @@ export type Database = {
           },
         ]
       }
+      tour_name_aliases: {
+        Row: {
+          created_at: string
+          id: string
+          normalized_name: string
+          raw_name: string | null
+          source: string
+          tour_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          normalized_name: string
+          raw_name?: string | null
+          source?: string
+          tour_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          normalized_name?: string
+          raw_name?: string | null
+          source?: string
+          tour_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tour_name_aliases_tour_id_fkey"
+            columns: ["tour_id"]
+            isOneToOne: false
+            referencedRelation: "tours"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tour_pax_tiers: {
         Row: {
           business_tour_id: string
@@ -535,6 +689,8 @@ export type Database = {
           instructions: string | null
           is_active: boolean
           kind: string
+          legacy_name_variations: string[]
+          legacy_product_id: string | null
           meeting_point_address: string | null
           meeting_point_lat: number | null
           meeting_point_lng: number | null
@@ -550,6 +706,8 @@ export type Database = {
           instructions?: string | null
           is_active?: boolean
           kind: string
+          legacy_name_variations?: string[]
+          legacy_product_id?: string | null
           meeting_point_address?: string | null
           meeting_point_lat?: number | null
           meeting_point_lng?: number | null
@@ -565,6 +723,8 @@ export type Database = {
           instructions?: string | null
           is_active?: boolean
           kind?: string
+          legacy_name_variations?: string[]
+          legacy_product_id?: string | null
           meeting_point_address?: string | null
           meeting_point_lat?: number | null
           meeting_point_lng?: number | null
@@ -579,6 +739,30 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      analytics_daily_by_tour: {
+        Args: { p_end: string; p_start: string; p_tz: string }
+        Returns: {
+          bookings: number
+          business_tour_id: string
+          color: string
+          day: number
+          pax: number
+          tour: string
+        }[]
+      }
+      analytics_source_tour: {
+        Args: { p_end: string; p_start: string }
+        Returns: {
+          bookings: number
+          business: string
+          business_id: string
+          color: string
+          pax: number
+          source: string
+          tour: string
+        }[]
+      }
+      app_norm: { Args: { s: string }; Returns: string }
       current_staff: {
         Args: never
         Returns: {
@@ -588,35 +772,79 @@ export type Database = {
         }[]
       }
       dashboard_monthly_guests: {
-        Args: { p_start: string; p_end: string; p_tz?: string }
+        Args: { p_end: string; p_start: string; p_tz?: string }
         Returns: {
+          checked_guests: number
           day: number
           guests: number
-          checked_guests: number
         }[]
       }
-      analytics_source_tour: {
-        Args: { p_start: string; p_end: string }
+      ignore_email_match: {
+        Args: { p_queue_id: string }
         Returns: {
-          source: string
-          tour: string
-          color: string | null
+          ai_confidence: string | null
+          booking_channel: string | null
+          business_id: string | null
+          created_at: string
+          id: string
+          legacy_company_id: string | null
+          original_product_name: string | null
+          parsed: Json | null
+          reason: string
+          resolved_at: string | null
+          resolved_by_staff_id: string | null
+          resolved_tour_id: string | null
+          status: string
+          suggested_tour_id: string | null
+          supplier: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "email_match_queue"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      match_ota_tour: {
+        Args: {
+          p_channel: string
+          p_company: string
+          p_product: string
+          p_supplier: string
+        }
+        Returns: {
           business_id: string
-          business: string
-          pax: number
-          bookings: number
+          business_tour_id: string
+          method: string
+          tour_id: string
+          tour_name: string
         }[]
       }
-      analytics_daily_by_tour: {
-        Args: { p_start: string; p_end: string; p_tz: string }
+      resolve_email_match: {
+        Args: { p_queue_id: string; p_tour_id: string }
         Returns: {
-          day: number
-          business_tour_id: string
-          tour: string
-          color: string | null
-          pax: number
-          bookings: number
-        }[]
+          ai_confidence: string | null
+          booking_channel: string | null
+          business_id: string | null
+          created_at: string
+          id: string
+          legacy_company_id: string | null
+          original_product_name: string | null
+          parsed: Json | null
+          reason: string
+          resolved_at: string | null
+          resolved_by_staff_id: string | null
+          resolved_tour_id: string | null
+          status: string
+          suggested_tour_id: string | null
+          supplier: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "email_match_queue"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
     }
     Enums: {

@@ -68,7 +68,11 @@ const STATUS_MAP: Record<string, string> = {
 };
 
 type Rec = { business_tour_id: string; business_id: string };
-type Maps = { byProduct: Record<string, Rec>; byName: Record<string, Rec> };
+type Maps = {
+  byProduct: Record<string, Rec>;
+  byName: Record<string, Rec>;
+  byId: Record<string, Rec>;
+};
 
 let cache: (Maps & { at: number }) | null = null;
 
@@ -80,13 +84,27 @@ async function tourMap(): Promise<Maps> {
   if (error) throw new Error(`business_tours: ${error.message}`);
   const byProduct: Record<string, Rec> = {};
   const byName: Record<string, Rec> = {};
+  const byId: Record<string, Rec> = {};
   for (const r of data ?? []) {
     const rec: Rec = { business_tour_id: r.id, business_id: r.business_id };
+    byId[r.id] = rec;
     if (r.legacy_product_id) byProduct[String(r.legacy_product_id)] = rec;
     byName[norm(r.name)] = rec;
   }
-  cache = { byProduct, byName, at: Date.now() };
+  cache = { byProduct, byName, byId, at: Date.now() };
   return cache;
+}
+
+/** Direct lookup for a business_tour_id not in the (cached) map. */
+async function recForBusinessTour(btid: string): Promise<Rec | null> {
+  const { data } = await sb
+    .from("business_tours")
+    .select("id, business_id")
+    .eq("id", btid)
+    .maybeSingle();
+  return data
+    ? { business_tour_id: data.id as string, business_id: data.business_id as string }
+    : null;
 }
 
 function resolveTour(row: Record<string, unknown>, m: Maps): Rec | null {
@@ -118,17 +136,42 @@ function parseName(row: Record<string, unknown>): string {
   return parts.join(" ") || "Guest";
 }
 
-function epochIso(ms: unknown): string | null {
-  const s = clean(ms);
-  if (!s) return null;
-  const n = Number(s);
+// An all-digit epoch -> ISO. 10-digit values are treated as SECONDS, 13-digit
+// as MILLISECONDS (the boundary 1e12 is year 2001 in ms / year 33658 in s, so
+// every realistic date lands on the right side). An instant has no timezone
+// ambiguity, which is exactly why a number is the safe thing to pass.
+function epochToIso(v: unknown): string | null {
+  const s = clean(v);
+  if (!s || !/^\d+$/.test(s)) return null;
+  let n = Number(s);
   if (!Number.isFinite(n)) return null;
-  const d = new Date(n); // epoch ms
+  if (n < 1e12) n *= 1000; // seconds -> milliseconds
+  const d = new Date(n);
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
+// A full ISO-8601 instant WITH a timezone designator (Z or +/-hh:mm). We require
+// the offset so a string is never silently read as a local/UTC wall-clock time.
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:?\d{2})$/;
+
 function startsAtOf(row: Record<string, unknown>): string | null {
-  const iso = epochIso(row.date_timestamp);
+  // The start instant can arrive as: starts_at (ISO instant, the parser's
+  // startsAtUtc) OR starts_at as a bare epoch OR date_timestamp (epoch) OR date
+  // (YYYY-MM-DD). The parser already did the NY -> UTC conversion. A human
+  // display string like "Jun 30, 2026, 7:00 PM" is rejected (it would otherwise
+  // be misread as a UTC wall-clock time and store the wrong hour); send the ISO
+  // or the epoch number instead, both of which are unambiguous.
+  const direct = clean(row.starts_at);
+  if (direct) {
+    if (ISO_INSTANT.test(direct)) {
+      const dt = new Date(direct);
+      if (!Number.isNaN(dt.getTime())) return dt.toISOString();
+    }
+    const fromEpoch = epochToIso(direct); // accept a bare epoch in starts_at too
+    if (fromEpoch) return fromEpoch;
+    return null; // present but neither an ISO instant nor an epoch -> error
+  }
+  const iso = epochToIso(row.date_timestamp);
   if (iso) return iso;
   const d = clean(row.date);
   if (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) return `${d}T12:00:00.000Z`;
@@ -173,15 +216,45 @@ async function findOrCreateCustomer(
 type Result = { legacy_id: string | null; ok: boolean; error?: string };
 
 async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
+  // Idempotency / dedup key (stored in legacy_id, which is UNIQUE-indexed).
+  //
+  // The OTA "Product booking ref" is a booking's stable identity and is the SAME
+  // value whether the booking reaches us via the email connector or the Xano
+  // webhook, so it WINS when present (namespaced `ota-`). OTAs resend the same
+  // ref with new statuses; keying on it means a resend UPDATES the one row instead
+  // of creating a duplicate. Fallbacks for non-OTA rows: Xano unique_id, then row
+  // id. (Native in-app bookings never hit this function, so they need no key.)
+  const ref = clean(row.booking_reference);
   const legacyId =
-    clean(row.unique_id) ?? (clean(row.id) ? `xano-${clean(row.id)}` : null);
-  if (!legacyId) return { legacy_id: null, ok: false, error: "missing legacy id" };
+    (ref ? `ota-${ref}` : null) ??
+    clean(row.unique_id) ??
+    (clean(row.id) ? `xano-${clean(row.id)}` : null);
+  if (!legacyId) {
+    return { legacy_id: null, ok: false, error: "need booking_reference, unique_id, or id" };
+  }
 
   const starts = startsAtOf(row);
-  if (!starts) return { legacy_id: legacyId, ok: false, error: "missing start time" };
+  if (!starts) {
+    return {
+      legacy_id: legacyId,
+      ok: false,
+      error: clean(row.starts_at)
+        ? `invalid starts_at: ${clean(row.starts_at)} (send an ISO-8601 UTC instant like 2026-06-30T23:00:00Z, or an epoch like 1782860400000)`
+        : "missing start time (send starts_at as an ISO-8601 UTC instant or epoch, or date_timestamp)",
+    };
+  }
 
-  const rec = resolveTour(row, m);
-  if (!rec) return { legacy_id: legacyId, ok: false, error: "could not resolve tour" };
+  // Prefer an already-resolved business_tour_id (e.g. from email-booking-parse);
+  // otherwise match by product / supplier / company for raw Xano payloads.
+  const btid = clean(row.business_tour_id);
+  let rec: Rec | null;
+  if (btid) {
+    rec = m.byId[btid] ?? (await recForBusinessTour(btid));
+    if (!rec) return { legacy_id: legacyId, ok: false, error: "unknown business_tour_id" };
+  } else {
+    rec = resolveTour(row, m);
+    if (!rec) return { legacy_id: legacyId, ok: false, error: "could not resolve tour" };
+  }
 
   const name = parseName(row);
   const customerId = await findOrCreateCustomer(
@@ -205,7 +278,7 @@ async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
     checkedRaw === 1 ||
     clean(checkedRaw) === "1" ||
     clean(checkedRaw) === "true";
-  const checkedAt = checked ? epochIso(row.check_in_time) ?? starts : null;
+  const checkedAt = checked ? epochToIso(row.check_in_time) ?? starts : null;
 
   const price = clean(row.price);
   let totalCents = 0;
@@ -258,13 +331,27 @@ Deno.serve(async (req) => {
     return json({ error: "unauthorized" }, 401);
   }
 
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return json({ error: "invalid json body" }, 400);
+  // Accept a JSON body (single record or array) OR query-string fields (a single
+  // record), so the caller can POST either way.
+  let rows: unknown[];
+  const raw = await req.text();
+  if (raw && raw.trim()) {
+    let body: unknown;
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      return json({ error: "invalid json body" }, 400);
+    }
+    rows = Array.isArray(body) ? body : [body];
+  } else {
+    const params = new URL(req.url).searchParams;
+    if ([...params.keys()].length === 0) {
+      return json({ error: "empty body" }, 400);
+    }
+    const row: Record<string, string> = {};
+    for (const [k, v] of params) row[k] = v;
+    rows = [row];
   }
-  const rows = Array.isArray(body) ? body : [body];
   if (rows.length === 0) return json({ error: "empty body" }, 400);
   if (rows.length > 500) return json({ error: "max 500 records per call" }, 413);
 

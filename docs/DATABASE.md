@@ -70,6 +70,15 @@ legacy values `checked_in` and `completed`; the app no longer writes them. Check
 tracked independently of status via `checked_in_at` (set/cleared by the check-in
 toggle and the check-in API), so a guest can be checked in regardless of payment status.
 
+`legacy_id` (UNIQUE) is the sync dedup key for imported / synced bookings; native
+in-app bookings leave it null. The `xano-booking-sync` function derives it as
+`ota-<ProductBookingRef>` when an OTA Product booking ref is present (so the SAME
+booking dedups to one row whether it arrives via the email connector or the Xano
+webhook, and OTA status resends update rather than duplicate), else the Xano
+`unique_id`, else `xano-<id>`. `legacy_reference` keeps the raw OTA ref but is NOT
+unique (the bulk import also stored channel/payment placeholders like `Groupon` and
+`kiosk-sale-card` there), so it is a label, never a dedup key.
+
 ### staff_tours
 `staff_id, tour_id, created_at` — which tours a `check_in` staffer is assigned to.
 
@@ -80,6 +89,42 @@ action, payload jsonb` — append-only audit trail.
 ### Legacy / unused
 `kiosks` and `kiosk_tours` remain from the original schema but nothing in the app reads
 them. Slated for removal once confirmed dead. Do not build on them.
+
+## OTA email connector
+
+The `email-booking-parse` edge function turns a raw OTA notification email (Bokun supplier
+emails) into structured booking fields and resolves the product to a tour, without creating
+a booking. See `supabase/functions/email-booking-parse` and migration
+`20260610120000_email_connector.sql`.
+
+### tour_name_aliases
+`id, tour_id -> tours, normalized_name (unique), raw_name, source ('xano_seed' | 'ai' |
+'manual'), created_at`. Maps a normalized OTA product title to a master tour for the
+deterministic matcher (O(1) lookup on `normalized_name`). Seeded from Xano's
+`products_variation.name_variations`; grows as the owner resolves queue rows. Read by any
+active staff (the matcher itself runs as service role and bypasses RLS).
+
+### email_match_queue
+`id, status ('verify' | 'urgent' | 'resolved' | 'ignored'), reason ('ai_classified' |
+'no_match' | 'needs_assignment'), original_product_name, supplier, booking_channel,
+legacy_company_id, business_id? -> businesses, suggested_tour_id? -> tours, ai_confidence,
+parsed jsonb, resolved_tour_id?, resolved_by_staff_id?, resolved_at, created_at`. Review
+queue for emails the matcher could not place. The service-role function inserts (no insert
+policy); owner sees all, manager sees their business. Surfaced on the owner-only
+`/admin/unmatched` page.
+
+### Functions
+- `app_norm(text)` — shared normalizer (lowercase, strip non-alphanumeric); mirrors the JS
+  `norm()` in the edge functions.
+- `match_ota_tour(p_product, p_supplier, p_channel, p_company)` — deterministic resolver:
+  product/supplier/channel -> master tour (alias table), email company -> operator business,
+  `business_tour = (operator, tour)`. `business_tour_id` is null when the operator is not
+  assigned the tour (the edge function then queues a `needs_assignment` row). SECURITY INVOKER.
+- `resolve_email_match(p_queue_id, p_tour_id)` — owner/manager resolution: adds a name alias
+  (teaches the matcher), assigns the tour to the operator if missing (creates the
+  `business_tour` + clones pricing from an existing copy), marks the row resolved. SECURITY
+  DEFINER with an internal owner / manager-by-business check.
+- `ignore_email_match(p_queue_id)` — dismiss a queued row. Same auth check.
 
 ## Access control (RLS)
 
