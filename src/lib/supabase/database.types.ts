@@ -198,6 +198,7 @@ export type Database = {
         Row: {
           business_id: string
           created_at: string
+          groupon_fee_cents: number | null
           id: string
           is_active: boolean
           legacy_product_id: string | null
@@ -208,6 +209,7 @@ export type Database = {
         Insert: {
           business_id: string
           created_at?: string
+          groupon_fee_cents?: number | null
           id?: string
           is_active?: boolean
           legacy_product_id?: string | null
@@ -218,6 +220,7 @@ export type Database = {
         Update: {
           business_id?: string
           created_at?: string
+          groupon_fee_cents?: number | null
           id?: string
           is_active?: boolean
           legacy_product_id?: string | null
@@ -777,6 +780,19 @@ export type Database = {
           checked_guests: number
           day: number
           guests: number
+        }[]
+      }
+      groupon_candidates: {
+        Args: never
+        Returns: {
+          aliases: string[]
+          business_id: string
+          business_name: string
+          business_tour_id: string
+          groupon_fee_cents: number
+          product_name: string
+          tour_id: string
+          tour_name: string
         }[]
       }
       ignore_email_match: {

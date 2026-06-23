@@ -62,11 +62,15 @@ src/
           [id]/                edit-form (owner) vs manager-edit-form (manager)
           [id]/variants/new/   owner: add a business's copy of a tour
         staff/                 owner-only. list/new/[id] + actions
+        unmatched/             owner-only. OTA email review queue (page + actions)
+        groupon/               owner-only. per-product Groupon convenience fee config
     api/
       auth/signout/            POST sign out
       bookings/[id]/check-in/  POST mark checked in
       places/autocomplete/     Google Places proxy (keeps key server-side)
       places/details/          Google Place details proxy
+      gp/                      PUBLIC: validate (vision) + slots + book for /gp
+    gp/                        PUBLIC voucher-redemption page (no auth; outside (app))
     login/                     sign-in (client); middleware redirects here when signed out
     layout.tsx, page.tsx       root layout + landing redirect
   components/
@@ -79,6 +83,7 @@ src/
     supabase/                  client (browser), server (RSC/actions), admin (service role),
                                database.types.ts (generated)
     dashboard/queries.ts       dashboard fetchers + shared formatters (cents, time, pax)
+    gp/vision.ts               typed client for the gp-voucher-vision edge function
     utils.ts                   cn()
   middleware.ts                session refresh + auth redirect for app routes
 supabase/migrations/           timestamped SQL migrations (source of truth for schema)
@@ -174,6 +179,14 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
 
 - Customers list (scoped by business) not built.
 - Profile / settings not built.
+- **Groupon `/gp`** (public voucher redemption) is built: upload -> vision match -> details
+  -> pending booking on the `groupon` channel. Owner sets the per-product fee at
+  `/admin/groupon` (`business_tours.groupon_fee_cents`). Vision runs in the
+  `gp-voucher-vision` edge function (port of Xano vision_v3: Google OCR -> Groq fallback
+  -> deterministic alias match -> Groq extraction); its keys (`GOOGLE_API_KEY`,
+  `GROQ_API_KEY`, optional `OPENAI_API_KEY`) are Supabase function secrets. The checkout
+  step is **stubbed** pending the Stripe phase. See
+  [`docs/DATABASE.md`](docs/DATABASE.md) "Groupon convenience fee".
 - `/analytics` is built, organized as in-page tabs (`analytics-tabs.tsx`, client state,
   both panels stay mounted so their filters survive tab switches):
   - **Sources & products** (`analytics-view.tsx`, RLS-scoped via the

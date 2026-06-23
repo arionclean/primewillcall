@@ -126,6 +126,44 @@ policy); owner sees all, manager sees their business. Surfaced on the owner-only
   DEFINER with an internal owner / manager-by-business check.
 - `ignore_email_match(p_queue_id)` — dismiss a queued row. Same auth check.
 
+## Groupon convenience fee (public /gp page)
+
+`/gp` is a public, unauthenticated page where a Groupon customer uploads a voucher
+photo, the product is matched, and a `pending` ("waiting for payment") booking is
+created on the `groupon` channel. It is the Supabase-native rebuild of the legacy
+Bubble/Xano voucher widget. Payment (Stripe) is the final migration phase and is
+currently stubbed (the booking is created, the charge is not).
+
+### Schema
+- `business_tours.groupon_fee_cents` (int, nullable) — the owner-managed per-passenger
+  convenience fee for that product. `NULL` = the product does not accept Groupon;
+  `0` = offered free. Owners edit this on the owner-only `/admin/groupon` page.
+- `gp-vouchers` storage bucket (public read) — the uploaded voucher photos. Writes are
+  done server-side with the service role, so there is no anon insert policy.
+- `groupon_candidates()` — SECURITY DEFINER RPC returning the Groupon-enabled
+  `business_tours` (fee not null, active) joined to business + tour, with each tour's
+  `tour_name_aliases` as a `text[]`. The validator feeds this small candidate set to the
+  vision model; the fee always comes from this row, never from the model.
+
+### Request flow (all server-side, service role; no anon DB access)
+- `POST /api/gp/validate` — uploads the photo to `gp-vouchers`, then hands the public URL
+  to the `gp-voucher-vision` edge function and returns
+  `{ valid, businessTourId, productName, feeCents, passengers, voucherCode, imageUrl }`.
+  The edge function ports the Xano vision_v3 chain (~1.5s avg there): Google Cloud Vision
+  TEXT_DETECTION OCR (`GOOGLE_API_KEY`), Groq llama-4-scout vision as OCR fallback, a
+  deterministic alias/product-name substring match (zero AI in the common case), and Groq
+  `openai/gpt-oss-120b` for passenger + redemption-code extraction (the "1 of 1 = one
+  voucher, not one passenger" trap is handled in the prompt; OpenAI is the extraction
+  fallback). AI keys live as **Supabase function secrets**, not app env. Deployed with
+  verify_jwt on; the route calls it with the service role key. If the function is
+  unreachable the route degrades to a graceful "couldn't read the voucher".
+- `GET /api/gp/slots?business_tour_id&date` — active `tour_timeslots` for the matched
+  product's master tour, past times hidden for today (NY). Replaces Xano `manage_slots`.
+- `POST /api/gp/book` — re-validates the product + fee, creates the customer
+  (`legacy_source = 'groupon'`) and a `pending` booking (`source_channel = 'groupon'`,
+  `legacy_reference = <voucher code>`, `total_cents = fee × passengers`, the fee as a
+  `tour_pax_breakdown` line). Stripe is stubbed.
+
 ## Access control (RLS)
 
 RLS is enabled on all app tables. Every policy is expressed through the
