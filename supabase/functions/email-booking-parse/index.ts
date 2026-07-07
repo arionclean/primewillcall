@@ -5,14 +5,18 @@
 // It EXTRACTS the booking fields (deterministic parser) and RESOLVES the product
 // to a tour + operator. It does NOT create a booking.
 //
-// Product resolution ladder:
+// Product resolution ladder (self-improving; regex-first, AI only on a miss):
 //   1. Deterministic: parsed name / supplier / channel -> tour_name_aliases (0 AI).
 //      If the matched operator (email company) is not assigned that tour yet, the
 //      tour is still returned and a 'needs_assignment' row is queued for the owner.
-//   2. AI fallback (gpt-5.4-mini-2026-03-17) only when (1) finds no tour:
-//        - confident pick -> attach it + queue a 'verify' row (confirming teaches
-//          the matcher); not confident -> queue an 'urgent' row for a human.
-// The common templated OTA email resolves at step 1 with zero AI calls.
+//   2. Extract: if the regex could not read the product line (an unknown email
+//      layout), the cheap model (gpt-5.4-mini) pulls the product name from the raw
+//      text, then we retry the deterministic match on that name.
+//   3. Classify: still no match -> the smarter model (gpt-5.5) picks the tour from
+//      the operator's list. A confident pick is attached AND written back as an
+//      alias (learnAlias), so the next identical email matches at step 1 with zero
+//      AI. A 'verify' row is queued for the owner to confirm; low confidence ->
+//      an 'urgent' 'no_match' row. The common templated email resolves at step 1.
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { parseBookingEmail } from "../_shared/parse-booking-email.ts";
@@ -21,7 +25,10 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const SECRET = Deno.env.get("EMAIL_PARSE_SECRET") ?? "";
 const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY") ?? "";
-const AI_MODEL = "gpt-5.4-mini-2026-03-17";
+// Cheap model extracts the product name from any email layout when the regex
+// misses; the smarter model matches that name to an internal tour.
+const AI_EXTRACT_MODEL = "gpt-5.4-mini-2026-03-17";
+const AI_CLASSIFY_MODEL = "gpt-5.5-2026-04-23";
 
 const sb = createClient(SUPABASE_URL, SERVICE_KEY, {
   auth: { persistSession: false },
@@ -89,7 +96,7 @@ async function aiClassify(
       authorization: `Bearer ${OPENAI_KEY}`,
     },
     body: JSON.stringify({
-      model: AI_MODEL,
+      model: AI_CLASSIFY_MODEL,
       messages: [
         {
           role: "system",
@@ -125,6 +132,59 @@ async function aiClassify(
     tours.find((t) => norm(t.name) === norm(parsed.tour)) ??
     null;
   return { tour: match, confidence };
+}
+
+/**
+ * When the regex could not read the product line (a layout it does not know),
+ * pull the human-friendly product name straight from the raw email with the
+ * cheap model. Returns null on any failure so the caller degrades to a queue.
+ */
+async function aiExtractProduct(text: string): Promise<string | null> {
+  if (!OPENAI_KEY) return null;
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${OPENAI_KEY}`,
+    },
+    body: JSON.stringify({
+      model: AI_EXTRACT_MODEL,
+      messages: [
+        {
+          role: "system",
+          content:
+            "Extract the product/experience name from this booking-notification email. Respond strictly as JSON {\"product\": <the human-friendly product name, or null>}. Exclude any codes or ids; return just the name a customer would recognize.",
+        },
+        { role: "user", content: text },
+      ],
+      response_format: { type: "json_object" },
+    }),
+  }).catch(() => null);
+  if (!res || !res.ok) return null;
+  try {
+    const j = await res.json();
+    const parsed = JSON.parse(j.choices?.[0]?.message?.content ?? "{}");
+    const p = typeof parsed.product === "string" ? parsed.product.trim() : "";
+    return p || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Teach the deterministic matcher: record the resolved product name as an alias
+ * (source 'ai', low-trust) so the next identical email matches with zero AI. The
+ * unique index on normalized_name makes this idempotent, and ignoreDuplicates
+ * means it never overwrites an existing confirmed mapping.
+ */
+async function learnAlias(tourId: string, rawName: string): Promise<boolean> {
+  const normalized = norm(rawName);
+  if (!normalized) return false;
+  const { error } = await sb.from("tour_name_aliases").upsert(
+    { tour_id: tourId, normalized_name: normalized, raw_name: rawName.trim(), source: "ai" },
+    { onConflict: "normalized_name", ignoreDuplicates: true },
+  );
+  return !error;
 }
 
 Deno.serve(async (req) => {
@@ -166,6 +226,18 @@ Deno.serve(async (req) => {
 
   const booking = parseBookingEmail({ text, subject, company });
 
+  // Product text for matching: the regex value when it read one, otherwise ask
+  // the cheap model to extract it from the raw email (covers unknown layouts).
+  let productText = (booking.productName ?? "").trim();
+  let productExtractedByAi = false;
+  if (!productText) {
+    const extracted = await aiExtractProduct(text).catch(() => null);
+    if (extracted) {
+      productText = extracted;
+      productExtractedByAi = true;
+    }
+  }
+
   // 1) deterministic
   let productMatch:
     | {
@@ -178,10 +250,11 @@ Deno.serve(async (req) => {
       }
     | null = null;
   let queued: { id: string | null; status: string } | null = null;
+  let learned = false;
 
   try {
     const { data } = await sb.rpc("match_ota_tour", {
-      p_product: booking.productName ?? "",
+      p_product: productText,
       p_supplier: booking.supplier ?? "",
       p_channel: booking.bookingChannel ?? booking.soldBy ?? "",
       p_company: company,
@@ -240,8 +313,7 @@ Deno.serve(async (req) => {
   // 3) no deterministic tour at all -> AI fallback + queue
   if (!productMatch) {
     const { businessId, tours } = await candidateTours(company);
-    const productText = booking.productName ?? booking.rate ?? "";
-    const ai = await aiClassify(productText, tours).catch(() => null);
+    const ai = await aiClassify(productText || booking.rate || "", tours).catch(() => null);
 
     if (ai?.tour && ai.confidence === "high") {
       const { data: bt } = await sb
@@ -258,12 +330,14 @@ Deno.serve(async (req) => {
         method: "ai",
         confidence: "ai_high",
       };
+      // Learn: next identical email matches deterministically with no AI.
+      if (productText) learned = await learnAlias(ai.tour.id, productText).catch(() => false);
       const { data: q } = await sb
         .from("email_match_queue")
         .insert({
           status: "verify",
           reason: "ai_classified",
-          original_product_name: booking.productName,
+          original_product_name: booking.productName ?? productText,
           supplier: booking.supplier,
           booking_channel: booking.bookingChannel,
           legacy_company_id: company,
@@ -281,7 +355,7 @@ Deno.serve(async (req) => {
         .insert({
           status: "urgent",
           reason: "no_match",
-          original_product_name: booking.productName,
+          original_product_name: booking.productName ?? productText,
           supplier: booking.supplier,
           booking_channel: booking.bookingChannel,
           legacy_company_id: company,
@@ -296,5 +370,16 @@ Deno.serve(async (req) => {
     }
   }
 
-  return json({ ok: true, booking, product_match: productMatch, queued }, 200);
+  return json(
+    {
+      ok: true,
+      booking,
+      product_text: productText,
+      product_extracted_by_ai: productExtractedByAi,
+      learned,
+      product_match: productMatch,
+      queued,
+    },
+    200,
+  );
 });

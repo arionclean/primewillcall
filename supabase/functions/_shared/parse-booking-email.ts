@@ -173,11 +173,15 @@ export function parseBookingEmail(input: {
   const bookingReference = req(/Product booking ref\.\s+(\S+)/, "booking_reference");
   const extBookingRef = matchOne(text, /Ext\. booking ref\s+(\S+)/);
   const productCode = matchOne(text, /Product\s+([A-Za-z0-9]+)\s+-\s+/);
+  // Two Bokun layouts: "Product <CODE> - <name> Supplier" (cruise) and
+  // "Product <name> Supplier" (jet ski: no code, no dash). The code+dash is
+  // optional; the negative lookahead skips the earlier "Product booking ref." line.
   const productName = req(
-    /Product\s+[A-Za-z0-9]+\s+-\s+([\s\S]*?)\s+Supplier\b/,
+    /Product\s+(?!booking ref\b)(?:[A-Za-z0-9]+\s+-\s+)?([\s\S]*?)\s+Supplier\b/,
     "product",
   );
-  const supplier = req(/Supplier\s+([\s\S]*?)\s+Sold by\b/, "supplier");
+  // Supplier ends at "Sold by" (cruise) or, when that line is absent, "Booking channel".
+  const supplier = req(/Supplier\s+([\s\S]*?)\s+(?:Sold by|Booking channel)\b/, "supplier");
   const soldBy = matchOne(text, /Sold by\s+([\s\S]*?)\s+Booking channel\b/);
   const bookingChannel = req(
     /Booking channel\s+([\s\S]*?)\s+Customer\b/,
@@ -197,9 +201,12 @@ export function parseBookingEmail(input: {
   const paxTotal = toIntOrNull(
     matchOne(text, /\bPAX\s+(\d+)(?!\s*(?:adults?|child|children|infants?))/i),
   );
-  const adult = toInt(matchOne(text, /(\d+)?\s*Adults?\b/));
+  let adult = toInt(matchOne(text, /(\d+)?\s*Adults?\b/));
   const child = toInt(matchOne(text, /(\d+)\s*Child(?:ren|s)?\b/));
   const infant = toInt(matchOne(text, /(\d+)\s*Infants?\b/));
+  // Layouts with no "N Adult" line (e.g. jet ski: "PAX 1 Price per jet ski")
+  // give only the PAX total; treat it as the guest count.
+  if (adult + child + infant === 0 && paxTotal && paxTotal > 0) adult = paxTotal;
 
   let totalCents = 0;
   let currency = "usd";
