@@ -18,6 +18,36 @@ const ROLE_TONE = {
   check_in: "neutral",
 } as const;
 
+type StaffRow = {
+  id: string;
+  full_name: string;
+  email: string;
+  phone: string | null;
+  role: keyof typeof ROLE_LABEL;
+  is_active: boolean;
+  user_id: string | null;
+  business: { id: string; name: string } | null;
+};
+
+function groupByBusiness(staff: StaffRow[]) {
+  const groups = new Map<
+    string,
+    { id: string; name: string; members: StaffRow[] }
+  >();
+  for (const s of staff) {
+    const id = s.business?.id ?? "prime";
+    const name = s.business?.name ?? "Prime";
+    const group = groups.get(id) ?? { id, name, members: [] };
+    group.members.push(s);
+    groups.set(id, group);
+  }
+  return [...groups.values()].sort((a, b) => {
+    if (a.id === "prime") return -1;
+    if (b.id === "prime") return 1;
+    return a.name.localeCompare(b.name);
+  });
+}
+
 export default async function StaffListPage() {
   const supabase = await getSupabaseServerClient();
   const { data: staff, error } = await supabase
@@ -55,50 +85,60 @@ export default async function StaffListPage() {
       {(!staff || staff.length === 0) ? (
         <EmptyState />
       ) : (
-        <ul className="space-y-2">
-          {staff.map((s) => {
-            const initials = s.full_name
-              .split(/\s+/)
-              .filter(Boolean)
-              .slice(0, 2)
-              .map((w) => w[0]?.toUpperCase() ?? "")
-              .join("");
-            return (
-              <li key={s.id}>
-                <Link
-                  href={`/admin/staff/${s.id}`}
-                  className="block transition hover:translate-x-0.5"
-                >
-                  <Card>
-                    <CardContent className="flex items-center gap-4 py-4">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">
-                        {initials || "?"}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium">{s.full_name}</p>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {s.email}
-                          {s.business?.name ? ` · ${s.business.name}` : ""}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge tone={ROLE_TONE[s.role]}>
-                          {ROLE_LABEL[s.role]}
-                        </Badge>
-                        {!s.is_active && (
-                          <Badge tone="warning">Inactive</Badge>
-                        )}
-                      </div>
-                      <span aria-hidden className="text-muted-foreground">
-                        ›
-                      </span>
-                    </CardContent>
-                  </Card>
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
+        <div className="space-y-8">
+          {groupByBusiness(staff).map((group) => (
+            <section key={group.id}>
+              <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {group.name}
+              </h2>
+              <ul className="space-y-2">
+                {group.members.map((s) => {
+                  const initials = s.full_name
+                    .split(/\s+/)
+                    .filter(Boolean)
+                    .slice(0, 2)
+                    .map((w) => w[0]?.toUpperCase() ?? "")
+                    .join("");
+                  return (
+                    <li key={s.id}>
+                      <Link
+                        href={`/admin/staff/${s.id}`}
+                        className="block transition hover:translate-x-0.5"
+                      >
+                        <Card>
+                          <CardContent className="flex items-center gap-4 py-4">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">
+                              {initials || "?"}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate font-medium">
+                                {s.full_name}
+                              </p>
+                              <p className="truncate text-xs text-muted-foreground">
+                                {s.email}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Badge tone={ROLE_TONE[s.role]}>
+                                {ROLE_LABEL[s.role]}
+                              </Badge>
+                              {!s.is_active && (
+                                <Badge tone="warning">Inactive</Badge>
+                              )}
+                            </div>
+                            <span aria-hidden className="text-muted-foreground">
+                              ›
+                            </span>
+                          </CardContent>
+                        </Card>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          ))}
+        </div>
       )}
     </div>
   );
