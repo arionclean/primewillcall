@@ -642,6 +642,48 @@ export type Database = {
           },
         ]
       }
+      tour_slot_closures: {
+        Row: {
+          closed_on: string
+          created_at: string
+          created_by: string | null
+          id: string
+          start_time: string
+          tour_id: string
+        }
+        Insert: {
+          closed_on: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          start_time: string
+          tour_id: string
+        }
+        Update: {
+          closed_on?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          start_time?: string
+          tour_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tour_slot_closures_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tour_slot_closures_tour_id_fkey"
+            columns: ["tour_id"]
+            isOneToOne: false
+            referencedRelation: "tours"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tour_timeslots: {
         Row: {
           created_at: string

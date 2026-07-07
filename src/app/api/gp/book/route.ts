@@ -118,6 +118,21 @@ export async function POST(req: Request) {
     );
   }
 
+  // The time must not be closed for that date on the availability board.
+  const { data: closure } = await admin
+    .from("tour_slot_closures")
+    .select("id")
+    .eq("tour_id", bt.tour_id)
+    .eq("closed_on", date)
+    .eq("start_time", `${slotStart}:00`)
+    .maybeSingle();
+  if (closure) {
+    return NextResponse.json(
+      { ok: false, error: "slot_closed", message: "That time is no longer available." },
+      { status: 400 },
+    );
+  }
+
   const startsAtIso = nyLocalToUtcIso(date, slotStart);
   const endsAtIso = new Date(
     new Date(startsAtIso).getTime() + slot.duration_minutes * 60_000,

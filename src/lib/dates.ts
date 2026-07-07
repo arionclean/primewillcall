@@ -21,6 +21,17 @@ export function todayLocalIso(timezone: string = BUSINESS_TZ): string {
   return `${get("year")}-${get("month")}-${get("day")}`;
 }
 
+/** "10:30" or "10:30:00" -> "10:30 AM". */
+export function timeLabel(startTime: string): string {
+  const [hStr, mStr] = startTime.split(":");
+  const h = Number(hStr);
+  const m = Number(mStr);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return startTime;
+  const period = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(m).padStart(2, "0")} ${period}`;
+}
+
 /** Validates a YYYY-MM-DD string, returning it normalized or null if invalid. */
 export function parseLocalYmd(s: string | undefined | null): string | null {
   if (!s) return null;

@@ -49,6 +49,12 @@ const SECTIONS: NavSection[] = [
         roles: ALL_ROLES,
         matchPrefix: "/schedule",
       },
+      {
+        href: "/availability",
+        label: "Availability",
+        roles: ["owner", "business_manager"],
+        matchPrefix: "/availability",
+      },
     ],
   },
   {

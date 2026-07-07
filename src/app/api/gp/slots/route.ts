@@ -1,25 +1,16 @@
 import { NextResponse } from "next/server";
 
+import { timeLabel } from "@/lib/dates";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 
 /**
  * Public timeslot lookup for the /gp page. Returns the active timeslots for the
  * matched product's master tour on a given date (the Supabase-native replacement
- * for Xano's manage_slots). Past times are hidden when the date is today (NY).
+ * for Xano's manage_slots). Past times are hidden when the date is today (NY),
+ * and times closed for that date on the availability board are excluded.
  */
 
 const BUSINESS_TZ = "America/New_York";
-
-/** "10:30:00" -> "10:30 AM". */
-function toLabel(startTime: string): string {
-  const [hStr, mStr] = startTime.split(":");
-  const h = Number(hStr);
-  const m = Number(mStr);
-  if (!Number.isFinite(h) || !Number.isFinite(m)) return startTime;
-  const period = h >= 12 ? "PM" : "AM";
-  const h12 = h % 12 === 0 ? 12 : h % 12;
-  return `${h12}:${String(m).padStart(2, "0")} ${period}`;
-}
 
 /** Today's date (YYYY-MM-DD) and current HH:MM in New York. */
 function nyNow(): { date: string; minutes: number } {
@@ -60,15 +51,23 @@ export async function GET(req: Request) {
     return NextResponse.json({ slots: [] }, { status: 200 });
   }
 
-  const { data: slots, error } = await admin
-    .from("tour_timeslots")
-    .select("start_time, duration_minutes")
-    .eq("tour_id", bt.tour_id)
-    .eq("is_active", true)
-    .order("sort_order", { ascending: true });
+  const [{ data: slots, error }, { data: closures }] = await Promise.all([
+    admin
+      .from("tour_timeslots")
+      .select("start_time, duration_minutes")
+      .eq("tour_id", bt.tour_id)
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true }),
+    admin
+      .from("tour_slot_closures")
+      .select("start_time")
+      .eq("tour_id", bt.tour_id)
+      .eq("closed_on", date),
+  ]);
   if (error) {
     return NextResponse.json({ slots: [], error: error.message }, { status: 500 });
   }
+  const closed = new Set((closures ?? []).map((c) => c.start_time.slice(0, 5)));
 
   const now = nyNow();
   const isToday = date === now.date;
@@ -79,11 +78,12 @@ export async function GET(req: Request) {
       const [h, m] = hhmm.split(":").map(Number);
       return {
         value: hhmm,
-        label: toLabel(s.start_time),
+        label: timeLabel(s.start_time),
         durationMinutes: s.duration_minutes,
         minutes: h * 60 + m,
       };
     })
+    .filter((s) => !closed.has(s.value))
     .filter((s) => !isToday || s.minutes > now.minutes)
     .map(({ value, label, durationMinutes }) => ({ value, label, durationMinutes }));
 

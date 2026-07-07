@@ -55,6 +55,8 @@ src/
         debug/                 "what the server sees" account debug page
       bookings/                bookings list (page.tsx server) + list.tsx (rich client)
       schedule/                new-booking form (page + form.tsx + actions.ts)
+      availability/            per-day open/close of booking times (owner + manager);
+                               writes tour_slot_closures, which /gp respects
       admin/
         layout.tsx             any active staff allowed; sub-sections gate further
         businesses/            owner-only (own layout gate). list/new/[id] + actions
@@ -187,6 +189,10 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   `GROQ_API_KEY`, optional `OPENAI_API_KEY`) are Supabase function secrets. The checkout
   step is **stubbed** pending the Stripe phase. See
   [`docs/DATABASE.md`](docs/DATABASE.md) "Groupon convenience fee".
+- `/availability` (owner + business manager) opens/closes booking times per day via
+  `tour_slot_closures`; `/api/gp/slots` and `/api/gp/book` respect closures. The
+  internal `/schedule` booking form does NOT block closed times (staff can override);
+  wire that in if the business asks for it.
 - `/analytics` is built, organized as in-page tabs (`analytics-tabs.tsx`, client state,
   both panels stay mounted so their filters survive tab switches):
   - **Sources & products** (`analytics-view.tsx`, RLS-scoped via the

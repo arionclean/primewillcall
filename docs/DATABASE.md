@@ -9,6 +9,7 @@ Regenerate types after any schema change into `src/lib/supabase/database.types.t
 ```
 businesses ─┐
             ├─< business_tours >─ tours ─< tour_timeslots
+            │        │               └─< tour_slot_closures
             │        │
             │        └─< tour_pax_tiers
             ├─< customers
@@ -45,6 +46,16 @@ meeting_point_lat?, meeting_point_lng?, is_active, created_at, updated_at`
 ### tour_timeslots
 `id uuid pk, tour_id (-> tours), start_time time, duration_minutes, sort_order,
 is_active, created_at, updated_at` — unique `(tour_id, start_time)`.
+
+### tour_slot_closures (per-date exceptions)
+`id uuid pk, tour_id (-> tours), closed_on date, start_time time,
+created_by? (-> staff), created_at` — unique `(tour_id, closed_on, start_time)`.
+A row means "this departure is closed on this date" (weather, charter, sold out
+offline). Open is the default: closing inserts, reopening deletes. Managed on the
+`/availability` page; read by the public `/api/gp/*` endpoints so closed times
+disappear from the Groupon page. Keyed by `start_time` (not timeslot id) on purpose:
+the tour editor replaces timeslot rows wholesale and closures must survive that.
+Existing bookings are not affected by a closure.
 
 ### business_tours (a business's copy of a tour)
 `id uuid pk, tour_id (-> tours), business_id (-> businesses), name, is_active,
@@ -158,8 +169,10 @@ currently stubbed (the booking is created, the charge is not).
   verify_jwt on; the route calls it with the service role key. If the function is
   unreachable the route degrades to a graceful "couldn't read the voucher".
 - `GET /api/gp/slots?business_tour_id&date` — active `tour_timeslots` for the matched
-  product's master tour, past times hidden for today (NY). Replaces Xano `manage_slots`.
-- `POST /api/gp/book` — re-validates the product + fee, creates the customer
+  product's master tour, past times hidden for today (NY), minus any
+  `tour_slot_closures` for that date. Replaces Xano `manage_slots`.
+- `POST /api/gp/book` — re-validates the product + fee (and rejects a time closed for
+  that date), creates the customer
   (`legacy_source = 'groupon'`) and a `pending` booking (`source_channel = 'groupon'`,
   `legacy_reference = <voucher code>`, `total_cents = fee × passengers`, the fee as a
   `tour_pax_breakdown` line). Stripe is stubbed.
@@ -183,6 +196,9 @@ Table-specific notes:
 
 - `tours` / `tour_timeslots`: all roles can read; only `owner` can write. (Timeslots are
   shared, so managers never edit schedules.)
+- `tour_slot_closures`: all roles can read; insert/delete is owner, or a manager whose
+  business is assigned to the tour (`business_tours`). Closing affects every business
+  sharing the departure, which mirrors reality: the boat itself is not going out.
 - `customers`: owner + manager + check-in of the business can insert and read; update is
   owner + manager; delete is owner only.
 - `bookings`: insert/delete is owner + manager (by business); check-in can read + update
