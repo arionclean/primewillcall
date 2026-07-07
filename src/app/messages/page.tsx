@@ -8,10 +8,10 @@ import { formatUsPhoneDisplay, maskUsPhoneInput, normalizeUsPhone } from "@/lib/
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 interface SmsMessage {
-  id: number;
+  id: string;
   direction: "inbound" | "outbound";
-  from_number: string;
-  to_number: string;
+  from_phone: string;
+  to_phone: string;
   body: string;
   tag: string | null;
   status: string | null;
@@ -27,7 +27,7 @@ interface Conversation {
 }
 
 function counterpartOf(message: SmsMessage): string {
-  return message.direction === "inbound" ? message.from_number : message.to_number;
+  return message.direction === "inbound" ? message.from_phone : message.to_phone;
 }
 
 function formatTime(iso: string): string {
@@ -70,8 +70,8 @@ export default function MessagesPage() {
     setActive(counterpart);
     const { data, error: queryError } = await supabase
       .from("sms_messages")
-      .select("id, direction, from_number, to_number, body, tag, status, created_at")
-      .or(`from_number.eq."${counterpart}",to_number.eq."${counterpart}"`)
+      .select("id, direction, from_phone, to_phone, body, tag, status, created_at")
+      .or(`from_phone.eq."${counterpart}",to_phone.eq."${counterpart}"`)
       .order("created_at", { ascending: true })
       .limit(500);
     if (queryError) {

@@ -80,8 +80,8 @@ export async function syncMessagesFromTwilio(): Promise<{ imported: number; page
         .filter((message) => message.sid)
         .map((message) => ({
           direction: message.direction === "inbound" ? "inbound" : "outbound",
-          from_number: message.from,
-          to_number: message.to,
+          from_phone: message.from,
+          to_phone: message.to,
           body: message.body ?? "",
           status: message.status,
           twilio_sid: message.sid,

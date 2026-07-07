@@ -54,9 +54,9 @@ On `SmsStatus == "received"` it:
 | `communication/send sms v2` (Twilio REST call) | [src/lib/sms/twilio.ts](../src/lib/sms/twilio.ts) `sendTwilioSms` |
 | `send sms telnyxs` + `add to message logs` | [src/lib/sms/messages.ts](../src/lib/sms/messages.ts) `sendSms` (US-only, opt-out aware, logs to `sms_messages`) |
 | `City tour campaign_v1` booking trigger | `sendBookingConfirmationSms` in the same module; call it after creating a booking |
-| `POST sms/v1` (auth send) | [src/app/api/sms/send/route.ts](../src/app/api/sms/send/route.ts) (Supabase merchant token) |
+| `POST sms/v1` (auth send) | [src/app/api/sms/send/route.ts](../src/app/api/sms/send/route.ts) (Supabase staff token) |
 | `POST receive/sms_respose_twilio` | [src/app/api/webhooks/twilio/sms/route.ts](../src/app/api/webhooks/twilio/sms/route.ts) |
-| `message_historial` table | `sms_messages` table ([migration](../supabase/migrations/20260707150000_sms_messaging.sql)) |
+| `message_historial` table + contact linking | `sms_messages` table ([migration](../supabase/migrations/20260707170000_sms_messaging.sql)), auto-linked to `customers` by phone, with `business_id`/`booking_id`/`sent_by_staff_id` following the `whatsapp_messages` house style |
 | STOP handling in `analyze inbound message_v2` | `sms_opt_outs` table + keyword handling in the webhook |
 
 ### Deliberate changes (not a 1:1 port)
@@ -95,10 +95,12 @@ without touching it:
   directions from the Twilio Messages API (incremental, deduped by `twilio_sid`), so
   Xano-sent messages also appear in threads. The page runs a sync on load.
 - **Live updates:** Supabase Realtime on `sms_messages` inserts (publication added in
-  the `20260707160000_sms_chat.sql` migration); the conversation list comes from the
-  `sms_conversations()` RPC (one aggregated row per customer number).
-- **Access:** `/messages` requires a Supabase session with the `merchant` role
-  (`app_users`); `/login` is a minimal email/password sign-in.
+  the migration); the conversation list comes from the `sms_conversations()` RPC
+  (one aggregated row per customer number).
+- **Access:** `/messages` requires a Supabase session for an active `staff` user
+  (RLS mirrors `whatsapp_messages`: owners see everything, business staff see their
+  business); `/login` is a minimal email/password sign-in. Sync is limited to
+  owner/business_manager; sends record `sent_by_staff_id`.
 
 Known coexistence caveat: Xano's reply analysis keys off the last outbound message in
 its own log, so a chat reply sent here while Xano has a pending `rateAsk` can still be
@@ -106,8 +108,8 @@ interpreted by Xano as a rating.
 
 ## Setup
 
-1. Apply the migrations `20260707150000_sms_messaging.sql` and
-   `20260707160000_sms_chat.sql` to the Supabase project (`qbnizuhozzwkiitfkjee`).
+1. Apply the migration `20260707170000_sms_messaging.sql` to the Supabase project
+   (`qbnizuhozzwkiitfkjee`).
 2. Set the env vars from [.env.example](../.env.example) (Twilio SID/token/from number,
    `SUPABASE_SERVICE_ROLE_KEY`, `TWILIO_WEBHOOK_BASE_URL`, `XANO_SMS_FORWARD_URL`).
 3. In the Twilio console, point the number's Messaging webhook ("A message comes in") to

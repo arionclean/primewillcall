@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { requireMerchant } from "@/lib/auth/require-merchant";
+import { requireStaff } from "@/lib/auth/require-staff";
 import { syncMessagesFromTwilio } from "@/lib/sms/sync";
 
 /** Backfill/refresh sms_messages from the Twilio Messages API. */
 export async function POST(request: NextRequest) {
-  const auth = await requireMerchant(request);
+  const auth = await requireStaff(request, ["owner", "business_manager"]);
   if (auth instanceof NextResponse) {
     return auth;
   }

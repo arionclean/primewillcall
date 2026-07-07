@@ -6,17 +6,60 @@ export type SmsDirection = "inbound" | "outbound";
 
 export interface SmsLogEntry {
   direction: SmsDirection;
-  from_number: string;
-  to_number: string;
+  from_phone: string;
+  to_phone: string;
   body: string;
   tag?: string | null;
   status?: string | null;
   twilio_sid?: string | null;
   error?: string | null;
+  business_id?: string | null;
+  customer_id?: string | null;
+  booking_id?: string | null;
+  sent_by_staff_id?: string | null;
+}
+
+/**
+ * Link a message to a customer by phone (same idea as Xano's
+ * "add to message logs" resolving contacts). Phones in customers come from
+ * the Xano import, so try the common format variants.
+ */
+async function findCustomerByPhone(
+  phone: string,
+): Promise<{ id: string; business_id: string | null } | null> {
+  const normalized = normalizeUsPhone(phone);
+  if (!normalized) {
+    return null;
+  }
+  const national = normalized.slice(2);
+  const supabase = getSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("customers")
+    .select("id, business_id")
+    .in("phone", [normalized, national, `1${national}`])
+    .limit(1);
+  if (error) {
+    console.error("Failed to look up customer by phone:", error.message);
+    return null;
+  }
+  return (data?.[0] as { id: string; business_id: string | null } | undefined) ?? null;
 }
 
 export async function logSmsMessage(entry: SmsLogEntry) {
   const supabase = getSupabaseAdminClient();
+
+  if (!entry.customer_id) {
+    const counterpart = entry.direction === "inbound" ? entry.from_phone : entry.to_phone;
+    const customer = await findCustomerByPhone(counterpart);
+    if (customer) {
+      entry = {
+        ...entry,
+        customer_id: customer.id,
+        business_id: entry.business_id ?? customer.business_id,
+      };
+    }
+  }
+
   const { error } = await supabase.from("sms_messages").insert(entry);
   if (error) {
     // Logging must never break the send/receive path.
@@ -68,6 +111,9 @@ export interface SendSmsInput {
   body: string;
   tag?: string;
   from?: string;
+  businessId?: string | null;
+  bookingId?: string | null;
+  sentByStaffId?: string | null;
 }
 
 export interface SendSmsResult {
@@ -91,29 +137,36 @@ export async function sendSms(input: SendSmsInput): Promise<SendSmsResult> {
   }
 
   const from = (input.from ? normalizeUsPhone(input.from) : null) ?? getTwilioFromNumber();
+  const linkFields = {
+    business_id: input.businessId ?? null,
+    booking_id: input.bookingId ?? null,
+    sent_by_staff_id: input.sentByStaffId ?? null,
+  };
 
   try {
     const result = await sendTwilioSms({ to, from, body: input.body });
     await logSmsMessage({
       direction: "outbound",
-      from_number: from,
-      to_number: to,
+      from_phone: from,
+      to_phone: to,
       body: input.body,
       tag: input.tag ?? null,
       status: result.status,
       twilio_sid: result.sid,
+      ...linkFields,
     });
     return { sent: true, status: result.status, sid: result.sid };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await logSmsMessage({
       direction: "outbound",
-      from_number: from,
-      to_number: to,
+      from_phone: from,
+      to_phone: to,
       body: input.body,
       tag: input.tag ?? null,
       status: "failed",
       error: message,
+      ...linkFields,
     });
     return { sent: false, status: "failed", reason: message };
   }
@@ -124,6 +177,8 @@ export interface BookingConfirmationInput {
   firstName: string;
   productName: string;
   confirmationId: string;
+  businessId?: string | null;
+  bookingId?: string | null;
 }
 
 /**
@@ -143,11 +198,12 @@ export async function sendBookingConfirmationSms(
   const { count, error } = await supabase
     .from("sms_messages")
     .select("id", { count: "exact", head: true })
-    .eq("to_number", to);
+    .eq("to_phone", to);
   if (error) {
     console.error("Failed to count prior SMS messages:", error.message);
   }
 
+  const linkFields = { businessId: input.businessId, bookingId: input.bookingId };
   const results: SendSmsResult[] = [];
 
   if (!count) {
@@ -156,6 +212,7 @@ export async function sendBookingConfirmationSms(
         to,
         body: `Hi ${input.firstName}, it's Jessi from ${input.productName}`,
         tag: "optIn",
+        ...linkFields,
       }),
     );
   }
@@ -166,6 +223,7 @@ export async function sendBookingConfirmationSms(
       to,
       body: `Use this link to see your ticket and the meeting point information: ${bookingLinkBase}/${input.confirmationId} (Text STOP to unsubscribe).`,
       tag: "bookingConfirmation",
+      ...linkFields,
     }),
   );
 

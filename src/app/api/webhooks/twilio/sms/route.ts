@@ -79,8 +79,8 @@ export async function POST(request: NextRequest) {
 
   await logSmsMessage({
     direction: "inbound",
-    from_number: normalizeUsPhone(params.From) ?? params.From ?? "",
-    to_number: normalizeUsPhone(params.To) ?? params.To ?? "",
+    from_phone: normalizeUsPhone(params.From) ?? params.From ?? "",
+    to_phone: normalizeUsPhone(params.To) ?? params.To ?? "",
     body,
     status: "received",
     twilio_sid: params.MessageSid ?? null,
