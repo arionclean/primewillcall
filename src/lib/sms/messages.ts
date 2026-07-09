@@ -1,8 +1,19 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 import { normalizeUsPhone } from "@/lib/sms/format";
 import { getTwilioFromNumber, sendTwilioSms } from "@/lib/sms/twilio";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export type SmsDirection = "inbound" | "outbound";
+
+/**
+ * Service-role client for the SMS tables. sms_messages/sms_opt_outs are newer
+ * than the generated Database types, so this is intentionally untyped until
+ * database.types.ts is regenerated.
+ */
+function getSmsDb(): SupabaseClient | null {
+  return getSupabaseAdminClient() as unknown as SupabaseClient | null;
+}
 
 export interface SmsLogEntry {
   direction: SmsDirection;
@@ -28,11 +39,11 @@ async function findCustomerByPhone(
   phone: string,
 ): Promise<{ id: string; business_id: string | null } | null> {
   const normalized = normalizeUsPhone(phone);
-  if (!normalized) {
+  const supabase = getSmsDb();
+  if (!normalized || !supabase) {
     return null;
   }
   const national = normalized.slice(2);
-  const supabase = getSupabaseAdminClient();
   const { data, error } = await supabase
     .from("customers")
     .select("id, business_id")
@@ -46,7 +57,11 @@ async function findCustomerByPhone(
 }
 
 export async function logSmsMessage(entry: SmsLogEntry) {
-  const supabase = getSupabaseAdminClient();
+  const supabase = getSmsDb();
+  if (!supabase) {
+    console.error("SUPABASE_SERVICE_ROLE_KEY not configured; SMS message not logged.");
+    return;
+  }
 
   if (!entry.customer_id) {
     const counterpart = entry.direction === "inbound" ? entry.from_phone : entry.to_phone;
@@ -68,7 +83,10 @@ export async function logSmsMessage(entry: SmsLogEntry) {
 }
 
 export async function isOptedOut(phoneNumber: string): Promise<boolean> {
-  const supabase = getSupabaseAdminClient();
+  const supabase = getSmsDb();
+  if (!supabase) {
+    return false;
+  }
   const { data, error } = await supabase
     .from("sms_opt_outs")
     .select("opted_out")
@@ -82,7 +100,10 @@ export async function isOptedOut(phoneNumber: string): Promise<boolean> {
 }
 
 export async function setOptOut(phoneNumber: string, optedOut: boolean, reason: string) {
-  const supabase = getSupabaseAdminClient();
+  const supabase = getSmsDb();
+  if (!supabase) {
+    return;
+  }
   const { error } = await supabase
     .from("sms_opt_outs")
     .upsert({ phone_number: phoneNumber, opted_out: optedOut, reason });
@@ -128,6 +149,9 @@ export interface SendSmsResult {
  * US-only and opt-out aware; failures are logged, not thrown.
  */
 export async function sendSms(input: SendSmsInput): Promise<SendSmsResult> {
+  if (!getSmsDb()) {
+    return { sent: false, status: "failed", reason: "SUPABASE_SERVICE_ROLE_KEY not configured" };
+  }
   const to = normalizeUsPhone(input.to);
   if (!to) {
     return { sent: false, status: "skipped", reason: "Only US phone numbers are supported" };
@@ -193,8 +217,13 @@ export async function sendBookingConfirmationSms(
   if (!to) {
     return [{ sent: false, status: "skipped", reason: "Only US phone numbers are supported" }];
   }
+  const supabase = getSmsDb();
+  if (!supabase) {
+    return [
+      { sent: false, status: "failed", reason: "SUPABASE_SERVICE_ROLE_KEY not configured" },
+    ];
+  }
 
-  const supabase = getSupabaseAdminClient();
   const { count, error } = await supabase
     .from("sms_messages")
     .select("id", { count: "exact", head: true })

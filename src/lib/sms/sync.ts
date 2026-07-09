@@ -1,3 +1,5 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 import { getTwilioCredentials, getTwilioFromNumber } from "@/lib/sms/twilio";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -42,7 +44,11 @@ async function fetchTwilioPage(uri: string): Promise<TwilioMessagesPage> {
  * (with a 1-day overlap), deduped by twilio_sid.
  */
 export async function syncMessagesFromTwilio(): Promise<{ imported: number; pagesFetched: number }> {
-  const supabase = getSupabaseAdminClient();
+  // Untyped client: the sms tables are newer than the generated Database types.
+  const supabase = getSupabaseAdminClient() as unknown as SupabaseClient | null;
+  if (!supabase) {
+    throw new Error("SUPABASE_SERVICE_ROLE_KEY not configured");
+  }
   const { accountSid } = getTwilioCredentials();
   const ourNumber = getTwilioFromNumber();
 

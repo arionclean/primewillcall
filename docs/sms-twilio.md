@@ -97,9 +97,9 @@ without touching it:
 - **Live updates:** Supabase Realtime on `sms_messages` inserts (publication added in
   the migration); the conversation list comes from the `sms_conversations()` RPC
   (one aggregated row per customer number).
-- **Access:** `/messages` requires a Supabase session for an active `staff` user
-  (RLS mirrors `whatsapp_messages`: owners see everything, business staff see their
-  business); `/login` is a minimal email/password sign-in. Sync is limited to
+- **Access:** the chat lives at `(app)/messages` behind the app's cookie login and
+  shows in the sidebar for owner/business_manager. RLS mirrors `whatsapp_messages`
+  (owners see everything, business staff see their business). Sync is limited to
   owner/business_manager; sends record `sent_by_staff_id`.
 
 Known coexistence caveat: Xano's reply analysis keys off the last outbound message in
