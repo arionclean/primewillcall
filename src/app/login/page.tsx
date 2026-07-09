@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -8,7 +8,17 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 // All roles land on the dashboard after sign-in.
 const DEFAULT_HOME = "/dashboard";
 
+// useSearchParams() requires a Suspense boundary for the static prerender
+// of this page during `next build`.
 export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextParam = searchParams.get("next");
