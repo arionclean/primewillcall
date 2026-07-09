@@ -2,10 +2,14 @@
 
 import { useMemo, useState } from "react";
 import { useActionState } from "react";
-import { Trash2 } from "lucide-react";
+import { ChevronDown, Plus, Trash2 } from "lucide-react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 
 import {
   createRuleAction,
@@ -64,17 +68,20 @@ function renderPreview(body: string): string {
 
 const INITIAL: MessagingActionState = {};
 
-const selectClass =
-  "h-9 rounded-md border bg-background px-2.5 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-ring/50";
+const compactSelect = "h-9 w-auto";
 
-function RuleCard({
+function RuleItem({
   rule,
   products,
   waTemplates,
+  open,
+  onToggle,
 }: {
   rule: RuleRow;
   products: ProductOption[];
   waTemplates: WaTemplateOption[];
+  open: boolean;
+  onToggle: () => void;
 }) {
   const [state, formAction, pending] = useActionState(updateRuleAction, INITIAL);
   const [channel, setChannel] = useState<"sms" | "whatsapp">(rule.channel);
@@ -92,19 +99,57 @@ function RuleCard({
     return [...slots].sort((a, b) => Number(a) - Number(b));
   }, [selectedTemplate]);
 
-  return (
-    <div className="rounded-lg border p-4">
-      <form action={formAction} className="space-y-4">
-        <input type="hidden" name="rule_id" value={rule.id} />
+  const productName = rule.business_tour_id
+    ? products.find((p) => p.id === rule.business_tour_id)?.name ?? "One product"
+    : "Any product";
+  const snippet =
+    rule.channel === "sms"
+      ? renderPreview(rule.body ?? "")
+      : waTemplates.find((t) => t.sid === rule.whatsapp_content_sid)?.name ??
+        "No template picked";
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <Input
-            name="rule_name"
-            defaultValue={rule.name}
-            className="h-9 w-56 font-medium"
-            aria-label="Rule name"
-          />
-          <div className="flex items-center gap-3">
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex w-full items-center gap-2 px-4 py-3 text-left transition hover:bg-muted/40"
+      >
+        <div className="min-w-0 flex-1">
+          <span className="flex items-center gap-2">
+            <span className="truncate text-sm font-medium">{rule.name}</span>
+            {!rule.is_active ? <Badge>Paused</Badge> : null}
+            {rule.only_first_contact ? <Badge tone="primary">First text only</Badge> : null}
+          </span>
+          {!open ? (
+            <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+              New booking · {productName} · {snippet}
+            </span>
+          ) : null}
+        </div>
+        <Badge tone={rule.channel === "whatsapp" ? "success" : "info"}>
+          {rule.channel === "whatsapp" ? "WhatsApp" : "SMS"}
+        </Badge>
+        <ChevronDown
+          className={cn(
+            "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+            open && "rotate-180",
+          )}
+        />
+      </button>
+
+      {open ? (
+        <form action={formAction} className="space-y-3 border-t bg-muted/20 px-4 py-4">
+          <input type="hidden" name="rule_id" value={rule.id} />
+
+          <div className="flex flex-wrap items-center gap-3">
+            <Input
+              name="rule_name"
+              defaultValue={rule.name}
+              className="h-9 w-56 bg-background font-medium"
+              aria-label="Rule name"
+            />
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
@@ -120,154 +165,153 @@ function RuleCard({
               onClick={(event) => {
                 if (!confirm(`Delete the rule "${rule.name}"?`)) event.preventDefault();
               }}
-              className="rounded-md p-2 text-muted-foreground transition hover:bg-red-50 hover:text-red-600"
+              className="ml-auto rounded-md p-2 text-muted-foreground transition hover:bg-red-50 hover:text-red-600"
               aria-label="Delete rule"
             >
               <Trash2 className="h-4 w-4" />
             </button>
           </div>
-        </div>
 
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-2 text-sm">
-          <span>When a</span>
-          <span className="rounded-md bg-muted px-2 py-1 font-medium">new booking</span>
-          <span>comes in for</span>
-          <select
-            name="rule_product"
-            defaultValue={rule.business_tour_id ?? ""}
-            className={selectClass}
-          >
-            <option value="">Any product</option>
-            {products.map((product) => (
-              <option key={product.id} value={product.id}>
-                {product.name} ({product.businessName})
-              </option>
-            ))}
-          </select>
-          <span>send a</span>
-          <select
-            name="rule_channel"
-            value={channel}
-            onChange={(event) => setChannel(event.target.value as "sms" | "whatsapp")}
-            className={selectClass}
-          >
-            <option value="sms">Text message (SMS)</option>
-            <option value="whatsapp">WhatsApp template</option>
-          </select>
-        </div>
-
-        {channel === "sms" ? (
-          <div>
-            <textarea
-              name="rule_body"
-              value={body}
-              onChange={(event) => setBody(event.target.value)}
-              rows={3}
-              className="w-full resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-ring/50"
-            />
-            <p className="mt-2 text-xs text-muted-foreground">
-              Placeholders:{" "}
-              {PLACEHOLDERS.map((placeholder) => (
-                <button
-                  key={placeholder}
-                  type="button"
-                  onClick={() => setBody((current) => `${current}{{${placeholder}}}`)}
-                  title={PLACEHOLDER_LABELS[placeholder]}
-                  className="mr-2 rounded bg-muted px-1.5 py-0.5 font-mono transition hover:bg-muted/70"
-                >
-                  {`{{${placeholder}}}`}
-                </button>
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span>When a</span>
+            <span className="rounded-md bg-muted px-2 py-1 font-medium">new booking</span>
+            <span>comes in for</span>
+            <Select
+              name="rule_product"
+              defaultValue={rule.business_tour_id ?? ""}
+              className={cn(compactSelect, "max-w-64")}
+            >
+              <option value="">Any product</option>
+              {products.map((product) => (
+                <option key={product.id} value={product.id}>
+                  {product.name} ({product.businessName})
+                </option>
               ))}
-            </p>
-            {body.trim() ? (
-              <p className="mt-2 rounded-md bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-                <span className="font-medium text-foreground">Preview: </span>
-                {renderPreview(body)}
-              </p>
-            ) : null}
+            </Select>
+            <span>send a</span>
+            <Select
+              name="rule_channel"
+              value={channel}
+              onChange={(event) => setChannel(event.target.value as "sms" | "whatsapp")}
+              className={compactSelect}
+            >
+              <option value="sms">Text message (SMS)</option>
+              <option value="whatsapp">WhatsApp template</option>
+            </Select>
           </div>
-        ) : (
-          <div className="space-y-3">
-            {approved.length === 0 ? (
-              <p className="rounded-md border border-dashed bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-                No approved WhatsApp templates yet. Add one in the section below;
-                once WhatsApp approves it, you can pick it here.
-              </p>
-            ) : (
-              <select
-                name="rule_wa_template"
-                value={waSid}
-                onChange={(event) => setWaSid(event.target.value)}
-                className={`${selectClass} w-full max-w-md`}
-              >
-                <option value="">Pick an approved template...</option>
-                {approved.map((template) => (
-                  <option key={template.sid} value={template.sid}>
-                    {template.name}
-                  </option>
+
+          {channel === "sms" ? (
+            <div className="space-y-2">
+              <Textarea
+                name="rule_body"
+                value={body}
+                onChange={(event) => setBody(event.target.value)}
+                rows={3}
+              />
+              <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                <span>Insert:</span>
+                {PLACEHOLDERS.map((placeholder) => (
+                  <button
+                    key={placeholder}
+                    type="button"
+                    onClick={() => setBody((current) => `${current}{{${placeholder}}}`)}
+                    title={PLACEHOLDER_LABELS[placeholder]}
+                    className="rounded bg-muted px-1.5 py-0.5 font-mono transition hover:bg-muted/70"
+                  >
+                    {`{{${placeholder}}}`}
+                  </button>
                 ))}
-              </select>
-            )}
-
-            {selectedTemplate ? (
-              <div className="rounded-md bg-muted/40 px-3 py-2">
-                <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">
-                  {selectedTemplate.body}
-                </p>
-                {waSlots.length > 0 ? (
-                  <div className="mt-3 space-y-2">
-                    {waSlots.map((slot) => (
-                      <label key={slot} className="flex items-center gap-2 text-sm">
-                        <code className="rounded bg-muted px-1.5 py-0.5">{`{{${slot}}}`}</code>
-                        <span className="text-muted-foreground">is</span>
-                        <select
-                          name={`wa_var_${slot}`}
-                          defaultValue={rule.whatsapp_variables?.[slot] ?? ""}
-                          className={selectClass}
-                        >
-                          <option value="">Pick a value...</option>
-                          {PLACEHOLDERS.map((placeholder) => (
-                            <option key={placeholder} value={placeholder}>
-                              {PLACEHOLDER_LABELS[placeholder]}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    ))}
-                  </div>
-                ) : null}
               </div>
-            ) : null}
+              {body.trim() ? (
+                <p className="rounded-md border bg-background px-3 py-2 text-sm text-muted-foreground">
+                  <span className="font-medium text-foreground">Preview: </span>
+                  {renderPreview(body)}
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {approved.length === 0 ? (
+                <p className="rounded-md border border-dashed bg-background px-3 py-2 text-sm text-muted-foreground">
+                  No approved WhatsApp templates yet. Add one in the section below;
+                  once WhatsApp approves it, you can pick it here.
+                </p>
+              ) : (
+                <Select
+                  name="rule_wa_template"
+                  value={waSid}
+                  onChange={(event) => setWaSid(event.target.value)}
+                  className="h-9 max-w-md"
+                >
+                  <option value="">Pick an approved template...</option>
+                  {approved.map((template) => (
+                    <option key={template.sid} value={template.sid}>
+                      {template.name}
+                    </option>
+                  ))}
+                </Select>
+              )}
+
+              {selectedTemplate ? (
+                <div className="rounded-md border bg-background px-3 py-2">
+                  <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">
+                    {selectedTemplate.body}
+                  </p>
+                  {waSlots.length > 0 ? (
+                    <div className="mt-2 space-y-2">
+                      {waSlots.map((slot) => (
+                        <label key={slot} className="flex items-center gap-2 text-sm">
+                          <code className="rounded bg-muted px-1.5 py-0.5">{`{{${slot}}}`}</code>
+                          <span className="text-muted-foreground">is</span>
+                          <Select
+                            name={`wa_var_${slot}`}
+                            defaultValue={rule.whatsapp_variables?.[slot] ?? ""}
+                            className={compactSelect}
+                          >
+                            <option value="">Pick a value...</option>
+                            {PLACEHOLDERS.map((placeholder) => (
+                              <option key={placeholder} value={placeholder}>
+                                {PLACEHOLDER_LABELS[placeholder]}
+                              </option>
+                            ))}
+                          </Select>
+                        </label>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              <input
+                type="checkbox"
+                name="rule_first_contact"
+                value="1"
+                defaultChecked={rule.only_first_contact}
+                className="h-4 w-4 rounded border-input"
+              />
+              Only the first time we ever text this customer
+            </label>
+            <Button type="submit" size="sm" disabled={pending}>
+              {pending ? "Saving..." : "Save rule"}
+            </Button>
           </div>
-        )}
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <label className="flex items-center gap-2 text-sm text-muted-foreground">
-            <input
-              type="checkbox"
-              name="rule_first_contact"
-              value="1"
-              defaultChecked={rule.only_first_contact}
-              className="h-4 w-4 rounded border-input"
-            />
-            Only the first time we ever text this customer
-          </label>
-          <Button type="submit" size="sm" disabled={pending}>
-            {pending ? "Saving..." : "Save rule"}
-          </Button>
-        </div>
-
-        {state.error ? (
-          <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-            {state.error}
-          </p>
-        ) : null}
-        {state.saved ? (
-          <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-            Saved. New bookings will follow this rule.
-          </p>
-        ) : null}
-      </form>
+          {state.error ? (
+            <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {state.error}
+            </p>
+          ) : null}
+          {state.saved ? (
+            <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+              Saved. New bookings will follow this rule.
+            </p>
+          ) : null}
+        </form>
+      ) : null}
     </div>
   );
 }
@@ -281,20 +325,32 @@ export function MessagingRules({
   products: ProductOption[];
   waTemplates: WaTemplateOption[];
 }) {
+  const [openId, setOpenId] = useState<string | null>(null);
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {rules.length === 0 ? (
         <p className="rounded-md border border-dashed bg-muted/30 px-3 py-3 text-sm text-muted-foreground">
           No rules yet. Add the first one.
         </p>
       ) : (
-        rules.map((rule) => (
-          <RuleCard key={rule.id} rule={rule} products={products} waTemplates={waTemplates} />
-        ))
+        <div className="divide-y rounded-lg border">
+          {rules.map((rule) => (
+            <RuleItem
+              key={rule.id}
+              rule={rule}
+              products={products}
+              waTemplates={waTemplates}
+              open={openId === rule.id}
+              onToggle={() => setOpenId((current) => (current === rule.id ? null : rule.id))}
+            />
+          ))}
+        </div>
       )}
 
       <form action={createRuleAction}>
-        <Button type="submit" variant="outline">
+        <Button type="submit" variant="outline" size="sm">
+          <Plus className="h-4 w-4" />
           Add rule
         </Button>
       </form>
@@ -303,15 +359,24 @@ export function MessagingRules({
 }
 
 export function AddWhatsappTemplateForm() {
+  const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useActionState(createWhatsappTemplateAction, INITIAL);
+
+  if (!open) {
+    return (
+      <Button type="button" variant="outline" size="sm" onClick={() => setOpen(true)}>
+        <Plus className="h-4 w-4" />
+        Add template
+      </Button>
+    );
+  }
 
   return (
     <form action={formAction} className="rounded-lg border p-4">
       <p className="text-sm font-medium">Add a WhatsApp template</p>
       <p className="mt-0.5 text-xs text-muted-foreground">
-        It is sent to WhatsApp for approval automatically. Use numbered placeholders
-        like {"{{1}}"} for dynamic values; you connect them to real values when you
-        use the template in a rule.
+        Sent to WhatsApp for approval automatically. Use numbered placeholders like{" "}
+        {"{{1}}"} for dynamic values; you connect them to real values in a rule.
       </p>
 
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -331,15 +396,10 @@ export function AddWhatsappTemplateForm() {
           <label className="text-sm font-medium" htmlFor="wa_category">
             Category
           </label>
-          <select
-            id="wa_category"
-            name="wa_category"
-            defaultValue="UTILITY"
-            className={`${selectClass} mt-1 w-full`}
-          >
+          <Select id="wa_category" name="wa_category" defaultValue="UTILITY" className="mt-1">
             <option value="UTILITY">Utility (booking updates, confirmations)</option>
             <option value="MARKETING">Marketing (promotions, offers)</option>
-          </select>
+          </Select>
         </div>
       </div>
 
@@ -347,13 +407,13 @@ export function AddWhatsappTemplateForm() {
         <label className="text-sm font-medium" htmlFor="wa_body">
           Message
         </label>
-        <textarea
+        <Textarea
           id="wa_body"
           name="wa_body"
           rows={3}
           required
           placeholder="Hi {{1}}, your tour is confirmed for {{2}}. See your ticket: {{3}}"
-          className="mt-1 w-full resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-ring/50"
+          className="mt-1"
         />
       </div>
 
@@ -368,9 +428,14 @@ export function AddWhatsappTemplateForm() {
         </p>
       ) : null}
 
-      <Button type="submit" disabled={pending} className="mt-3">
-        {pending ? "Submitting..." : "Create and submit for approval"}
-      </Button>
+      <div className="mt-3 flex items-center gap-2">
+        <Button type="submit" size="sm" disabled={pending}>
+          {pending ? "Submitting..." : "Create and submit for approval"}
+        </Button>
+        <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(false)}>
+          Cancel
+        </Button>
+      </div>
     </form>
   );
 }
