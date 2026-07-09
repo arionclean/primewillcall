@@ -250,8 +250,19 @@ export function GrouponFlow() {
           imageUrl: gallery[gallery.length - 1] ?? null,
         }),
       });
-      const json = (await res.json()) as { ok?: boolean; totalCents?: number; message?: string };
+      const json = (await res.json()) as {
+        ok?: boolean;
+        totalCents?: number;
+        message?: string;
+        payment?: { status?: string; checkoutUrl?: string | null };
+      };
       if (json.ok) {
+        // When Stripe is wired for this business, go collect the fee. Otherwise
+        // fall back to the held-reservation confirmation (staff collect manually).
+        if (json.payment?.checkoutUrl) {
+          window.location.href = json.payment.checkoutUrl;
+          return;
+        }
         setConfirmed({ totalCents: json.totalCents ?? match.feeCents * match.passengers });
       } else {
         setStatusMsg(json.message ?? "Could not complete your reservation. Please try again.");

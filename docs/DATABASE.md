@@ -31,6 +31,11 @@ businesses ─┐
 
 ### businesses
 `id uuid pk, name, slug, address?, phone?, timezone, logo_url?, created_at, updated_at`
+plus Stripe Connect fields: `stripe_account_id?` (the connected account `acct_...`),
+`stripe_charges_enabled`, `stripe_payouts_enabled`, `stripe_details_submitted`,
+`stripe_requirements_due`, and `stripe_account_synced_at?`. The platform (Prime) fee is a
+single global rate, not per-business (env `STRIPE_PLATFORM_FEE_BPS`, default 25 bps =
+0.25%). See "Payments (Stripe)" below.
 One row per business Prime operates. Logos live in the `business-logos` storage bucket.
 
 ### staff
@@ -142,8 +147,10 @@ policy); owner sees all, manager sees their business. Surfaced on the owner-only
 `/gp` is a public, unauthenticated page where a Groupon customer uploads a voucher
 photo, the product is matched, and a `pending` ("waiting for payment") booking is
 created on the `groupon` channel. It is the Supabase-native rebuild of the legacy
-Bubble/Xano voucher widget. Payment (Stripe) is the final migration phase and is
-currently stubbed (the booking is created, the charge is not).
+Bubble/Xano voucher widget. Payment now runs through Stripe (see "Payments (Stripe)"):
+the pending booking is created, then a Checkout Session collects the convenience fee. If
+the business is not yet onboarded to Stripe, it gracefully falls back to the pre-Stripe
+behavior (booking held, fee collected manually).
 
 ### Schema
 - `business_tours.groupon_fee_cents` (int, nullable) — the owner-managed per-passenger
@@ -175,7 +182,61 @@ currently stubbed (the booking is created, the charge is not).
   that date), creates the customer
   (`legacy_source = 'groupon'`) and a `pending` booking (`source_channel = 'groupon'`,
   `legacy_reference = <voucher code>`, `total_cents = fee × passengers`, the fee as a
-  `tour_pax_breakdown` line). Stripe is stubbed.
+  `tour_pax_breakdown` line), then (when the business is Stripe-onboarded) creates a
+  Checkout Session and returns its URL; otherwise returns the manual-collection fallback.
+
+## Payments (Stripe)
+
+Supabase-native replication of the live Xano Stripe model, so we are ready to migrate off
+Xano (Xano itself is never written to). Model: **Stripe Connect with direct charges**. Each
+business is a connected account (`businesses.stripe_account_id`); a charge is created
+**on** that account with a platform `application_fee_amount` (Prime's cut). The business is
+merchant of record; Prime skims the fee. This matches how the existing (Xano-era) accounts
+were onboarded. Use Prime's PLATFORM secret key (env `STRIPE_SECRET_KEY`), the same account
+whose connected accounts back each business.
+
+### Tables
+- `stripe_transactions` — the payment ledger, one row per Stripe charge / payment_intent,
+  deduped on `stripe_id`. Columns include `business_id`, `connected_account_id`,
+  `charge_type` (`direct` | `destination`), `amount`/`application_fee`/`stripe_fee`/`net`/
+  `amount_refunded` (all cents), `status`, `dispute_status`, `source`, `booking_id` +
+  `booking_ref` (from `metadata.booking_id`), `receipt_url`, `stripe_created`, and the full
+  `raw` jsonb. Populated by the webhook from `charge.*` events; `net`/`stripe_fee` come from
+  the charge's balance transaction (a gap the Xano webhook left at 0).
+- `stripe_refunds` — refund ledger (`stripe_refund_id`, `transaction_id`, `business_id`,
+  `booking_id`, `amount`, `reason`, `status`, `created_by_staff_id`, `raw`). Foundation for
+  the refunds follow-up.
+- `stripe_events` — webhook idempotency + audit (`id` = Stripe `evt_...`, `type`, `account`,
+  `payload`, `received_at`, `processed_at`, `error`).
+
+### RLS
+`stripe_transactions` / `stripe_refunds`: SELECT for `owner` (all) and `business_manager`
+(own `business_id`); no INSERT/UPDATE/DELETE policies (the webhook + server actions write
+with the service role, which bypasses RLS). `stripe_events`: RLS on, no policies
+(service-role only).
+
+### Flow
+- **Connect onboarding** (`/admin/businesses/[id]`, owner): create the connected account,
+  hosted onboarding link, Express-dashboard login link, refresh status, an owner-only
+  "link existing `acct_...`" field (attaches already-onboarded businesses with no
+  re-onboarding, no Xano access). Server actions in `[id]/payments-actions.ts`; webhook
+  `account.updated` keeps the status flags in sync. The platform fee is a single global rate
+  (`STRIPE_PLATFORM_FEE_BPS`, default 25 bps = 0.25%), applied as the application fee on
+  every direct charge.
+- **Webhook** (`/api/stripe/webhook`, Next.js route, `nodejs` runtime): one endpoint for
+  both platform and Connect deliveries (two dashboard endpoints, two signing secrets:
+  `STRIPE_WEBHOOK_SECRET` + `STRIPE_WEBHOOK_SECRET_CONNECTED`). Uses the official
+  `constructEvent` verifier. Handles `checkout.session.completed` / `payment_intent.succeeded`
+  (flip booking to `confirmed`, set `paid_at` + `stripe_payment_intent_id`), `charge.*`
+  (upsert the ledger), `charge.dispute.*`, and `account.updated`.
+- **Booking link**: every charge carries `metadata.booking_id` + `metadata.source` (set on
+  both the session and `payment_intent_data` so the CHARGE carries it). The webhook resolves
+  `booking_id` and `business_id` (via `connected_account_id`) into the ledger row. `bookings`
+  gains `paid_at`; the existing `stripe_payment_intent_id` is set on payment.
+
+### Out of scope (follow-ups; schema already laid)
+Internal `/schedule` payments + send-a-payment-link, the refunds UI/action, the transactions
+dashboard, and Stripe Terminal (that belongs to the separate PrimeKiosk app).
 
 ## Access control (RLS)
 
