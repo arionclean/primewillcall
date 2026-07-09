@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { normalizeUsPhone } from "@/lib/sms/format";
+import { getMessageTemplates, renderTemplate } from "@/lib/sms/templates";
 import { getTwilioFromNumber, sendTwilioSms } from "@/lib/sms/twilio";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -209,6 +210,7 @@ export interface BookingConfirmationInput {
  * New-booking SMS flow, ported from the Xano "City tour campaign_v1" trigger
  * on bookings insert: an intro message the first time we ever text a number,
  * then the ticket/meeting-point link. Call this after creating a booking.
+ * Message wording comes from message_templates (editable in /admin/messaging).
  */
 export async function sendBookingConfirmationSms(
   input: BookingConfirmationInput,
@@ -232,29 +234,43 @@ export async function sendBookingConfirmationSms(
     console.error("Failed to count prior SMS messages:", error.message);
   }
 
+  const bookingLinkBase = process.env.BOOKING_LINK_BASE_URL ?? "https://bked.io/booking";
+  const templates = await getMessageTemplates([
+    "sms_booking_intro",
+    "sms_booking_confirmation",
+  ]);
+  const vars = {
+    first_name: input.firstName,
+    product_name: input.productName,
+    booking_link: `${bookingLinkBase}/${input.confirmationId}`,
+  };
+
   const linkFields = { businessId: input.businessId, bookingId: input.bookingId };
   const results: SendSmsResult[] = [];
 
-  if (!count) {
+  const intro = templates.sms_booking_intro;
+  if (!count && intro.isActive) {
     results.push(
       await sendSms({
         to,
-        body: `Hi ${input.firstName}, it's Jessi from ${input.productName}`,
+        body: renderTemplate(intro.body, vars),
         tag: "optIn",
         ...linkFields,
       }),
     );
   }
 
-  const bookingLinkBase = process.env.BOOKING_LINK_BASE_URL ?? "https://bked.io/booking";
-  results.push(
-    await sendSms({
-      to,
-      body: `Use this link to see your ticket and the meeting point information: ${bookingLinkBase}/${input.confirmationId} (Text STOP to unsubscribe).`,
-      tag: "bookingConfirmation",
-      ...linkFields,
-    }),
-  );
+  const confirmation = templates.sms_booking_confirmation;
+  if (confirmation.isActive) {
+    results.push(
+      await sendSms({
+        to,
+        body: renderTemplate(confirmation.body, vars),
+        tag: "bookingConfirmation",
+        ...linkFields,
+      }),
+    );
+  }
 
   return results;
 }

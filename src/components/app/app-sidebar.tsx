@@ -12,6 +12,7 @@ import {
   Compass,
   BarChart3,
   Inbox,
+  MessageCircle,
   MessageSquare,
   Tag,
   UserCog,
@@ -122,6 +123,13 @@ const SECTIONS: NavSection[] = [
         icon: Tag,
         roles: ["owner"],
         matchPrefix: "/admin/groupon",
+      },
+      {
+        href: "/admin/messaging",
+        label: "Messaging",
+        icon: MessageCircle,
+        roles: ["owner"],
+        matchPrefix: "/admin/messaging",
       },
       {
         href: "/admin/staff",
