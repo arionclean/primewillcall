@@ -12,6 +12,7 @@ import {
   Compass,
   BarChart3,
   Inbox,
+  MessageSquare,
   Tag,
   UserCog,
   type LucideIcon,
@@ -60,6 +61,13 @@ const SECTIONS: NavSection[] = [
         icon: Users,
         roles: ["owner", "business_manager"],
         matchPrefix: "/customers",
+      },
+      {
+        href: "/messages",
+        label: "Messages",
+        icon: MessageSquare,
+        roles: ["owner", "business_manager"],
+        matchPrefix: "/messages",
       },
       {
         href: "/schedule",
