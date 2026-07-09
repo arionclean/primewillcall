@@ -36,7 +36,9 @@ function fileExt(name: string, type: string): string {
 
 export type CreateBusinessState = {
   error?: string;
-  fieldErrors?: Partial<Record<"name" | "phone" | "logo", string>>;
+  fieldErrors?: Partial<
+    Record<"name" | "phone" | "contact_email" | "logo", string>
+  >;
 };
 
 export async function createBusinessAction(
@@ -47,12 +49,17 @@ export async function createBusinessAction(
 
   const name = String(formData.get("name") ?? "").trim();
   const phone = String(formData.get("phone") ?? "").trim() || null;
+  const contact_email =
+    String(formData.get("contact_email") ?? "").trim() || null;
   const logoEntry = formData.get("logo");
   const logoFile =
     logoEntry instanceof File && logoEntry.size > 0 ? logoEntry : null;
 
   const fieldErrors: CreateBusinessState["fieldErrors"] = {};
   if (!name) fieldErrors.name = "Name is required.";
+  if (contact_email && !/^\S+@\S+\.\S+$/.test(contact_email)) {
+    fieldErrors.contact_email = "Enter a valid email address.";
+  }
 
   if (logoFile) {
     if (!ALLOWED_LOGO_TYPES.includes(logoFile.type)) {
@@ -95,6 +102,7 @@ export async function createBusinessAction(
     name,
     slug,
     phone,
+    contact_email,
     logo_url,
     timezone: "America/New_York",
   });
@@ -107,6 +115,7 @@ export async function createBusinessAction(
         name,
         slug: altSlug,
         phone,
+        contact_email,
         logo_url,
         timezone: "America/New_York",
       });

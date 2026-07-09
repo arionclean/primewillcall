@@ -33,6 +33,7 @@ type EditBusinessFormProps = {
     id: string;
     name: string;
     phone: string | null;
+    contact_email: string | null;
     logo_url: string | null;
   };
 };
@@ -138,6 +139,21 @@ export function EditBusinessForm({ business }: EditBusinessFormProps) {
               id="phone"
               name="phone"
               defaultValue={business.phone ?? ""}
+            />
+          </Field>
+
+          <Field
+            label="Support email"
+            htmlFor="contact_email"
+            hint="Shown to guests on their booking page."
+            error={state.fieldErrors?.contact_email}
+          >
+            <Input
+              id="contact_email"
+              name="contact_email"
+              type="email"
+              defaultValue={business.contact_email ?? ""}
+              placeholder="e.g. reservations@yourbusiness.com"
             />
           </Field>
 

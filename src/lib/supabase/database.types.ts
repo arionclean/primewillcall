@@ -73,6 +73,7 @@ export type Database = {
           currency: string
           customer_id: string
           ends_at: string
+          groupon_redeemed_at: string | null
           id: string
           legacy_id: string | null
           legacy_reference: string | null
@@ -80,6 +81,7 @@ export type Database = {
           pax_adult: number
           pax_child: number
           pax_infant: number
+          public_token: string
           source_channel: string | null
           starts_at: string
           status: Database["public"]["Enums"]["booking_status"]
@@ -98,6 +100,7 @@ export type Database = {
           currency?: string
           customer_id: string
           ends_at: string
+          groupon_redeemed_at?: string | null
           id?: string
           legacy_id?: string | null
           legacy_reference?: string | null
@@ -105,6 +108,7 @@ export type Database = {
           pax_adult?: number
           pax_child?: number
           pax_infant?: number
+          public_token?: string
           source_channel?: string | null
           starts_at: string
           status?: Database["public"]["Enums"]["booking_status"]
@@ -123,6 +127,7 @@ export type Database = {
           currency?: string
           customer_id?: string
           ends_at?: string
+          groupon_redeemed_at?: string | null
           id?: string
           legacy_id?: string | null
           legacy_reference?: string | null
@@ -130,6 +135,7 @@ export type Database = {
           pax_adult?: number
           pax_child?: number
           pax_infant?: number
+          public_token?: string
           source_channel?: string | null
           starts_at?: string
           status?: Database["public"]["Enums"]["booking_status"]
@@ -248,6 +254,7 @@ export type Database = {
       businesses: {
         Row: {
           address: string | null
+          contact_email: string | null
           created_at: string
           id: string
           legacy_company_id: string | null
@@ -260,6 +267,7 @@ export type Database = {
         }
         Insert: {
           address?: string | null
+          contact_email?: string | null
           created_at?: string
           id?: string
           legacy_company_id?: string | null
@@ -272,6 +280,7 @@ export type Database = {
         }
         Update: {
           address?: string | null
+          contact_email?: string | null
           created_at?: string
           id?: string
           legacy_company_id?: string | null
@@ -808,6 +817,7 @@ export type Database = {
         }[]
       }
       app_norm: { Args: { s: string }; Returns: string }
+      generate_booking_token: { Args: never; Returns: string }
       current_staff: {
         Args: never
         Returns: {

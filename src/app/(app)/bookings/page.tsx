@@ -57,6 +57,8 @@ export default async function BookingsPage({
       business_tour_id,
       customer_id,
       checked_in_at,
+      source_channel,
+      groupon_redeemed_at,
       pax_adult,
       pax_child,
       pax_infant,

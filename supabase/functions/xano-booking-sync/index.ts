@@ -289,6 +289,13 @@ async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
 
   const status = STATUS_MAP[(clean(row.status) ?? "").toLowerCase()] ?? "confirmed";
 
+  // Xano's bookingConfirmation_id is the token in the booking link the guest was
+  // emailed (bked.io/booking/<token>). Carrying it into public_token keeps those
+  // links working on this app's /booking page after cutover. When absent, the
+  // column's default generates a token on insert (and an update leaves the
+  // existing one untouched, since the key is omitted from the payload).
+  const confirmationToken = clean(row.bookingConfirmation_id);
+
   const payload = {
     business_id: rec.business_id,
     business_tour_id: rec.business_tour_id,
@@ -306,6 +313,7 @@ async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
     legacy_id: legacyId,
     legacy_reference: clean(row.booking_reference),
     source_channel: clean(row.booking_channel),
+    ...(confirmationToken ? { public_token: confirmationToken } : {}),
   };
 
   const { error } = await sb
