@@ -188,10 +188,13 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   `gp-voucher-vision` edge function (port of Xano vision_v3: Google OCR -> Groq fallback
   -> deterministic alias match -> Groq extraction); its keys (`GOOGLE_API_KEY`,
   `GROQ_API_KEY`, optional `OPENAI_API_KEY`) are Supabase function secrets. The checkout
-  step is **stubbed** pending the Stripe phase. The owner redeems each voucher on
-  Groupon's own platform, then marks it here with the owner-only "Redeem" / "Redeemed"
-  toggle on Groupon rows in the bookings list (`bookings.groupon_redeemed_at`). See
-  [`docs/DATABASE.md`](docs/DATABASE.md) "Groupon convenience fee".
+  step now creates a real Stripe Checkout Session (direct charge on the business's
+  connected account + platform fee), with a graceful manual-collection fallback when the
+  business is not yet Stripe-onboarded. The owner still marks each Groupon voucher redeemed
+  (owner-only "Redeem" / "Redeemed" toggle on Groupon rows in the bookings list,
+  `bookings.groupon_redeemed_at`) after redeeming it on Groupon's own platform. See the
+  Stripe entry below and [`docs/DATABASE.md`](docs/DATABASE.md) "Groupon convenience fee" +
+  "Payments (Stripe)".
 - `/availability` (owner + business manager) opens/closes booking times per day via
   `tour_slot_closures`; `/api/gp/slots` and `/api/gp/book` respect closures. The
   internal `/schedule` booking form does NOT block closed times (staff can override);
@@ -223,5 +226,20 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   [`docs/DATABASE.md`](docs/DATABASE.md).
 - `kiosks` / `kiosk_tours` tables still exist in the DB but are unused by the app
   (legacy from the original schema). Slated for removal once nothing references them.
-- Stripe rework is the final phase. `bookings` already has `stripe_payment_intent_id`
-  and `customers` has `stripe_customer_id` as placeholders; payments are not wired yet.
+- **Payments (Stripe)** are partially built (Supabase-native replication of the live Xano
+  Connect model; Xano is never written to). Model: Stripe Connect **direct charges** on each
+  business's connected account with a platform `application_fee` (Prime's cut). Built:
+  per-business Connect Express onboarding on `/admin/businesses/[id]` (create account,
+  onboarding link, Express dashboard login, refresh status, owner-only "link existing
+  `acct_...`"); a single global platform fee (`STRIPE_PLATFORM_FEE_BPS`, default 25 bps =
+  0.25%, the Connect fee passed through); a single webhook at `/api/stripe/webhook` (official
+  signature verify, `stripe_events` idempotency, handles checkout/payment_intent/charge/
+  dispute/`account.updated`); the ledger tables `stripe_transactions` / `stripe_refunds` /
+  `stripe_events`; and the public `/gp` Groupon checkout now creates a real Checkout Session
+  (with a graceful manual-collection fallback when a business is not yet onboarded). Shared
+  client + fee helpers in `src/lib/stripe/server.ts`. Requires env `STRIPE_SECRET_KEY`
+  (Prime's PLATFORM key), `STRIPE_WEBHOOK_SECRET`, `STRIPE_WEBHOOK_SECRET_CONNECTED`,
+  `STRIPE_PLATFORM_FEE_BPS`, `NEXT_PUBLIC_APP_URL`. See `docs/DATABASE.md` "Payments (Stripe)".
+  **Still to do**: internal `/schedule` payments + send-a-payment-link, refunds UI/action,
+  the transactions dashboard, and Stripe Terminal (the PrimeKiosk app). `customers` still
+  has `stripe_customer_id` as a placeholder for saved-customer flows.

@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
 
+import {
+  STRIPE_META,
+  appBaseUrl,
+  computeApplicationFeeCents,
+  getStripeClient,
+} from "@/lib/stripe/server";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 
 /**
@@ -93,7 +99,7 @@ export async function POST(req: Request) {
   // Authoritative product + fee (never trust the client's fee).
   const { data: bt } = await admin
     .from("business_tours")
-    .select("id, business_id, tour_id, is_active, groupon_fee_cents")
+    .select("id, name, business_id, tour_id, is_active, groupon_fee_cents")
     .eq("id", businessTourId)
     .maybeSingle();
   if (!bt || !bt.is_active || bt.groupon_fee_cents === null) {
@@ -201,8 +207,82 @@ export async function POST(req: Request) {
     );
   }
 
-  // Stripe is the final migration phase. The pending booking is created; the
-  // charge is not wired yet, so we return a stub instead of a checkout URL.
+  // Charge the convenience fee via a Stripe Checkout Session created DIRECTLY on
+  // the business's connected account, with a platform application_fee (Prime's
+  // cut). The booking stays `pending` until the webhook (checkout.session.completed
+  // / payment_intent.succeeded) flips it to `confirmed` and records the payment.
+  //
+  // If Stripe is not configured or this business is not yet onboarded / cannot
+  // accept charges, we fall back to the pre-Stripe behavior: the pending booking
+  // is held and staff collect the fee manually. This keeps /gp working during the
+  // rollout.
+  const stripe = getStripeClient();
+  const base = appBaseUrl();
+  let checkoutUrl: string | null = null;
+
+  if (stripe && base) {
+    const { data: biz } = await admin
+      .from("businesses")
+      .select("stripe_account_id, stripe_charges_enabled")
+      .eq("id", bt.business_id)
+      .maybeSingle();
+
+    if (biz?.stripe_account_id && biz.stripe_charges_enabled) {
+      const applicationFee = computeApplicationFeeCents(totalCents);
+      const metadata = {
+        [STRIPE_META.bookingId]: booking.id,
+        [STRIPE_META.source]: "groupon",
+        [STRIPE_META.businessId]: bt.business_id,
+      };
+      try {
+        const session = await stripe.checkout.sessions.create(
+          {
+            mode: "payment",
+            line_items: [
+              {
+                price_data: {
+                  currency: "usd",
+                  product_data: {
+                    name: `Groupon convenience fee (${bt.name})`,
+                  },
+                  unit_amount: feeCents,
+                },
+                quantity: passengers,
+              },
+            ],
+            payment_intent_data: {
+              // Prime's cut. Omit when zero (Stripe rejects a 0 application fee).
+              ...(applicationFee > 0
+                ? { application_fee_amount: applicationFee }
+                : {}),
+              metadata,
+            },
+            metadata,
+            success_url: `${base}/gp/success?session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${base}/gp?checkout=cancelled`,
+          },
+          { stripeAccount: biz.stripe_account_id },
+        );
+        checkoutUrl = session.url;
+      } catch {
+        // Fall through to the manual-collection fallback below.
+        checkoutUrl = null;
+      }
+    }
+  }
+
+  if (checkoutUrl) {
+    return NextResponse.json({
+      ok: true,
+      bookingId: booking.id,
+      feeCents,
+      passengers,
+      totalCents,
+      payment: { status: "pending", checkoutUrl },
+    });
+  }
+
+  // Fallback: booking held as pending; fee collected manually (pre-Stripe UX).
   return NextResponse.json({
     ok: true,
     bookingId: booking.id,

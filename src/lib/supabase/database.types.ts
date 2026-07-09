@@ -74,13 +74,16 @@ export type Database = {
           customer_id: string
           ends_at: string
           groupon_redeemed_at: string | null
+          groupon_voucher_urls: string[]
           id: string
           legacy_id: string | null
           legacy_reference: string | null
           notes: string | null
+          paid_at: string | null
           pax_adult: number
           pax_child: number
           pax_infant: number
+          peek: boolean
           public_token: string
           source_channel: string | null
           starts_at: string
@@ -101,13 +104,16 @@ export type Database = {
           customer_id: string
           ends_at: string
           groupon_redeemed_at?: string | null
+          groupon_voucher_urls?: string[]
           id?: string
           legacy_id?: string | null
           legacy_reference?: string | null
           notes?: string | null
+          paid_at?: string | null
           pax_adult?: number
           pax_child?: number
           pax_infant?: number
+          peek?: boolean
           public_token?: string
           source_channel?: string | null
           starts_at: string
@@ -128,13 +134,16 @@ export type Database = {
           customer_id?: string
           ends_at?: string
           groupon_redeemed_at?: string | null
+          groupon_voucher_urls?: string[]
           id?: string
           legacy_id?: string | null
           legacy_reference?: string | null
           notes?: string | null
+          paid_at?: string | null
           pax_adult?: number
           pax_child?: number
           pax_infant?: number
+          peek?: boolean
           public_token?: string
           source_channel?: string | null
           starts_at?: string
@@ -262,8 +271,15 @@ export type Database = {
           name: string
           phone: string | null
           slug: string
+          stripe_account_id: string | null
+          stripe_account_synced_at: string | null
+          stripe_charges_enabled: boolean
+          stripe_details_submitted: boolean
+          stripe_payouts_enabled: boolean
+          stripe_requirements_due: number
           timezone: string
           updated_at: string
+          whatsapp_number: string | null
         }
         Insert: {
           address?: string | null
@@ -275,8 +291,15 @@ export type Database = {
           name: string
           phone?: string | null
           slug: string
+          stripe_account_id?: string | null
+          stripe_account_synced_at?: string | null
+          stripe_charges_enabled?: boolean
+          stripe_details_submitted?: boolean
+          stripe_payouts_enabled?: boolean
+          stripe_requirements_due?: number
           timezone?: string
           updated_at?: string
+          whatsapp_number?: string | null
         }
         Update: {
           address?: string | null
@@ -288,8 +311,15 @@ export type Database = {
           name?: string
           phone?: string | null
           slug?: string
+          stripe_account_id?: string | null
+          stripe_account_synced_at?: string | null
+          stripe_charges_enabled?: boolean
+          stripe_details_submitted?: boolean
+          stripe_payouts_enabled?: boolean
+          stripe_requirements_due?: number
           timezone?: string
           updated_at?: string
+          whatsapp_number?: string | null
         }
         Relationships: []
       }
@@ -489,6 +519,163 @@ export type Database = {
         }
         Relationships: []
       }
+      messaging_rules: {
+        Row: {
+          body: string | null
+          business_tour_id: string | null
+          channel: string
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+          only_first_contact: boolean
+          trigger_event: string
+          updated_at: string
+          whatsapp_content_sid: string | null
+          whatsapp_variables: Json | null
+        }
+        Insert: {
+          body?: string | null
+          business_tour_id?: string | null
+          channel: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          only_first_contact?: boolean
+          trigger_event?: string
+          updated_at?: string
+          whatsapp_content_sid?: string | null
+          whatsapp_variables?: Json | null
+        }
+        Update: {
+          body?: string | null
+          business_tour_id?: string | null
+          channel?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          only_first_contact?: boolean
+          trigger_event?: string
+          updated_at?: string
+          whatsapp_content_sid?: string | null
+          whatsapp_variables?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "messaging_rules_business_tour_id_fkey"
+            columns: ["business_tour_id"]
+            isOneToOne: false
+            referencedRelation: "business_tours"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sms_messages: {
+        Row: {
+          body: string
+          booking_id: string | null
+          business_id: string | null
+          created_at: string
+          customer_id: string | null
+          direction: Database["public"]["Enums"]["sms_direction"]
+          error: string | null
+          from_phone: string
+          id: string
+          sent_by_staff_id: string | null
+          status: string | null
+          tag: string | null
+          to_phone: string
+          twilio_sid: string | null
+        }
+        Insert: {
+          body: string
+          booking_id?: string | null
+          business_id?: string | null
+          created_at?: string
+          customer_id?: string | null
+          direction: Database["public"]["Enums"]["sms_direction"]
+          error?: string | null
+          from_phone: string
+          id?: string
+          sent_by_staff_id?: string | null
+          status?: string | null
+          tag?: string | null
+          to_phone: string
+          twilio_sid?: string | null
+        }
+        Update: {
+          body?: string
+          booking_id?: string | null
+          business_id?: string | null
+          created_at?: string
+          customer_id?: string | null
+          direction?: Database["public"]["Enums"]["sms_direction"]
+          error?: string | null
+          from_phone?: string
+          id?: string
+          sent_by_staff_id?: string | null
+          status?: string | null
+          tag?: string | null
+          to_phone?: string
+          twilio_sid?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sms_messages_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_messages_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_messages_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_messages_sent_by_staff_id_fkey"
+            columns: ["sent_by_staff_id"]
+            isOneToOne: false
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sms_opt_outs: {
+        Row: {
+          created_at: string
+          opted_out: boolean
+          phone_number: string
+          reason: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          opted_out?: boolean
+          phone_number: string
+          reason?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          opted_out?: boolean
+          phone_number?: string
+          reason?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       staff: {
         Row: {
           business_id: string | null
@@ -565,6 +752,221 @@ export type Database = {
             columns: ["tour_id"]
             isOneToOne: false
             referencedRelation: "tours"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stripe_events: {
+        Row: {
+          account: string | null
+          error: string | null
+          id: string
+          livemode: boolean | null
+          payload: Json
+          processed_at: string | null
+          received_at: string
+          type: string
+        }
+        Insert: {
+          account?: string | null
+          error?: string | null
+          id: string
+          livemode?: boolean | null
+          payload: Json
+          processed_at?: string | null
+          received_at?: string
+          type: string
+        }
+        Update: {
+          account?: string | null
+          error?: string | null
+          id?: string
+          livemode?: boolean | null
+          payload?: Json
+          processed_at?: string | null
+          received_at?: string
+          type?: string
+        }
+        Relationships: []
+      }
+      stripe_refunds: {
+        Row: {
+          amount: number
+          booking_id: string | null
+          business_id: string | null
+          created_at: string
+          created_by_staff_id: string | null
+          currency: string
+          id: string
+          raw: Json | null
+          reason: string | null
+          status: string | null
+          stripe_refund_id: string
+          transaction_id: string | null
+        }
+        Insert: {
+          amount?: number
+          booking_id?: string | null
+          business_id?: string | null
+          created_at?: string
+          created_by_staff_id?: string | null
+          currency?: string
+          id?: string
+          raw?: Json | null
+          reason?: string | null
+          status?: string | null
+          stripe_refund_id: string
+          transaction_id?: string | null
+        }
+        Update: {
+          amount?: number
+          booking_id?: string | null
+          business_id?: string | null
+          created_at?: string
+          created_by_staff_id?: string | null
+          currency?: string
+          id?: string
+          raw?: Json | null
+          reason?: string | null
+          status?: string | null
+          stripe_refund_id?: string
+          transaction_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stripe_refunds_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stripe_refunds_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stripe_refunds_created_by_staff_id_fkey"
+            columns: ["created_by_staff_id"]
+            isOneToOne: false
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stripe_refunds_transaction_id_fkey"
+            columns: ["transaction_id"]
+            isOneToOne: false
+            referencedRelation: "stripe_transactions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stripe_transactions: {
+        Row: {
+          amount: number
+          amount_refunded: number
+          application_fee: number
+          booking_id: string | null
+          booking_ref: string | null
+          business_id: string | null
+          card_brand: string | null
+          card_country: string | null
+          charge_type: string | null
+          connected_account_id: string | null
+          created_at: string
+          currency: string
+          customer_email: string | null
+          descriptor: string | null
+          dispute_status: string | null
+          id: string
+          livemode: boolean | null
+          net: number
+          object_type: string | null
+          on_behalf_of: string | null
+          raw: Json
+          receipt_url: string | null
+          source: string | null
+          status: string | null
+          stripe_created: string | null
+          stripe_fee: number
+          stripe_id: string
+          updated_at: string
+        }
+        Insert: {
+          amount?: number
+          amount_refunded?: number
+          application_fee?: number
+          booking_id?: string | null
+          booking_ref?: string | null
+          business_id?: string | null
+          card_brand?: string | null
+          card_country?: string | null
+          charge_type?: string | null
+          connected_account_id?: string | null
+          created_at?: string
+          currency?: string
+          customer_email?: string | null
+          descriptor?: string | null
+          dispute_status?: string | null
+          id?: string
+          livemode?: boolean | null
+          net?: number
+          object_type?: string | null
+          on_behalf_of?: string | null
+          raw: Json
+          receipt_url?: string | null
+          source?: string | null
+          status?: string | null
+          stripe_created?: string | null
+          stripe_fee?: number
+          stripe_id: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          amount_refunded?: number
+          application_fee?: number
+          booking_id?: string | null
+          booking_ref?: string | null
+          business_id?: string | null
+          card_brand?: string | null
+          card_country?: string | null
+          charge_type?: string | null
+          connected_account_id?: string | null
+          created_at?: string
+          currency?: string
+          customer_email?: string | null
+          descriptor?: string | null
+          dispute_status?: string | null
+          id?: string
+          livemode?: boolean | null
+          net?: number
+          object_type?: string | null
+          on_behalf_of?: string | null
+          raw?: Json
+          receipt_url?: string | null
+          source?: string | null
+          status?: string | null
+          stripe_created?: string | null
+          stripe_fee?: number
+          stripe_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stripe_transactions_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stripe_transactions_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
             referencedColumns: ["id"]
           },
         ]
@@ -788,6 +1190,80 @@ export type Database = {
         }
         Relationships: []
       }
+      whatsapp_messages: {
+        Row: {
+          body: string
+          booking_id: string | null
+          business_id: string
+          created_at: string
+          customer_id: string | null
+          error: string | null
+          from_phone: string
+          id: string
+          sent_by_staff_id: string | null
+          status: string
+          to_phone: string
+          twilio_sid: string | null
+        }
+        Insert: {
+          body: string
+          booking_id?: string | null
+          business_id: string
+          created_at?: string
+          customer_id?: string | null
+          error?: string | null
+          from_phone: string
+          id?: string
+          sent_by_staff_id?: string | null
+          status: string
+          to_phone: string
+          twilio_sid?: string | null
+        }
+        Update: {
+          body?: string
+          booking_id?: string | null
+          business_id?: string
+          created_at?: string
+          customer_id?: string | null
+          error?: string | null
+          from_phone?: string
+          id?: string
+          sent_by_staff_id?: string | null
+          status?: string
+          to_phone?: string
+          twilio_sid?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_messages_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_messages_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_messages_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_messages_sent_by_staff_id_fkey"
+            columns: ["sent_by_staff_id"]
+            isOneToOne: false
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -817,7 +1293,6 @@ export type Database = {
         }[]
       }
       app_norm: { Args: { s: string }; Returns: string }
-      generate_booking_token: { Args: never; Returns: string }
       current_staff: {
         Args: never
         Returns: {
@@ -834,6 +1309,7 @@ export type Database = {
           guests: number
         }[]
       }
+      generate_booking_token: { Args: never; Returns: string }
       groupon_candidates: {
         Args: never
         Returns: {
@@ -914,6 +1390,16 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      sms_conversations: {
+        Args: never
+        Returns: {
+          counterpart: string
+          last_at: string
+          last_body: string
+          last_direction: Database["public"]["Enums"]["sms_direction"]
+          message_count: number
+        }[]
+      }
     }
     Enums: {
       booking_status:
@@ -923,6 +1409,7 @@ export type Database = {
         | "completed"
         | "cancelled"
       kiosk_status: "active" | "revoked"
+      sms_direction: "inbound" | "outbound"
       staff_role: "owner" | "business_manager" | "check_in"
     }
     CompositeTypes: {
@@ -1059,6 +1546,7 @@ export const Constants = {
         "cancelled",
       ],
       kiosk_status: ["active", "revoked"],
+      sms_direction: ["inbound", "outbound"],
       staff_role: ["owner", "business_manager", "check_in"],
     },
   },
