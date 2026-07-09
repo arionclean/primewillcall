@@ -94,6 +94,20 @@ export function NewBusinessForm() {
           </Field>
 
           <Field
+            label="Support email"
+            htmlFor="contact_email"
+            hint="Optional. Shown to guests on their booking page."
+            error={state.fieldErrors?.contact_email}
+          >
+            <Input
+              id="contact_email"
+              name="contact_email"
+              type="email"
+              placeholder="e.g. reservations@yourbusiness.com"
+            />
+          </Field>
+
+          <Field
             label="Logo"
             htmlFor="logo"
             hint="PNG, JPG, WebP, or SVG. Up to 2 MB."

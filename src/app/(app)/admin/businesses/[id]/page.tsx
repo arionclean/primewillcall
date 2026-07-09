@@ -16,7 +16,7 @@ export default async function EditBusinessPage({
   const supabase = await getSupabaseServerClient();
   const { data: business } = await supabase
     .from("businesses")
-    .select("id, name, phone, logo_url")
+    .select("id, name, phone, contact_email, logo_url")
     .eq("id", id)
     .maybeSingle();
 

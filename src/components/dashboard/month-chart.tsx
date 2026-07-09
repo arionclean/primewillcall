@@ -12,6 +12,13 @@ function monthHref(year: number, month: number): string {
   return `/dashboard?month=${year}-${String(month).padStart(2, "0")}`;
 }
 
+/** Weekday name for a calendar date, e.g. "Sat". */
+function weekdayShort(year: number, month: number, day: number): string {
+  return new Date(year, month - 1, day).toLocaleDateString("en-US", {
+    weekday: "short",
+  });
+}
+
 /**
  * Guests-per-day for a month, with month navigation and a compare-to-last-month
  * delta. Pure data (people), no money. Each bar shows total guests, with the
@@ -136,7 +143,8 @@ export function MonthChart({ data }: { data: MonthlyGuests }) {
                   }}
                 >
                   <div className="mb-1.5 font-semibold">
-                    {monthShort} {active.day}
+                    {weekdayShort(year, month, active.day)}, {monthShort}{" "}
+                    {active.day}
                   </div>
                   <div className="flex items-center justify-between gap-5">
                     <span className="inline-flex items-center gap-1.5 text-muted-foreground">

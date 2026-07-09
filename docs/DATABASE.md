@@ -30,8 +30,11 @@ businesses ─┐
 ## Tables
 
 ### businesses
-`id uuid pk, name, slug, address?, phone?, timezone, logo_url?, created_at, updated_at`
+`id uuid pk, name, slug, address?, phone?, contact_email?, timezone, logo_url?,
+created_at, updated_at`
 One row per business Prime operates. Logos live in the `business-logos` storage bucket.
+`phone` and `contact_email` are the support contacts guests see on the public
+booking page (`/booking/<token>`).
 
 ### staff
 `id uuid pk, user_id? (-> auth.users), business_id? (-> businesses), role enum,
@@ -73,13 +76,23 @@ stripe_customer_id?, notes?, created_at, updated_at`
 `id uuid pk, business_id, business_tour_id, customer_id, starts_at, ends_at,
 status enum, total_cents, currency, pax_adult, pax_child, pax_infant,
 tour_pax_breakdown jsonb, notes?, stripe_payment_intent_id?, created_by_staff_id?,
-checked_in_at?, checked_in_by_staff_id?, created_at, updated_at`
+checked_in_at?, checked_in_by_staff_id?, source_channel?, groupon_redeemed_at?,
+created_at, updated_at`
 `status` is the payment lifecycle the app exposes: `confirmed` (normal, shown with
 no tag), `pending` (shown as "Waiting for payment"), and `cancelled`. Bookings created
 from `/schedule` start as `confirmed`. The enum (`booking_status`) also contains the
 legacy values `checked_in` and `completed`; the app no longer writes them. Check-in is
 tracked independently of status via `checked_in_at` (set/cleared by the check-in
 toggle and the check-in API), so a guest can be checked in regardless of payment status.
+
+`public_token` (UNIQUE, NOT NULL, default `generate_booking_token()`) identifies a
+booking on the public booking page (`/booking/<token>`, no auth). Native bookings
+get a random 10-char token from the column default. Xano-synced bookings carry the
+9-char token Xano already emailed to the guest (`bookingConfirmation_id`, the slug
+in `bked.io/booking/<token>` links), written by `xano-booking-sync`, so those links
+keep working here after cutover. The differing lengths mean the two families can
+never collide. No anon RLS: the page reads server-side with the service role, only
+ever by exact token (the /gp pattern).
 
 `legacy_id` (UNIQUE) is the sync dedup key for imported / synced bookings; native
 in-app bookings leave it null. The `xano-booking-sync` function derives it as
@@ -176,6 +189,14 @@ currently stubbed (the booking is created, the charge is not).
   (`legacy_source = 'groupon'`) and a `pending` booking (`source_channel = 'groupon'`,
   `legacy_reference = <voucher code>`, `total_cents = fee × passengers`, the fee as a
   `tour_pax_breakdown` line). Stripe is stubbed.
+
+### Marking a voucher redeemed
+The owner still redeems each voucher on Groupon's own platform (the photo/code the
+guest uploaded is kept in the booking's `notes`). Once done, they record it here via
+`bookings.groupon_redeemed_at` (nullable timestamp, mirrors `checked_in_at`): the
+bookings list shows an owner-only "Redeem" / "Redeemed" toggle on `source_channel =
+'groupon'` rows. Independent of check-in and payment status; no RLS change (owner
+already has full booking access).
 
 ## Access control (RLS)
 

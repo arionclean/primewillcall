@@ -23,6 +23,8 @@ import {
   Ghost,
   PencilLine,
   StickyNote,
+  Ticket,
+  TicketCheck,
   X,
 } from "lucide-react";
 
@@ -67,6 +69,8 @@ const BOOKING_SELECT = `
   business_tour_id,
   customer_id,
   checked_in_at,
+  source_channel,
+  groupon_redeemed_at,
   pax_adult,
   pax_child,
   pax_infant,
@@ -142,6 +146,8 @@ export type BookingRow = {
   business_tour_id: string;
   customer_id: string | null;
   checked_in_at: string | null;
+  source_channel: string | null;
+  groupon_redeemed_at: string | null;
   pax_adult: number;
   pax_child: number;
   pax_infant: number;
@@ -817,6 +823,46 @@ export function BookingsList({
     [],
   );
 
+  // ── Groupon "redeemed" toggle (owner only, optimistic) ─────────────────────
+
+  const handleToggleRedeem = useCallback(
+    async (booking: BookingRow) => {
+      // Records that the owner has redeemed this Groupon voucher on Groupon's
+      // platform. Independent of check-in and payment status: it only
+      // stamps/clears groupon_redeemed_at.
+      const nextRedeemedAt =
+        booking.groupon_redeemed_at == null ? new Date().toISOString() : null;
+      const prevRedeemedAt = booking.groupon_redeemed_at;
+
+      setBusyId(booking.id);
+      setErrorMsg(null);
+      setBookings((current) =>
+        current.map((b) =>
+          b.id === booking.id ? { ...b, groupon_redeemed_at: nextRedeemedAt } : b,
+        ),
+      );
+
+      const supabase = getSupabaseBrowserClient();
+      const { error } = await supabase
+        .from("bookings")
+        .update({ groupon_redeemed_at: nextRedeemedAt })
+        .eq("id", booking.id);
+
+      if (error) {
+        setBookings((current) =>
+          current.map((b) =>
+            b.id === booking.id
+              ? { ...b, groupon_redeemed_at: prevRedeemedAt }
+              : b,
+          ),
+        );
+        setErrorMsg(`Unable to update redemption: ${error.message}`);
+      }
+      setBusyId(null);
+    },
+    [],
+  );
+
   // ── Note popover placement (ported) ────────────────────────────────────────
 
   const updateNotePlacement = useCallback((trigger: HTMLElement | null) => {
@@ -994,6 +1040,7 @@ export function BookingsList({
                       highlighted={highlightedBookingId === booking.id}
                       onCopyField={handleCopyField}
                       onToggleCheckIn={() => void handleToggleCheckIn(booking)}
+                      onToggleRedeem={() => void handleToggleRedeem(booking)}
                       onEdit={() => setEditBooking(booking)}
                       noteOpen={openNoteBookingId === booking.id}
                       noteLayout={
@@ -1150,6 +1197,7 @@ function BookingRowItem({
   highlighted,
   onCopyField,
   onToggleCheckIn,
+  onToggleRedeem,
   onEdit,
   businessName,
   color,
@@ -1167,6 +1215,7 @@ function BookingRowItem({
   highlighted: boolean;
   onCopyField: (key: string, value: string, errorMessage: string) => void;
   onToggleCheckIn: () => void;
+  onToggleRedeem: () => void;
   onEdit: () => void;
   businessName: string;
   color: string | null;
@@ -1197,6 +1246,10 @@ function BookingRowItem({
 
   const cancelled = booking.status === "cancelled";
   const checkedIn = booking.checked_in_at != null;
+  // Groupon vouchers are redeemed by the owner on Groupon's platform, then
+  // marked here. The toggle is owner-only (they own the Groupon relationship).
+  const canRedeem = role === "owner" && booking.source_channel === "groupon";
+  const redeemed = booking.groupon_redeemed_at != null;
   const badge = statusBadge(booking.status);
   const paxBreakdown = describePax(booking);
   const note = booking.notes?.trim() ?? "";
@@ -1246,6 +1299,13 @@ function BookingRowItem({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2 pt-0.5">
+          {canRedeem ? (
+            <GrouponRedeemButton
+              redeemed={redeemed}
+              busy={busy}
+              onToggle={onToggleRedeem}
+            />
+          ) : null}
           <input
             type="checkbox"
             checked={checkedIn}
@@ -1378,6 +1438,13 @@ function BookingRowItem({
 
       {/* Actions */}
       <div className="flex items-center justify-end gap-2">
+        {canRedeem ? (
+          <GrouponRedeemButton
+            redeemed={redeemed}
+            busy={busy}
+            onToggle={onToggleRedeem}
+          />
+        ) : null}
         {note ? (
           <div
             ref={openNoteContainerRef}
@@ -1458,6 +1525,48 @@ function CopiedBubble() {
         />
       </span>
     </div>
+  );
+}
+
+/**
+ * Owner-only "mark as redeemed" toggle for Groupon bookings. Amber "Redeem" until
+ * the owner has redeemed the voucher on Groupon, then a green "Redeemed" that can
+ * be clicked to undo. Toggles `bookings.groupon_redeemed_at`.
+ */
+function GrouponRedeemButton({
+  redeemed,
+  busy,
+  onToggle,
+}: {
+  redeemed: boolean;
+  busy: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      disabled={busy}
+      aria-pressed={redeemed}
+      title={
+        redeemed
+          ? "Redeemed on Groupon. Click to undo."
+          : "Mark this Groupon voucher as redeemed."
+      }
+      className={cn(
+        "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50",
+        redeemed
+          ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+          : "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100",
+      )}
+    >
+      {redeemed ? (
+        <TicketCheck className="size-4" />
+      ) : (
+        <Ticket className="size-4" />
+      )}
+      <span>{redeemed ? "Redeemed" : "Redeem"}</span>
+    </button>
   );
 }
 

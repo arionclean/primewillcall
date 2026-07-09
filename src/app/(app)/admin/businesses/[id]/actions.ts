@@ -42,7 +42,9 @@ function pathFromPublicUrl(url: string | null, bucket: string): string | null {
 
 export type UpdateBusinessState = {
   error?: string;
-  fieldErrors?: Partial<Record<"name" | "phone" | "logo", string>>;
+  fieldErrors?: Partial<
+    Record<"name" | "phone" | "contact_email" | "logo", string>
+  >;
   saved?: true;
 };
 
@@ -55,6 +57,8 @@ export async function updateBusinessAction(
 
   const name = String(formData.get("name") ?? "").trim();
   const phone = String(formData.get("phone") ?? "").trim() || null;
+  const contact_email =
+    String(formData.get("contact_email") ?? "").trim() || null;
   const removeLogo = formData.get("remove_logo") === "1";
   const logoEntry = formData.get("logo");
   const logoFile =
@@ -62,6 +66,9 @@ export async function updateBusinessAction(
 
   const fieldErrors: UpdateBusinessState["fieldErrors"] = {};
   if (!name) fieldErrors.name = "Name is required.";
+  if (contact_email && !/^\S+@\S+\.\S+$/.test(contact_email)) {
+    fieldErrors.contact_email = "Enter a valid email address.";
+  }
   if (logoFile) {
     if (!ALLOWED_LOGO_TYPES.includes(logoFile.type)) {
       fieldErrors.logo = "Logo must be PNG, JPG, WebP, or SVG.";
@@ -101,7 +108,7 @@ export async function updateBusinessAction(
     logo_url = null;
   }
 
-  const patch: BusinessUpdate = { name, phone };
+  const patch: BusinessUpdate = { name, phone, contact_email };
   if (logo_url !== undefined) patch.logo_url = logo_url;
 
   const { error: updateErr } = await supabase

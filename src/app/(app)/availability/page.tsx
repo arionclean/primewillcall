@@ -71,22 +71,31 @@ export default async function AvailabilityPage({
   let tours: TourDay[] = [];
 
   if (staff.role === "owner") {
-    const [{ data: rows }, { data: closures }] = await Promise.all([
-      supabase
-        .from("tours")
-        .select(
-          "id, name, tour_timeslots(start_time, duration_minutes, sort_order, is_active)",
-        )
-        .eq("is_active", true)
-        .order("name"),
-      closuresPromise,
-    ]);
+    const [{ data: rows }, { data: gpRows }, { data: closures }] =
+      await Promise.all([
+        supabase
+          .from("tours")
+          .select(
+            "id, name, tour_timeslots(start_time, duration_minutes, sort_order, is_active)",
+          )
+          .eq("is_active", true)
+          .order("name"),
+        // Only tours a business actually offers on Groupon (a fee is set) belong
+        // here, since closures only affect the public Groupon page.
+        supabase
+          .from("business_tours")
+          .select("tour_id")
+          .eq("is_active", true)
+          .not("groupon_fee_cents", "is", null),
+        closuresPromise,
+      ]);
+    const gpTourIds = new Set((gpRows ?? []).map((r) => r.tour_id));
     const closedKeys = new Set(
       (closures ?? []).map((c) => `${c.tour_id}|${c.start_time.slice(0, 5)}`),
     );
-    tours = (rows ?? []).map((t) =>
-      buildTourDay(t.id, t.name, t.tour_timeslots, closedKeys),
-    );
+    tours = (rows ?? [])
+      .filter((t) => gpTourIds.has(t.id))
+      .map((t) => buildTourDay(t.id, t.name, t.tour_timeslots, closedKeys));
   } else {
     // Business manager: RLS scopes business_tours to their business. Show the
     // business's own tour names, never the master catalog names.
@@ -97,6 +106,7 @@ export default async function AvailabilityPage({
           "name, tour_id, tours(id, is_active, tour_timeslots(start_time, duration_minutes, sort_order, is_active))",
         )
         .eq("is_active", true)
+        .not("groupon_fee_cents", "is", null)
         .order("name"),
       closuresPromise,
     ]);
