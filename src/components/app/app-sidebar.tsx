@@ -2,6 +2,20 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import {
+  LayoutDashboard,
+  CalendarCheck,
+  Users,
+  CalendarPlus,
+  CalendarClock,
+  Building2,
+  Compass,
+  BarChart3,
+  Inbox,
+  Tag,
+  UserCog,
+  type LucideIcon,
+} from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import type { Database } from "@/lib/supabase/database.types";
@@ -11,6 +25,7 @@ type StaffRole = Database["public"]["Enums"]["staff_role"];
 type NavItem = {
   href: string;
   label: string;
+  icon: LucideIcon;
   roles: StaffRole[];
   matchPrefix?: string; // path prefix that highlights this item
 };
@@ -29,29 +44,34 @@ const SECTIONS: NavSection[] = [
       {
         href: "/dashboard",
         label: "Dashboard",
+        icon: LayoutDashboard,
         roles: ALL_ROLES,
       },
       {
         href: "/bookings",
         label: "Bookings",
+        icon: CalendarCheck,
         roles: ALL_ROLES,
         matchPrefix: "/bookings",
       },
       {
         href: "/customers",
         label: "Customers",
+        icon: Users,
         roles: ["owner", "business_manager"],
         matchPrefix: "/customers",
       },
       {
         href: "/schedule",
         label: "Schedule",
+        icon: CalendarPlus,
         roles: ALL_ROLES,
         matchPrefix: "/schedule",
       },
       {
         href: "/availability",
         label: "Availability",
+        icon: CalendarClock,
         roles: ["owner", "business_manager"],
         matchPrefix: "/availability",
       },
@@ -63,36 +83,42 @@ const SECTIONS: NavSection[] = [
       {
         href: "/admin/businesses",
         label: "Businesses",
+        icon: Building2,
         roles: ["owner"],
         matchPrefix: "/admin/businesses",
       },
       {
         href: "/admin/tours",
         label: "Tours",
+        icon: Compass,
         roles: ["owner", "business_manager"],
         matchPrefix: "/admin/tours",
       },
       {
         href: "/analytics",
         label: "Analytics",
+        icon: BarChart3,
         roles: ["owner", "business_manager"],
         matchPrefix: "/analytics",
       },
       {
         href: "/admin/unmatched",
         label: "Unrecognized",
+        icon: Inbox,
         roles: ["owner"],
         matchPrefix: "/admin/unmatched",
       },
       {
         href: "/admin/groupon",
         label: "Groupon fees",
+        icon: Tag,
         roles: ["owner"],
         matchPrefix: "/admin/groupon",
       },
       {
         href: "/admin/staff",
         label: "Team",
+        icon: UserCog,
         roles: ["owner"],
         matchPrefix: "/admin/staff",
       },
@@ -125,19 +151,21 @@ export function AppSidebar({
               const active =
                 pathname === it.href ||
                 (it.matchPrefix && pathname.startsWith(it.matchPrefix));
+              const Icon = it.icon;
               return (
                 <Link
                   key={it.href}
                   href={it.href}
                   onClick={onNavigate}
                   className={cn(
-                    "rounded-md px-3 py-2 transition",
+                    "flex items-center gap-2.5 rounded-md px-3 py-2 transition",
                     active
                       ? "bg-muted font-medium text-foreground"
                       : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
                   )}
                 >
-                  {it.label}
+                  <Icon aria-hidden className="h-[18px] w-[18px] shrink-0" />
+                  <span>{it.label}</span>
                 </Link>
               );
             })}
