@@ -31,34 +31,81 @@ async function requireOwner(): Promise<
   return { ok: true, supabase };
 }
 
-/**
- * Save the automation SMS bodies. Each template is sent as tpl_id_${i},
- * tpl_body_${i}, tpl_active_${i} ("1" when enabled). Writes run as the
- * signed-in user; RLS enforces owner-only on top of the check here.
- */
-export async function updateSmsTemplatesAction(
+/** Add a draft rule with sensible defaults; the owner edits it in place. */
+export async function createRuleAction(): Promise<void> {
+  const auth = await requireOwner();
+  if (!auth.ok) return;
+
+  await auth.supabase.from("messaging_rules").insert({
+    name: "New rule",
+    trigger_event: "new_booking",
+    channel: "sms",
+    body: "Hi {{first_name}}!",
+    is_active: false,
+  });
+  revalidatePath("/admin/messaging");
+}
+
+/** Save one rule card. Field names match messaging-forms.tsx. */
+export async function updateRuleAction(
   _prev: MessagingActionState,
   formData: FormData,
 ): Promise<MessagingActionState> {
   const auth = await requireOwner();
   if (!auth.ok) return { error: auth.error };
 
-  for (let i = 0; i < 20; i++) {
-    const id = String(formData.get(`tpl_id_${i}`) ?? "").trim();
-    if (!id) continue;
-    const body = String(formData.get(`tpl_body_${i}`) ?? "").trim();
-    if (!body) return { error: "A message cannot be empty." };
-    const isActive = formData.get(`tpl_active_${i}`) === "1";
+  const id = String(formData.get("rule_id") ?? "").trim();
+  if (!id) return { error: "Missing rule id." };
 
-    const { error } = await auth.supabase
-      .from("message_templates")
-      .update({ body, is_active: isActive })
-      .eq("id", id);
-    if (error) return { error: `Could not save: ${error.message}` };
+  const name = String(formData.get("rule_name") ?? "").trim() || "Untitled rule";
+  const businessTourId = String(formData.get("rule_product") ?? "").trim() || null;
+  const channel = String(formData.get("rule_channel") ?? "sms");
+  const body = String(formData.get("rule_body") ?? "").trim();
+  const contentSid = String(formData.get("rule_wa_template") ?? "").trim();
+  const onlyFirstContact = formData.get("rule_first_contact") === "1";
+  const isActive = formData.get("rule_active") === "1";
+
+  if (channel !== "sms" && channel !== "whatsapp") return { error: "Pick a channel." };
+  if (channel === "sms" && !body) return { error: "Write the text message." };
+  if (channel === "whatsapp" && !contentSid) {
+    return { error: "Pick an approved WhatsApp template." };
   }
+
+  const whatsappVariables: Record<string, string> = {};
+  for (const [key, value] of formData.entries()) {
+    const match = key.match(/^wa_var_(\d+)$/);
+    if (match && typeof value === "string" && value) {
+      whatsappVariables[match[1]] = value;
+    }
+  }
+
+  const { error } = await auth.supabase
+    .from("messaging_rules")
+    .update({
+      name,
+      business_tour_id: businessTourId,
+      channel,
+      body: channel === "sms" ? body : null,
+      whatsapp_content_sid: channel === "whatsapp" ? contentSid : null,
+      whatsapp_variables: channel === "whatsapp" ? whatsappVariables : null,
+      only_first_contact: onlyFirstContact,
+      is_active: isActive,
+    })
+    .eq("id", id);
+  if (error) return { error: `Could not save: ${error.message}` };
 
   revalidatePath("/admin/messaging");
   return { saved: true };
+}
+
+export async function deleteRuleAction(formData: FormData): Promise<void> {
+  const auth = await requireOwner();
+  if (!auth.ok) return;
+
+  const id = String(formData.get("rule_id") ?? "").trim();
+  if (!id) return;
+  await auth.supabase.from("messaging_rules").delete().eq("id", id);
+  revalidatePath("/admin/messaging");
 }
 
 /** Create a WhatsApp text template in Twilio and submit it for Meta approval. */

@@ -1,7 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { normalizeUsPhone } from "@/lib/sms/format";
-import { getMessageTemplates, renderTemplate } from "@/lib/sms/templates";
 import { getTwilioFromNumber, sendTwilioSms } from "@/lib/sms/twilio";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -197,80 +196,5 @@ export async function sendSms(input: SendSmsInput): Promise<SendSmsResult> {
   }
 }
 
-export interface BookingConfirmationInput {
-  phone: string;
-  firstName: string;
-  productName: string;
-  confirmationId: string;
-  businessId?: string | null;
-  bookingId?: string | null;
-}
-
-/**
- * New-booking SMS flow, ported from the Xano "City tour campaign_v1" trigger
- * on bookings insert: an intro message the first time we ever text a number,
- * then the ticket/meeting-point link. Call this after creating a booking.
- * Message wording comes from message_templates (editable in /admin/messaging).
- */
-export async function sendBookingConfirmationSms(
-  input: BookingConfirmationInput,
-): Promise<SendSmsResult[]> {
-  const to = normalizeUsPhone(input.phone);
-  if (!to) {
-    return [{ sent: false, status: "skipped", reason: "Only US phone numbers are supported" }];
-  }
-  const supabase = getSmsDb();
-  if (!supabase) {
-    return [
-      { sent: false, status: "failed", reason: "SUPABASE_SERVICE_ROLE_KEY not configured" },
-    ];
-  }
-
-  const { count, error } = await supabase
-    .from("sms_messages")
-    .select("id", { count: "exact", head: true })
-    .eq("to_phone", to);
-  if (error) {
-    console.error("Failed to count prior SMS messages:", error.message);
-  }
-
-  const bookingLinkBase = process.env.BOOKING_LINK_BASE_URL ?? "https://bked.io/booking";
-  const templates = await getMessageTemplates([
-    "sms_booking_intro",
-    "sms_booking_confirmation",
-  ]);
-  const vars = {
-    first_name: input.firstName,
-    product_name: input.productName,
-    booking_link: `${bookingLinkBase}/${input.confirmationId}`,
-  };
-
-  const linkFields = { businessId: input.businessId, bookingId: input.bookingId };
-  const results: SendSmsResult[] = [];
-
-  const intro = templates.sms_booking_intro;
-  if (!count && intro.isActive) {
-    results.push(
-      await sendSms({
-        to,
-        body: renderTemplate(intro.body, vars),
-        tag: "optIn",
-        ...linkFields,
-      }),
-    );
-  }
-
-  const confirmation = templates.sms_booking_confirmation;
-  if (confirmation.isActive) {
-    results.push(
-      await sendSms({
-        to,
-        body: renderTemplate(confirmation.body, vars),
-        tag: "bookingConfirmation",
-        ...linkFields,
-      }),
-    );
-  }
-
-  return results;
-}
+// The new-booking automation lives in @/lib/sms/rules (runNewBookingRules):
+// owner-defined rules decide which SMS/WhatsApp messages go out per product.

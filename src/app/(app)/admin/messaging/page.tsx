@@ -1,29 +1,53 @@
 import { redirect } from "next/navigation";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { getCurrentStaff } from "@/lib/auth";
 import { listWhatsappTemplates, type WhatsappTemplate } from "@/lib/sms/twilio-content";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
-import { SmsTemplatesForm, AddWhatsappTemplateForm, type SmsTemplateRow } from "./messaging-forms";
+import {
+  AddWhatsappTemplateForm,
+  MessagingRules,
+  type ProductOption,
+  type RuleRow,
+  type WaTemplateOption,
+} from "./messaging-forms";
 
 /**
- * Owner-only config for customer messaging: the wording of the automated
- * booking SMS, and the WhatsApp template catalog (pulled live from Twilio,
- * where Meta approval status lives).
+ * Owner-only messaging automation: rules that run when a new booking comes in
+ * ("for <product>, send <sms|whatsapp>"), plus the WhatsApp template catalog
+ * (pulled live from Twilio, where Meta approval status lives).
  */
 export default async function MessagingConfigPage() {
   const { user, staff } = await getCurrentStaff();
   if (!user) redirect("/login?next=/admin/messaging");
   if (!staff || !staff.is_active || staff.role !== "owner") redirect("/dashboard");
 
-  const supabase = await getSupabaseServerClient();
-  const { data, error } = await (supabase as unknown as import("@supabase/supabase-js").SupabaseClient)
-    .from("message_templates")
-    .select("id, key, channel, label, description, body, is_active")
-    .eq("channel", "sms")
-    .order("key");
-  const smsTemplates = ((data ?? []) as SmsTemplateRow[]).sort((a) =>
-    a.key === "sms_booking_intro" ? -1 : 1,
+  const supabase = (await getSupabaseServerClient()) as unknown as SupabaseClient;
+
+  const [rulesResult, productsResult] = await Promise.all([
+    supabase
+      .from("messaging_rules")
+      .select(
+        "id, name, business_tour_id, channel, body, whatsapp_content_sid, whatsapp_variables, only_first_contact, is_active",
+      )
+      .order("only_first_contact", { ascending: false })
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("business_tours")
+      .select("id, name, business:businesses!business_tours_business_id_fkey(name)")
+      .eq("is_active", true)
+      .order("name"),
+  ]);
+
+  const rules = (rulesResult.data ?? []) as RuleRow[];
+  type ProductJoined = { id: string; name: string; business: { name: string } | null };
+  const products = ((productsResult.data ?? []) as unknown as ProductJoined[]).map<ProductOption>(
+    (row) => ({
+      id: row.id,
+      name: row.name,
+      businessName: row.business?.name ?? "Unknown business",
+    }),
   );
 
   let whatsappTemplates: WhatsappTemplate[] = [];
@@ -33,31 +57,37 @@ export default async function MessagingConfigPage() {
   } catch (e) {
     whatsappError = e instanceof Error ? e.message : "Could not reach Twilio.";
   }
+  const waOptions: WaTemplateOption[] = whatsappTemplates.map((template) => ({
+    sid: template.sid,
+    name: template.name,
+    body: template.body,
+    status: template.status,
+  }));
 
   return (
     <div className="space-y-10">
       <div>
         <h1 className="text-xl font-semibold tracking-tight">Messaging</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Edit the automatic texts customers receive and manage WhatsApp templates.
+          Automatic messages customers receive, written as simple rules.
         </p>
       </div>
 
       <section className="space-y-4">
         <div>
-          <h2 className="text-base font-semibold">Booking SMS automation</h2>
+          <h2 className="text-base font-semibold">Rules</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            These are sent automatically when a new booking comes in. You can use the
-            placeholders shown under each message; they are replaced with the real
-            values when the text is sent.
+            Each rule runs when a new booking comes in. Point it at one product or
+            all of them, pick SMS or WhatsApp, and write the message. Placeholders
+            fill in the real customer and booking details when the message is sent.
           </p>
         </div>
-        {error ? (
+        {rulesResult.error ? (
           <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-            Could not load templates: {error.message}
+            Could not load rules: {rulesResult.error.message}
           </p>
         ) : (
-          <SmsTemplatesForm rows={smsTemplates} />
+          <MessagingRules rules={rules} products={products} waTemplates={waOptions} />
         )}
       </section>
 
@@ -67,8 +97,8 @@ export default async function MessagingConfigPage() {
           <p className="mt-1 text-sm text-muted-foreground">
             WhatsApp only allows pre-approved templates for business-initiated
             messages. This list comes straight from Twilio, including each
-            template&apos;s approval status. New templates are usually reviewed by
-            WhatsApp within minutes to a few hours.
+            template&apos;s approval status. Approved templates can be used in the
+            rules above.
           </p>
         </div>
 

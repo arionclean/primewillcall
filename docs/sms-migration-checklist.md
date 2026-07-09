@@ -10,7 +10,7 @@ Status and remaining work for moving SMS off Xano. Background and architecture:
 - [x] Inbound webhook `POST /api/webhooks/twilio/sms` (signature check, logging, STOP/START, mirrors payload to Xano)
 - [x] History sync from the Twilio Messages API (`POST /api/sms/sync`, dedupe by `twilio_sid`)
 - [x] Chat UI at `/messages` with realtime updates
-- [x] Booking confirmation helper `sendBookingConfirmationSms()` (ported from Xano trigger "City tour campaign_v1")
+- [x] Messaging rules engine `runNewBookingRules()` in src/lib/sms/rules.ts (owner-editable rules in /admin/messaging replace the Xano trigger "City tour campaign_v1")
 
 ## Safe to do NOW (Xano keeps working, zero risk)
 
@@ -30,7 +30,7 @@ These can be done any time before the real migration; the webhook mirroring
 
 ## At the REAL migration (needs Xano switched off)
 
-- [ ] Wire `sendBookingConfirmationSms()` into the Supabase booking-creation flow
+- [ ] Wire `runNewBookingRules()` into the Supabase booking-creation flow
       (xano-booking-sync edge function or wherever bookings are inserted), so the
       new-booking SMS comes from here instead of Xano's bookings trigger
 - [ ] Disable the Xano bookings trigger "City tour campaign_v1" (trigger id 30, table 64)
