@@ -11,6 +11,7 @@ import {
   Building2,
   Compass,
   BarChart3,
+  CreditCard,
   Inbox,
   MessageCircle,
   MessageSquare,
@@ -109,6 +110,13 @@ const SECTIONS: NavSection[] = [
         icon: BarChart3,
         roles: ["owner", "business_manager"],
         matchPrefix: "/analytics",
+      },
+      {
+        href: "/admin/payments",
+        label: "Payments",
+        icon: CreditCard,
+        roles: ["owner", "business_manager"],
+        matchPrefix: "/admin/payments",
       },
       {
         href: "/admin/unmatched",

@@ -116,8 +116,10 @@ unique (the bulk import also stored channel/payment placeholders like `Groupon` 
 action, payload jsonb` — append-only audit trail.
 
 ### Legacy / unused
-`kiosks` and `kiosk_tours` remain from the original schema but nothing in the app reads
-them. Slated for removal once confirmed dead. Do not build on them.
+`kiosk_tours` remains from the original schema but nothing in the app reads it. Slated for
+removal once confirmed dead. Do not build on it. (`kiosks` is no longer dead: it now maps
+each PrimeKiosk tablet to a business + Stripe Connect account. See "Payments (Stripe)" →
+"Kiosk POS".)
 
 ## OTA email connector
 
@@ -217,16 +219,30 @@ whose connected accounts back each business.
   `raw` jsonb. Populated by the webhook from `charge.*` events; `net`/`stripe_fee` come from
   the charge's balance transaction (a gap the Xano webhook left at 0).
 - `stripe_refunds` — refund ledger (`stripe_refund_id`, `transaction_id`, `business_id`,
-  `booking_id`, `amount`, `reason`, `status`, `created_by_staff_id`, `raw`). Foundation for
-  the refunds follow-up.
+  `booking_id`, `amount`, `reason`, `status`, `created_by_staff_id`, `raw`). Written by the
+  refund action (below); the webhook `charge.refunded` reconciles the transaction totals.
 - `stripe_events` — webhook idempotency + audit (`id` = Stripe `evt_...`, `type`, `account`,
   `payload`, `received_at`, `processed_at`, `error`).
+- `cash_sales` — the PrimeKiosk tablet's cash ledger (`business_id`, `kiosk_id`,
+  `booking_id`/`booking_ref`, `amount_cents`, `type`, `product`, `status`, `kiosk_slug`).
+  Card kiosk sales need no table: a Terminal PaymentIntent is a direct charge, so the webhook
+  records it into `stripe_transactions` with `source='kiosk'`.
+- `kiosks` (Kiosk POS columns) — `business_id`, `slug` (the tablet's login tag; unique),
+  `stripe_account_id` (optional per-kiosk Connect override), `terminal_location_id`,
+  `simulated`. Maps a tablet to the connected account its sales settle on.
+
+### RPC
+- `stripe_payments_summary(p_start, p_end)` — gross / net / stripe_fees / application_fees /
+  refunded / count for a date range, `SUM`'d in the DB. `SECURITY INVOKER`, so
+  `stripe_transactions` RLS still scopes the totals by business. Backs the `/admin/payments`
+  summary cards (never sum the ledger in JS: the 1000-row read cap would truncate).
 
 ### RLS
 `stripe_transactions` / `stripe_refunds`: SELECT for `owner` (all) and `business_manager`
 (own `business_id`); no INSERT/UPDATE/DELETE policies (the webhook + server actions write
-with the service role, which bypasses RLS). `stripe_events`: RLS on, no policies
-(service-role only).
+with the service role, which bypasses RLS). `cash_sales`: SELECT for `owner` (all) and
+`business_manager` + `check_in` (own `business_id`); the kiosk route writes with the service
+role. `stripe_events`: RLS on, no policies (service-role only).
 
 ### Flow
 - **Connect onboarding** (`/admin/businesses/[id]`, owner): create the connected account,
@@ -246,10 +262,30 @@ with the service role, which bypasses RLS). `stripe_events`: RLS on, no policies
   both the session and `payment_intent_data` so the CHARGE carries it). The webhook resolves
   `booking_id` and `business_id` (via `connected_account_id`) into the ledger row. `bookings`
   gains `paid_at`; the existing `stripe_payment_intent_id` is set on payment.
+- **Payments dashboard** (`/admin/payments`, owner + `business_manager`; `check_in` is
+  redirected out since it has no ledger read): a charges table (date range + owner business
+  filter, most-recent 200 in range) plus summary cards from `stripe_payments_summary`.
+- **Refund** (`admin/payments/actions.ts`): owner or the charge's `business_manager`; creates
+  the refund on the connected account (direct charge), records `stripe_refunds` with the
+  acting staff, and optimistically updates the transaction (the `charge.refunded` webhook
+  reconciles). `source='online'|'groupon'|'kiosk'` charges are all refundable here.
+- **Customer payment link** (`POST /api/bookings/[id]/payment-link`): staff mint a Checkout
+  link for a booking (RLS authorizes the read, direct charge on the business's account with
+  the platform fee) and send it to the customer; surfaced by the "Payment link" button in the
+  booking edit modal.
+- **Kiosk POS (Stripe Terminal)**: `POST /api/kiosk/connection-token` (Terminal connection
+  token) + `POST /api/kiosk/payment-intent` (`card_present` direct charge with the platform
+  fee) for the PrimeKiosk tablet. Both resolve the connected account server-side from the
+  tablet's `kiosk` tag (`kiosks.slug`, via `src/lib/kiosk/resolve.ts`), so the caller can
+  never pick the account. Card sales land in `stripe_transactions` (`source='kiosk'`) through
+  the webhook; cash sales write `cash_sales`. Still needs go-live config (real Terminal
+  Locations + kiosk->business mappings) and the tablet pointed here.
 
 ### Out of scope (follow-ups; schema already laid)
-Internal `/schedule` payments + send-a-payment-link, the refunds UI/action, the transactions
-dashboard, and Stripe Terminal (that belongs to the separate PrimeKiosk app).
+Taking payment inline in the internal `/schedule` new-booking flow, and saved-customer flows
+(`customers.stripe_customer_id` is still a placeholder). Go-live config (platform key,
+register the two webhook endpoints, connect each business, Terminal Locations) is the
+remaining operational step.
 
 ### Marking a voucher redeemed
 The owner still redeems each voucher on Groupon's own platform (the photo/code the

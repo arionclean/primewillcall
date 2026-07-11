@@ -66,9 +66,13 @@ src/
         staff/                 owner-only. list/new/[id] + actions
         unmatched/             owner-only. OTA email review queue (page + actions)
         groupon/               owner-only. per-product Groupon convenience fee config
+        payments/              owner + manager. Stripe charges ledger + refunds
     api/
       auth/signout/            POST sign out
       bookings/[id]/check-in/  POST mark checked in
+      bookings/[id]/payment-link/  POST mint a Stripe Checkout link for a booking
+      kiosk/                   Stripe Terminal: connection-token + payment-intent (PrimeKiosk)
+      stripe/webhook/          POST Stripe webhook (platform + Connect events)
       places/autocomplete/     Google Places proxy (keeps key server-side)
       places/details/          Google Place details proxy
       gp/                      PUBLIC: validate (vision) + slots + book for /gp
@@ -224,9 +228,18 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   `bookingConfirmation_id`). The legacy page's upsell section is intentionally NOT
   built yet (waits on Stripe). See "public_token" in
   [`docs/DATABASE.md`](docs/DATABASE.md).
-- `kiosks` / `kiosk_tours` tables still exist in the DB but are unused by the app
-  (legacy from the original schema). Slated for removal once nothing references them.
-- **Payments (Stripe)** are partially built (Supabase-native replication of the live Xano
+- **Kiosk POS (Stripe Terminal)** is built: the PrimeKiosk tablet's card + cash sales,
+  Supabase-native replacement for the Xano `connection-token_v6` / `payment-intent_v2`
+  endpoints. `POST /api/kiosk/connection-token` (Terminal connection token) and
+  `POST /api/kiosk/payment-intent` (card_present DIRECT charge with the platform fee) both
+  resolve the connected account server-side from the tablet's `kiosk` tag via
+  `kiosks.slug` (`src/lib/kiosk/resolve.ts`), so a caller can never choose which account
+  to charge. Card sales record into `stripe_transactions` (source=`kiosk`) through the
+  webhook; cash sales write `cash_sales`. Migration `kiosk_pos` adds the `kiosks`
+  connect/terminal columns + `cash_sales`. Still needs go-live config (real Terminal
+  Locations + kiosk->business mappings) and the tablet pointed here. `kiosk_tours` remains
+  legacy/unused.
+- **Payments (Stripe)** are largely built (Supabase-native replication of the live Xano
   Connect model; Xano is never written to). Model: Stripe Connect **direct charges** on each
   business's connected account with a platform `application_fee` (Prime's cut). Built:
   per-business Connect Express onboarding on `/admin/businesses/[id]` (create account,
@@ -240,6 +253,14 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   client + fee helpers in `src/lib/stripe/server.ts`. Requires env `STRIPE_SECRET_KEY`
   (Prime's PLATFORM key), `STRIPE_WEBHOOK_SECRET`, `STRIPE_WEBHOOK_SECRET_CONNECTED`,
   `STRIPE_PLATFORM_FEE_BPS`, `NEXT_PUBLIC_APP_URL`. See `docs/DATABASE.md` "Payments (Stripe)".
-  **Still to do**: internal `/schedule` payments + send-a-payment-link, refunds UI/action,
-  the transactions dashboard, and Stripe Terminal (the PrimeKiosk app). `customers` still
-  has `stripe_customer_id` as a placeholder for saved-customer flows.
+  Also built: the **`/admin/payments`** transactions dashboard (owner + business_manager;
+  check_in redirected out) with a date-range + owner business filter and DB-aggregated
+  totals via the `stripe_payments_summary` RPC; a **refund** action
+  (`admin/payments/actions.ts`: owner or the charge's manager; refunds on the connected
+  account, records `stripe_refunds`, webhook reconciles); and **customer payment links**
+  (`POST /api/bookings/[id]/payment-link` + the "Payment link" button in the booking edit
+  modal) that mint a Checkout link for a booking to send the customer.
+  **Still to do**: taking payment inline in the internal `/schedule` new-booking flow, and
+  saved-customer flows (`customers.stripe_customer_id` is still a placeholder). Go-live
+  config (platform key, register the two webhook endpoints, connect each business) is the
+  remaining operational step.

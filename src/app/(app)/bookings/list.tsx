@@ -37,6 +37,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
+import { PaymentLinkButton } from "./payment-link-button";
+
 const PRIVACY_KEY = "pwc.bookings.privacy";
 const TZ = "America/New_York";
 
@@ -2057,14 +2059,22 @@ function EditBookingModal({
 
         <div className="flex items-center justify-between gap-3 border-t bg-muted/40 px-5 py-4">
           {role !== "check_in" ? (
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={() => void handleDelete()}
-              disabled={busy}
-            >
-              {deleting ? "Deleting..." : "Delete"}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => void handleDelete()}
+                disabled={busy}
+              >
+                {deleting ? "Deleting..." : "Delete"}
+              </Button>
+              <PaymentLinkButton
+                bookingId={booking.id}
+                amountCents={booking.total_cents}
+                status={booking.status}
+                disabled={busy}
+              />
+            </div>
           ) : (
             <span />
           )}
