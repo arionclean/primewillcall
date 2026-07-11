@@ -12,10 +12,10 @@ import {
   Compass,
   BarChart3,
   Inbox,
-  MessageCircle,
   MessageSquare,
   Tag,
   UserCog,
+  Zap,
   type LucideIcon,
 } from "lucide-react";
 
@@ -126,8 +126,8 @@ const SECTIONS: NavSection[] = [
       },
       {
         href: "/admin/messaging",
-        label: "Messaging",
-        icon: MessageCircle,
+        label: "Automations",
+        icon: Zap,
         roles: ["owner"],
         matchPrefix: "/admin/messaging",
       },

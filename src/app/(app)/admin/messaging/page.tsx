@@ -6,13 +6,8 @@ import { getCurrentStaff } from "@/lib/auth";
 import { listWhatsappTemplates, type WhatsappTemplate } from "@/lib/sms/twilio-content";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
-import {
-  AddWhatsappTemplateForm,
-  MessagingRules,
-  type ProductOption,
-  type RuleRow,
-  type WaTemplateOption,
-} from "./messaging-forms";
+import { AddWhatsappTemplateForm, MessagingRules } from "./messaging-forms";
+import type { ProductOption, RuleRow, WaTemplateOption } from "./messaging-lib";
 import { MessagingTabs } from "./messaging-tabs";
 
 const STATUS_TONE: Record<string, "success" | "warning" | "danger"> = {
@@ -22,9 +17,9 @@ const STATUS_TONE: Record<string, "success" | "warning" | "danger"> = {
 };
 
 /**
- * Owner-only messaging automation: rules that run when a new booking comes in
- * ("for <product>, send <sms|whatsapp>"), plus the WhatsApp template catalog
- * (pulled live from Twilio, where Meta approval status lives).
+ * Owner-only automations: trigger (new booking, per product) -> actions
+ * (SMS / WhatsApp messages, each optionally delayed), plus the WhatsApp
+ * template catalog (pulled live from Twilio, where Meta approval lives).
  */
 export default async function MessagingConfigPage() {
   const { user, staff } = await getCurrentStaff();
@@ -73,37 +68,21 @@ export default async function MessagingConfigPage() {
 
   return (
     <div className="max-w-3xl">
-      <div className="mb-6">
-        <h1 className="text-xl font-semibold tracking-tight">Messaging</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Automatic messages customers receive when they book.
-        </p>
-      </div>
+      <h1 className="mb-6 text-xl font-semibold tracking-tight">Automations</h1>
 
       <MessagingTabs
         templateCount={whatsappError ? 0 : whatsappTemplates.length}
         automations={
-          <section className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              Each automation starts with a trigger (a new booking, for any product or a
-              specific one), then sends the actions you add below it: a text or a WhatsApp.
+          rulesResult.error ? (
+            <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              Could not load automations: {rulesResult.error.message}
             </p>
-            {rulesResult.error ? (
-              <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                Could not load rules: {rulesResult.error.message}
-              </p>
-            ) : (
-              <MessagingRules rules={rules} products={products} waTemplates={waOptions} />
-            )}
-          </section>
+          ) : (
+            <MessagingRules rules={rules} products={products} waTemplates={waOptions} />
+          )
         }
         templates={
           <section className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              WhatsApp only sends pre-approved templates; approval status comes live from
-              Twilio. Approved ones can be picked as an action in your automations.
-            </p>
-
             {whatsappError ? (
               <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                 Could not load WhatsApp templates: {whatsappError}
