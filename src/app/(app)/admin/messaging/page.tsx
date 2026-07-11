@@ -13,6 +13,7 @@ import {
   type RuleRow,
   type WaTemplateOption,
 } from "./messaging-forms";
+import { MessagingTabs } from "./messaging-tabs";
 
 const STATUS_TONE: Record<string, "success" | "warning" | "danger"> = {
   approved: "success",
@@ -36,9 +37,8 @@ export default async function MessagingConfigPage() {
     supabase
       .from("messaging_rules")
       .select(
-        "id, name, business_tour_id, channel, body, whatsapp_content_sid, whatsapp_variables, only_first_contact, is_active",
+        "id, name, trigger_event, business_tour_id, channel, body, whatsapp_content_sid, whatsapp_variables, only_first_contact, is_active, delay_minutes",
       )
-      .order("only_first_contact", { ascending: false })
       .order("created_at", { ascending: true }),
     supabase
       .from("business_tours")
@@ -72,72 +72,76 @@ export default async function MessagingConfigPage() {
   }));
 
   return (
-    <div className="max-w-3xl space-y-8">
-      <div>
+    <div className="max-w-3xl">
+      <div className="mb-6">
         <h1 className="text-xl font-semibold tracking-tight">Messaging</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Automatic messages customers receive, written as simple rules.
+          Automatic messages customers receive when they book.
         </p>
       </div>
 
-      <section className="space-y-3">
-        <div>
-          <h2 className="text-base font-semibold">Rules</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Rules run when a new booking comes in. Click one to edit it.
-          </p>
-        </div>
-        {rulesResult.error ? (
-          <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-            Could not load rules: {rulesResult.error.message}
-          </p>
-        ) : (
-          <MessagingRules rules={rules} products={products} waTemplates={waOptions} />
-        )}
-      </section>
+      <MessagingTabs
+        templateCount={whatsappError ? 0 : whatsappTemplates.length}
+        automations={
+          <section className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Each automation starts with a trigger (a new booking, for any product or a
+              specific one), then sends the actions you add below it: a text or a WhatsApp.
+            </p>
+            {rulesResult.error ? (
+              <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                Could not load rules: {rulesResult.error.message}
+              </p>
+            ) : (
+              <MessagingRules rules={rules} products={products} waTemplates={waOptions} />
+            )}
+          </section>
+        }
+        templates={
+          <section className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              WhatsApp only sends pre-approved templates; approval status comes live from
+              Twilio. Approved ones can be picked as an action in your automations.
+            </p>
 
-      <section className="space-y-3">
-        <div>
-          <h2 className="text-base font-semibold">WhatsApp templates</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            WhatsApp only sends pre-approved templates; approval status comes live
-            from Twilio. Approved ones can be picked in the rules above.
-          </p>
-        </div>
+            {whatsappError ? (
+              <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                Could not load WhatsApp templates: {whatsappError}
+              </p>
+            ) : whatsappTemplates.length === 0 ? (
+              <p className="rounded-md border border-dashed bg-muted/30 px-3 py-3 text-sm text-muted-foreground">
+                No WhatsApp templates yet. Add the first one below.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {whatsappTemplates.map((template) => (
+                  <li
+                    key={template.sid}
+                    className="rounded-xl border bg-card px-4 py-3 shadow-sm"
+                  >
+                    <div className="flex items-center gap-2">
+                      <p className="truncate text-sm font-medium">{template.name}</p>
+                      <Badge tone={STATUS_TONE[template.status] ?? "neutral"}>
+                        {template.status}
+                      </Badge>
+                    </div>
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                      {template.body}
+                    </p>
+                    {template.rejectionReason ? (
+                      <p className="mt-0.5 text-xs text-red-600">
+                        Rejected: {template.rejectionReason}
+                      </p>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
 
-        {whatsappError ? (
-          <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-            Could not load WhatsApp templates: {whatsappError}
-          </p>
-        ) : whatsappTemplates.length === 0 ? (
-          <p className="rounded-md border border-dashed bg-muted/30 px-3 py-3 text-sm text-muted-foreground">
-            No WhatsApp templates yet. Add the first one below.
-          </p>
-        ) : (
-          <ul className="divide-y rounded-lg border">
-            {whatsappTemplates.map((template) => (
-              <li key={template.sid} className="px-4 py-2.5">
-                <div className="flex items-center gap-2">
-                  <p className="truncate text-sm font-medium">{template.name}</p>
-                  <Badge tone={STATUS_TONE[template.status] ?? "neutral"}>
-                    {template.status}
-                  </Badge>
-                </div>
-                <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                  {template.body}
-                </p>
-                {template.rejectionReason ? (
-                  <p className="mt-0.5 text-xs text-red-600">
-                    Rejected: {template.rejectionReason}
-                  </p>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
-
-        <AddWhatsappTemplateForm />
-      </section>
+            <AddWhatsappTemplateForm />
+          </section>
+        }
+      />
     </div>
   );
 }
