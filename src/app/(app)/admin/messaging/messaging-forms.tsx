@@ -1,17 +1,8 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useMemo, useOptimistic, useState, useTransition } from "react";
 import { useActionState } from "react";
-import {
-  ChevronDown,
-  Clock,
-  MessageCircle,
-  MessageSquare,
-  Plus,
-  Repeat,
-  Trash2,
-  Zap,
-} from "lucide-react";
+import { ChevronDown, Clock, Plus, Repeat, Zap } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,229 +12,137 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 import {
-  createRuleAction,
+  createMessageAction,
   createWhatsappTemplateAction,
-  deleteRuleAction,
   toggleAutomationActiveAction,
   updateAutomationProductAction,
   updateRuleAction,
   type MessagingActionState,
 } from "./actions";
-
-export type RuleRow = {
-  id: string;
-  name: string;
-  trigger_event: string;
-  business_tour_id: string | null;
-  channel: "sms" | "whatsapp";
-  body: string | null;
-  whatsapp_content_sid: string | null;
-  whatsapp_variables: Record<string, string> | null;
-  only_first_contact: boolean;
-  is_active: boolean;
-  delay_minutes: number;
-};
-
-export type ProductOption = {
-  id: string;
-  name: string;
-  businessName: string;
-};
-
-export type WaTemplateOption = {
-  sid: string;
-  name: string;
-  body: string;
-  status: string;
-};
-
-const PLACEHOLDERS = ["first_name", "product_name", "booking_link", "booking_date"];
-
-const SAMPLE_VALUES: Record<string, string> = {
-  first_name: "Alex",
-  product_name: "Miami Skyline Cruises",
-  booking_link: "https://bked.io/booking/AB12CD",
-  booking_date: "07/15/2026",
-};
-
-const PLACEHOLDER_LABELS: Record<string, string> = {
-  first_name: "Customer first name",
-  product_name: "Product name",
-  booking_link: "Ticket link",
-  booking_date: "Tour date",
-};
-
-function renderPreview(body: string): string {
-  return body.replace(/\{\{\s*([a-z0-9_]+)\s*\}\}/gi, (match, name: string) => {
-    return SAMPLE_VALUES[name.toLowerCase()] ?? match;
-  });
-}
+import { FlowStep, Switch, channelIcon } from "./flow";
+import { EMPTY_DRAFT, MessageEditor } from "./message-editor";
+import {
+  ANY_KEY,
+  TRIGGERS,
+  humanizeMinutes,
+  renderPreview,
+  triggerLabel,
+  type Channel,
+  type ProductOption,
+  type RuleRow,
+  type WaTemplateOption,
+} from "./messaging-lib";
 
 const INITIAL: MessagingActionState = {};
-const ANY_KEY = "__any__";
-
-/**
- * The events an automation can start from. Only "a new booking comes in" is
- * wired to the sending engine today; the list is the seam for adding more.
- */
-const TRIGGERS = [{ value: "new_booking", label: "A new booking comes in" }] as const;
-
-function triggerLabel(value: string): string {
-  return TRIGGERS.find((t) => t.value === value)?.label ?? "A new booking comes in";
-}
-
-const UNIT_FACTOR: Record<"minutes" | "hours" | "days", number> = {
-  minutes: 1,
-  hours: 60,
-  days: 1440,
-};
-const MAX_DELAY_MINUTES = 43200; // 30 days
-
-/** Human label for a delay, e.g. 90 -> "1 hour 30 minutes", 1440 -> "1 day". */
-function humanizeMinutes(total: number): string {
-  const days = Math.floor(total / 1440);
-  const hours = Math.floor((total % 1440) / 60);
-  const minutes = total % 60;
-  const parts: string[] = [];
-  if (days) parts.push(`${days} day${days > 1 ? "s" : ""}`);
-  if (hours) parts.push(`${hours} hour${hours > 1 ? "s" : ""}`);
-  if (minutes) parts.push(`${minutes} minute${minutes > 1 ? "s" : ""}`);
-  return parts.slice(0, 2).join(" ") || "0 minutes";
-}
-
-/** Split stored minutes back into the editor's mode/value/unit. */
-function decomposeDelay(total: number): {
-  mode: "immediately" | "delay";
-  value: string;
-  unit: "minutes" | "hours" | "days";
-} {
-  if (!total || total <= 0) return { mode: "immediately", value: "1", unit: "hours" };
-  if (total % 1440 === 0) return { mode: "delay", value: String(total / 1440), unit: "days" };
-  if (total % 60 === 0) return { mode: "delay", value: String(total / 60), unit: "hours" };
-  return { mode: "delay", value: String(total), unit: "minutes" };
-}
 
 /* -------------------------------------------------------------------------- */
-/*  Small building blocks                                                     */
+/*  Trigger controls                                                          */
 /* -------------------------------------------------------------------------- */
 
-/** An on/off switch that also submits a form value via a hidden input. */
-function Switch({
-  checked,
-  onChange,
-  name,
-  label,
-}: {
-  checked: boolean;
-  onChange: (value: boolean) => void;
-  name?: string;
-  label?: string;
-}) {
+function TriggerSelect({ value, onChange }: { value: string; onChange?: (v: string) => void }) {
+  return (
+    <Select
+      value={value}
+      onChange={(event) => onChange?.(event.target.value)}
+      className="h-9 w-auto max-w-full"
+      aria-label="Trigger event"
+    >
+      {TRIGGERS.map((trigger) => (
+        <option key={trigger.value} value={trigger.value}>
+          {trigger.label}
+        </option>
+      ))}
+    </Select>
+  );
+}
+
+function ProductOptions({ products }: { products: ProductOption[] }) {
   return (
     <>
-      {name ? <input type="hidden" name={name} value={checked ? "1" : "0"} /> : null}
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        aria-label={label}
-        onClick={() => onChange(!checked)}
-        className={cn(
-          "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-          checked ? "bg-emerald-500" : "bg-muted-foreground/30",
-        )}
-      >
-        <span
-          className={cn(
-            "inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform",
-            checked ? "translate-x-4" : "translate-x-0",
-          )}
-        />
-      </button>
+      <option value="">Any product</option>
+      {products.map((product) => (
+        <option key={product.id} value={product.id}>
+          {product.name} ({product.businessName})
+        </option>
+      ))}
     </>
   );
 }
 
-const CHANNELS = [
-  { value: "sms" as const, label: "Text (SMS)" },
-  { value: "whatsapp" as const, label: "WhatsApp" },
-];
-
-/** A two-option segmented control for picking the channel. */
-function ChannelToggle({
-  value,
-  onChange,
+/** Product picker on an existing automation: saves on change, no submit button. */
+function TriggerProductSelect({
+  triggerEvent,
+  businessTourId,
+  products,
 }: {
-  value: "sms" | "whatsapp";
-  onChange: (value: "sms" | "whatsapp") => void;
+  triggerEvent: string;
+  businessTourId: string | null;
+  products: ProductOption[];
 }) {
+  const [pending, startTransition] = useTransition();
   return (
-    <div className="inline-flex rounded-lg border bg-muted/60 p-0.5">
-      {CHANNELS.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          onClick={() => onChange(option.value)}
-          className={cn(
-            "rounded-[7px] px-3 py-1 text-sm font-medium transition-colors",
-            value === option.value
-              ? "bg-background text-foreground shadow-sm"
-              : "text-muted-foreground hover:text-foreground",
-          )}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
+    <Select
+      defaultValue={businessTourId ?? ""}
+      disabled={pending}
+      onChange={(event) => {
+        const next = event.target.value;
+        startTransition(async () => {
+          const fd = new FormData();
+          fd.set("trigger_event", triggerEvent);
+          fd.set("automation_product_old", businessTourId ?? "");
+          fd.set("automation_product_new", next);
+          await updateAutomationProductAction(fd);
+        });
+      }}
+      className={cn("h-9 w-auto max-w-full", pending && "opacity-60")}
+      aria-label="Trigger product"
+    >
+      <ProductOptions products={products} />
+    </Select>
   );
 }
 
-const NODE_TONES = {
-  trigger: "border-amber-200 bg-amber-50 text-amber-600 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300",
-  sms: "border-blue-200 bg-blue-50 text-blue-600 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300",
-  whatsapp:
-    "border-emerald-200 bg-emerald-50 text-emerald-600 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300",
-  wait: "border-indigo-200 bg-indigo-50 text-indigo-600 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-300",
-} as const;
-
-/** One row of the vertical flow: an icon chip, a connector line, and content. */
-function FlowStep({
-  tone,
-  icon,
-  connect,
-  children,
+/** Header switch: pauses or resumes every message, with instant visual feedback. */
+function AutomationToggle({
+  triggerEvent,
+  businessTourId,
+  active,
 }: {
-  tone: keyof typeof NODE_TONES;
-  icon: React.ReactNode;
-  connect?: boolean;
-  children: React.ReactNode;
+  triggerEvent: string;
+  businessTourId: string | null;
+  active: boolean;
 }) {
+  const [, startTransition] = useTransition();
+  const [optimisticActive, setOptimisticActive] = useOptimistic(active);
+
+  const toggle = () =>
+    startTransition(async () => {
+      setOptimisticActive(!optimisticActive);
+      const fd = new FormData();
+      fd.set("trigger_event", triggerEvent);
+      fd.set("automation_product", businessTourId ?? "");
+      await toggleAutomationActiveAction(fd);
+    });
+
   return (
-    <li className="flex gap-3">
-      <div className="flex flex-col items-center">
-        <span
-          className={cn(
-            "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border [&_svg]:h-4 [&_svg]:w-4",
-            NODE_TONES[tone],
-          )}
-        >
-          {icon}
-        </span>
-        {connect ? <span className="my-1 w-px flex-1 bg-border" /> : null}
-      </div>
-      <div className={cn("min-w-0 flex-1", connect ? "pb-4" : "pb-0")}>{children}</div>
-    </li>
+    <span className="flex shrink-0 items-center gap-2">
+      <span className="text-xs font-medium text-muted-foreground">
+        {optimisticActive ? "Active" : "Paused"}
+      </span>
+      <Switch
+        checked={optimisticActive}
+        onChange={toggle}
+        label={optimisticActive ? "Pause automation" : "Activate automation"}
+      />
+    </span>
   );
 }
 
-function channelIcon(channel: "sms" | "whatsapp") {
-  return channel === "whatsapp" ? <MessageCircle /> : <MessageSquare />;
-}
-
 /* -------------------------------------------------------------------------- */
-/*  One message step (a row in an automation)                                 */
+/*  Message steps                                                             */
 /* -------------------------------------------------------------------------- */
 
+/** One saved message: a header row that opens and closes, editor underneath. */
 function MessageStep({
   rule,
   waTemplates,
@@ -255,35 +154,7 @@ function MessageStep({
   open: boolean;
   onToggle: () => void;
 }) {
-  const [state, formAction, pending] = useActionState(updateRuleAction, INITIAL);
-  const [channel, setChannel] = useState<"sms" | "whatsapp">(rule.channel);
-  const [body, setBody] = useState(rule.body ?? "");
-  const [waSid, setWaSid] = useState(rule.whatsapp_content_sid ?? "");
-  const [active, setActive] = useState(rule.is_active);
-  const [firstContact, setFirstContact] = useState(rule.only_first_contact);
-
-  const initialDelay = decomposeDelay(rule.delay_minutes);
-  const [delayMode, setDelayMode] = useState<"immediately" | "delay">(initialDelay.mode);
-  const [delayValue, setDelayValue] = useState(initialDelay.value);
-  const [delayUnit, setDelayUnit] = useState<"minutes" | "hours" | "days">(initialDelay.unit);
-  const computedDelay =
-    delayMode === "immediately"
-      ? 0
-      : Math.min(
-          MAX_DELAY_MINUTES,
-          Math.max(1, Math.round(Number(delayValue) || 0)) * UNIT_FACTOR[delayUnit],
-        );
-
-  const approved = waTemplates.filter((t) => t.status === "approved");
-  const selectedTemplate = waTemplates.find((t) => t.sid === waSid) ?? null;
-  const waSlots = useMemo(() => {
-    if (!selectedTemplate) return [];
-    const slots = new Set<string>();
-    for (const match of selectedTemplate.body.matchAll(/\{\{\s*(\d+)\s*\}\}/g)) {
-      slots.add(match[1]);
-    }
-    return [...slots].sort((a, b) => Number(a) - Number(b));
-  }, [selectedTemplate]);
+  const [liveChannel, setLiveChannel] = useState<Channel>(rule.channel);
 
   const snippet =
     rule.channel === "sms"
@@ -292,267 +163,114 @@ function MessageStep({
         "No template picked";
 
   return (
-    <FlowStep tone={open ? channel : rule.channel} icon={channelIcon(open ? channel : rule.channel)} connect>
-      {!open ? (
-        <button
-          type="button"
-          onClick={onToggle}
-          className="group -my-1 block w-full rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted/50"
-        >
-          <span className="flex items-center gap-2">
-            <span className="truncate text-sm font-medium">{rule.name}</span>
-            {!rule.is_active ? <Badge>Paused</Badge> : null}
-            {rule.only_first_contact ? (
-              <Badge tone="primary" className="gap-1">
-                <Repeat className="h-3 w-3" />
-                First text only
-              </Badge>
-            ) : null}
-            <Badge
-              tone={rule.channel === "whatsapp" ? "success" : "info"}
-              className="ml-auto gap-1"
-            >
+    <FlowStep
+      tone={open ? liveChannel : rule.channel}
+      icon={channelIcon(open ? liveChannel : rule.channel)}
+      connect
+    >
+      <button
+        type="button"
+        onClick={() => {
+          if (!open) setLiveChannel(rule.channel);
+          onToggle();
+        }}
+        aria-expanded={open}
+        className="group -my-1 block w-full rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted/50"
+      >
+        <span className="flex items-center gap-2">
+          <span className="truncate text-sm font-medium">{rule.name}</span>
+          {!rule.is_active ? <Badge>Paused</Badge> : null}
+          {rule.only_first_contact ? (
+            <Badge tone="primary" className="gap-1">
+              <Repeat className="h-3 w-3" aria-hidden />
+              First text only
+            </Badge>
+          ) : null}
+          <span className="ml-auto flex shrink-0 items-center gap-2">
+            <Badge tone={rule.channel === "whatsapp" ? "success" : "info"}>
               {rule.channel === "whatsapp" ? "WhatsApp" : "SMS"}
             </Badge>
-            <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-          </span>
-          <span className="mt-0.5 block truncate text-xs text-muted-foreground">{snippet}</span>
-        </button>
-      ) : (
-        <form
-          action={formAction}
-          className="space-y-3 rounded-lg border bg-background p-3 shadow-sm"
-        >
-          <input type="hidden" name="rule_id" value={rule.id} />
-          <input type="hidden" name="rule_channel" value={channel} />
-          <input type="hidden" name="rule_delay_minutes" value={computedDelay} />
-
-          <div className="flex flex-wrap items-center gap-3">
-            <Input
-              name="rule_name"
-              defaultValue={rule.name}
-              className="h-9 w-full max-w-56 font-medium sm:w-56"
-              aria-label="Message name"
-            />
-            <label className="flex cursor-pointer items-center gap-2 text-sm">
-              <Switch name="rule_active" checked={active} onChange={setActive} label="Message active" />
-              <span className="text-muted-foreground">{active ? "Active" : "Paused"}</span>
-            </label>
-            <button
-              formAction={deleteRuleAction}
-              onClick={(event) => {
-                if (!confirm(`Delete the message "${rule.name}"?`)) event.preventDefault();
-              }}
-              className="ml-auto rounded-md p-2 text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive"
-              aria-label="Delete message"
-            >
-              <Trash2 className="h-4 w-4" />
-            </button>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <span className="font-medium">When to send</span>
-            <Select
-              value={delayMode}
-              onChange={(event) => setDelayMode(event.target.value as "immediately" | "delay")}
-              className="h-9 w-auto"
-              aria-label="When to send"
-            >
-              <option value="immediately">Immediately</option>
-              <option value="delay">After a wait</option>
-            </Select>
-            {delayMode === "delay" ? (
-              <>
-                <Input
-                  type="number"
-                  min={1}
-                  value={delayValue}
-                  onChange={(event) => setDelayValue(event.target.value)}
-                  className="h-9 w-16"
-                  aria-label="Wait amount"
-                />
-                <Select
-                  value={delayUnit}
-                  onChange={(event) =>
-                    setDelayUnit(event.target.value as "minutes" | "hours" | "days")
-                  }
-                  className="h-9 w-auto"
-                  aria-label="Wait unit"
-                >
-                  <option value="minutes">minutes</option>
-                  <option value="hours">hours</option>
-                  <option value="days">days</option>
-                </Select>
-                <span className="text-muted-foreground">after the booking</span>
-              </>
-            ) : null}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-medium">Send</span>
-            <ChannelToggle value={channel} onChange={setChannel} />
-          </div>
-
-          {channel === "sms" ? (
-            <div className="space-y-2">
-              <Textarea
-                name="rule_body"
-                value={body}
-                onChange={(event) => setBody(event.target.value)}
-                rows={3}
-                placeholder="Hi {{first_name}}, thanks for booking!"
-              />
-              <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                <span>Insert:</span>
-                {PLACEHOLDERS.map((placeholder) => (
-                  <button
-                    key={placeholder}
-                    type="button"
-                    onClick={() => setBody((current) => `${current}{{${placeholder}}}`)}
-                    title={PLACEHOLDER_LABELS[placeholder]}
-                    className="rounded bg-muted px-1.5 py-0.5 font-mono transition hover:bg-muted/70"
-                  >
-                    {`{{${placeholder}}}`}
-                  </button>
-                ))}
-              </div>
-              {body.trim() ? (
-                <p className="rounded-lg border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-                  <span className="font-medium text-foreground">Preview: </span>
-                  {renderPreview(body)}
-                </p>
-              ) : null}
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {approved.length === 0 ? (
-                <p className="rounded-lg border border-dashed bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-                  No approved WhatsApp templates yet. Add one in the section below;
-                  once WhatsApp approves it, you can pick it here.
-                </p>
-              ) : (
-                <Select
-                  name="rule_wa_template"
-                  value={waSid}
-                  onChange={(event) => setWaSid(event.target.value)}
-                  className="h-9 max-w-md"
-                >
-                  <option value="">Pick an approved template...</option>
-                  {approved.map((template) => (
-                    <option key={template.sid} value={template.sid}>
-                      {template.name}
-                    </option>
-                  ))}
-                </Select>
+            <ChevronDown
+              className={cn(
+                "h-4 w-4 text-muted-foreground transition-transform",
+                open && "rotate-180",
               )}
+              aria-hidden
+            />
+          </span>
+        </span>
+        {!open ? (
+          <span className="mt-0.5 block truncate text-xs text-muted-foreground">{snippet}</span>
+        ) : null}
+      </button>
 
-              {selectedTemplate ? (
-                <div className="rounded-lg border bg-muted/40 px-3 py-2">
-                  <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">
-                    {selectedTemplate.body}
-                  </p>
-                  {waSlots.length > 0 ? (
-                    <div className="mt-2 space-y-2">
-                      {waSlots.map((slot) => (
-                        <label key={slot} className="flex items-center gap-2 text-sm">
-                          <code className="rounded bg-muted px-1.5 py-0.5">{`{{${slot}}}`}</code>
-                          <span className="text-muted-foreground">is</span>
-                          <Select
-                            name={`wa_var_${slot}`}
-                            defaultValue={rule.whatsapp_variables?.[slot] ?? ""}
-                            className="h-9 w-auto"
-                          >
-                            <option value="">Pick a value...</option>
-                            {PLACEHOLDERS.map((placeholder) => (
-                              <option key={placeholder} value={placeholder}>
-                                {PLACEHOLDER_LABELS[placeholder]}
-                              </option>
-                            ))}
-                          </Select>
-                        </label>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-          )}
+      {open ? (
+        <div className="mt-2">
+          <MessageEditor
+            action={updateRuleAction}
+            hiddenFields={{ rule_id: rule.id }}
+            draft={{
+              name: rule.name,
+              channel: rule.channel,
+              body: rule.body ?? "",
+              whatsappContentSid: rule.whatsapp_content_sid ?? "",
+              whatsappVariables: rule.whatsapp_variables ?? {},
+              onlyFirstContact: rule.only_first_contact,
+              isActive: rule.is_active,
+              delayMinutes: rule.delay_minutes,
+            }}
+            waTemplates={waTemplates}
+            submitLabel="Save message"
+            deletableName={rule.name}
+            onChannelChange={setLiveChannel}
+          />
+        </div>
+      ) : null}
+    </FlowStep>
+  );
+}
 
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
-            <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
-              <Switch
-                name="rule_first_contact"
-                checked={firstContact}
-                onChange={setFirstContact}
-                label="Only the first time we ever text this customer"
-              />
-              Only the first time we ever text this customer
-            </label>
-            <div className="flex items-center gap-2">
-              <Button type="button" variant="ghost" size="sm" onClick={onToggle}>
-                Close
-              </Button>
-              <Button type="submit" size="lg" disabled={pending}>
-                {pending ? "Saving..." : "Save message"}
-              </Button>
-            </div>
-          </div>
-
-          {state.error ? (
-            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-              {state.error}
-            </p>
-          ) : null}
-          {state.saved ? (
-            <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-              Saved. New bookings will follow this message.
-            </p>
-          ) : null}
-        </form>
-      )}
+/** The instant "Add action" editor: pure local state, saved only on Create. */
+function NewMessageStep({
+  triggerEvent,
+  businessTourId,
+  waTemplates,
+  onClose,
+}: {
+  triggerEvent: string;
+  businessTourId: string | null;
+  waTemplates: WaTemplateOption[];
+  onClose: () => void;
+}) {
+  const [channel, setChannel] = useState<Channel>("sms");
+  return (
+    <FlowStep tone={channel} icon={channelIcon(channel)} connect>
+      <MessageEditor
+        action={createMessageAction}
+        hiddenFields={{ trigger_event: triggerEvent, business_tour_id: businessTourId ?? "" }}
+        draft={EMPTY_DRAFT}
+        waTemplates={waTemplates}
+        submitLabel="Create message"
+        onSaved={onClose}
+        onCancel={onClose}
+        onChannelChange={setChannel}
+      />
     </FlowStep>
   );
 }
 
 /* -------------------------------------------------------------------------- */
-/*  One automation (a trigger + its message steps)                            */
+/*  Automation cards                                                          */
 /* -------------------------------------------------------------------------- */
 
-/** Header on/off switch that pauses or resumes every message in the automation. */
-function AutomationToggle({
-  triggerEvent,
-  businessTourId,
-  active,
-}: {
-  triggerEvent: string;
-  businessTourId: string | null;
-  active: boolean;
-}) {
+function StepsLabel() {
   return (
-    <form action={toggleAutomationActiveAction} className="flex shrink-0 items-center gap-2">
-      <input type="hidden" name="trigger_event" value={triggerEvent} />
-      <input type="hidden" name="automation_product" value={businessTourId ?? ""} />
-      <span className="text-xs font-medium text-muted-foreground">
-        {active ? "Active" : "Paused"}
-      </span>
-      <button
-        type="submit"
-        role="switch"
-        aria-checked={active}
-        aria-label={active ? "Pause automation" : "Activate automation"}
-        className={cn(
-          "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-          active ? "bg-emerald-500" : "bg-muted-foreground/30",
-        )}
-      >
-        <span
-          className={cn(
-            "inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform",
-            active ? "translate-x-4" : "translate-x-0",
-          )}
-        />
-      </button>
-    </form>
+    <li className="flex gap-3">
+      <div className="w-8" aria-hidden />
+      <p className="flex-1 pb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        Then send
+      </p>
+    </li>
   );
 }
 
@@ -573,6 +291,8 @@ function AutomationCard({
   openId: string | null;
   setOpenId: (updater: (current: string | null) => string | null) => void;
 }) {
+  const [adding, setAdding] = useState(false);
+
   const productName = businessTourId
     ? products.find((p) => p.id === businessTourId)?.name ?? "One product"
     : "Any product";
@@ -597,59 +317,29 @@ function AutomationCard({
 
       <div className="px-4 py-4">
         <ol>
-          <FlowStep tone="trigger" icon={<Zap />} connect>
+          <FlowStep tone="trigger" icon={<Zap className="h-4 w-4" aria-hidden />} connect>
             <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Trigger
             </p>
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <span className="font-medium">When</span>
-              <Select
-                defaultValue={triggerEvent}
-                className="h-9 w-auto max-w-full"
-                aria-label="Trigger event"
-              >
-                {TRIGGERS.map((trigger) => (
-                  <option key={trigger.value} value={trigger.value}>
-                    {trigger.label}
-                  </option>
-                ))}
-              </Select>
+              <TriggerSelect value={triggerEvent} />
               <span className="font-medium">for</span>
-              <form action={updateAutomationProductAction}>
-                <input type="hidden" name="trigger_event" value={triggerEvent} />
-                <input type="hidden" name="automation_product_old" value={businessTourId ?? ""} />
-                <Select
-                  name="automation_product_new"
-                  defaultValue={businessTourId ?? ""}
-                  onChange={(event) => event.currentTarget.form?.requestSubmit()}
-                  className="h-9 w-auto max-w-full"
-                  aria-label="Trigger product"
-                >
-                  <option value="">Any product</option>
-                  {products.map((product) => (
-                    <option key={product.id} value={product.id}>
-                      {product.name} ({product.businessName})
-                    </option>
-                  ))}
-                </Select>
-              </form>
+              <TriggerProductSelect
+                triggerEvent={triggerEvent}
+                businessTourId={businessTourId}
+                products={products}
+              />
             </div>
           </FlowStep>
 
-          <li className="flex gap-3">
-            <div className="w-8" aria-hidden />
-            <p className="flex-1 pb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Then send
-            </p>
-          </li>
+          <StepsLabel />
 
           {steps.map((step) => (
             <Fragment key={step.id}>
               {step.delay_minutes > 0 ? (
-                <FlowStep tone="wait" icon={<Clock />} connect>
-                  <p className="text-sm font-medium">
-                    Wait {humanizeMinutes(step.delay_minutes)}
-                  </p>
+                <FlowStep tone="wait" icon={<Clock className="h-4 w-4" aria-hidden />} connect>
+                  <p className="text-sm font-medium">Wait {humanizeMinutes(step.delay_minutes)}</p>
                   <p className="text-xs text-muted-foreground">after the booking</p>
                 </FlowStep>
               ) : null}
@@ -661,79 +351,93 @@ function AutomationCard({
               />
             </Fragment>
           ))}
+
+          {adding ? (
+            <NewMessageStep
+              triggerEvent={triggerEvent}
+              businessTourId={businessTourId}
+              waTemplates={waTemplates}
+              onClose={() => setAdding(false)}
+            />
+          ) : null}
         </ol>
 
-        <form action={createRuleAction} className="pl-11">
-          <input type="hidden" name="trigger_event" value={triggerEvent} />
-          <input type="hidden" name="business_tour_id" value={businessTourId ?? ""} />
-          <Button type="submit" variant="ghost" size="sm">
-            <Plus className="h-4 w-4" />
-            Add action
-          </Button>
-        </form>
+        {!adding ? (
+          <div className="pl-11">
+            <Button type="button" variant="ghost" size="sm" onClick={() => setAdding(true)}>
+              <Plus className="h-4 w-4" aria-hidden />
+              Add action
+            </Button>
+          </div>
+        ) : null}
       </div>
     </div>
   );
 }
 
-/** Inline "add a new automation" control: pick a trigger, then the product it fires for. */
-function AddAutomation({ products }: { products: ProductOption[] }) {
-  const [open, setOpen] = useState(false);
-
-  const options = [
-    { id: "", label: "Any product" },
-    ...products.map((p) => ({ id: p.id, label: `${p.name} (${p.businessName})` })),
-  ];
-
-  if (!open) {
-    return (
-      <Button type="button" variant="outline" size="lg" onClick={() => setOpen(true)}>
-        <Plus className="h-4 w-4" />
-        Add automation
-      </Button>
-    );
-  }
+/** Author a brand-new automation entirely locally; one Save creates it. */
+function NewAutomationCard({
+  products,
+  waTemplates,
+  onClose,
+}: {
+  products: ProductOption[];
+  waTemplates: WaTemplateOption[];
+  onClose: () => void;
+}) {
+  const [trigger, setTrigger] = useState<string>(TRIGGERS[0].value);
+  const [productId, setProductId] = useState("");
+  const [channel, setChannel] = useState<Channel>("sms");
 
   return (
-    <form
-      action={createRuleAction}
-      className="flex flex-wrap items-center gap-2 rounded-xl border bg-muted/20 p-3"
-    >
-      <span className="text-sm font-medium">When</span>
-      <Select
-        name="trigger_event"
-        defaultValue={TRIGGERS[0].value}
-        className="h-9 w-auto max-w-full"
-        aria-label="Trigger event"
-      >
-        {TRIGGERS.map((trigger) => (
-          <option key={trigger.value} value={trigger.value}>
-            {trigger.label}
-          </option>
-        ))}
-      </Select>
-      <span className="text-sm font-medium">for</span>
-      <Select
-        name="business_tour_id"
-        defaultValue={options[0].id}
-        className="h-9 w-auto max-w-full"
-        aria-label="Automation product"
-      >
-        {options.map((option) => (
-          <option key={option.id || ANY_KEY} value={option.id}>
-            {option.label}
-          </option>
-        ))}
-      </Select>
-      <Button type="submit" size="lg">
-        Create
-      </Button>
-      <Button type="button" variant="ghost" size="lg" onClick={() => setOpen(false)}>
-        Cancel
-      </Button>
-    </form>
+    <div className="rounded-xl border bg-card shadow-sm">
+      <div className="flex items-center gap-3 border-b px-4 py-3">
+        <p className="min-w-0 flex-1 truncate text-sm font-medium">New automation</p>
+      </div>
+      <div className="px-4 py-4">
+        <ol>
+          <FlowStep tone="trigger" icon={<Zap className="h-4 w-4" aria-hidden />} connect>
+            <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Trigger
+            </p>
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="font-medium">When</span>
+              <TriggerSelect value={trigger} onChange={setTrigger} />
+              <span className="font-medium">for</span>
+              <Select
+                value={productId}
+                onChange={(event) => setProductId(event.target.value)}
+                className="h-9 w-auto max-w-full"
+                aria-label="Trigger product"
+              >
+                <ProductOptions products={products} />
+              </Select>
+            </div>
+          </FlowStep>
+
+          <StepsLabel />
+
+          <FlowStep tone={channel} icon={channelIcon(channel)} connect>
+            <MessageEditor
+              action={createMessageAction}
+              hiddenFields={{ trigger_event: trigger, business_tour_id: productId }}
+              draft={EMPTY_DRAFT}
+              waTemplates={waTemplates}
+              submitLabel="Create automation"
+              onSaved={onClose}
+              onCancel={onClose}
+              onChannelChange={setChannel}
+            />
+          </FlowStep>
+        </ol>
+      </div>
+    </div>
   );
 }
+
+/* -------------------------------------------------------------------------- */
+/*  Page-level lists                                                          */
+/* -------------------------------------------------------------------------- */
 
 export function MessagingRules({
   rules,
@@ -745,6 +449,7 @@ export function MessagingRules({
   waTemplates: WaTemplateOption[];
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
+  const [addingAutomation, setAddingAutomation] = useState(false);
 
   // Group messages into automations by their trigger (event + product, null = any).
   const groups = useMemo(() => {
@@ -766,10 +471,10 @@ export function MessagingRules({
 
   return (
     <div className="space-y-3">
-      {groups.length === 0 ? (
+      {groups.length === 0 && !addingAutomation ? (
         <div className="rounded-xl border border-dashed bg-muted/20 px-6 py-10 text-center">
           <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg border bg-background">
-            <Zap className="h-5 w-5 text-muted-foreground" />
+            <Zap className="h-5 w-5 text-muted-foreground" aria-hidden />
           </span>
           <p className="mt-3 text-sm font-medium">No automations yet</p>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -791,7 +496,18 @@ export function MessagingRules({
         ))
       )}
 
-      <AddAutomation products={products} />
+      {addingAutomation ? (
+        <NewAutomationCard
+          products={products}
+          waTemplates={waTemplates}
+          onClose={() => setAddingAutomation(false)}
+        />
+      ) : (
+        <Button type="button" variant="outline" size="lg" onClick={() => setAddingAutomation(true)}>
+          <Plus className="h-4 w-4" aria-hidden />
+          Add automation
+        </Button>
+      )}
     </div>
   );
 }
@@ -803,7 +519,7 @@ export function AddWhatsappTemplateForm() {
   if (!open) {
     return (
       <Button type="button" variant="outline" size="lg" onClick={() => setOpen(true)}>
-        <Plus className="h-4 w-4" />
+        <Plus className="h-4 w-4" aria-hidden />
         Add template
       </Button>
     );
@@ -813,8 +529,8 @@ export function AddWhatsappTemplateForm() {
     <form action={formAction} className="rounded-xl border bg-card p-4 shadow-sm">
       <p className="text-sm font-medium">Add a WhatsApp template</p>
       <p className="mt-0.5 text-xs text-muted-foreground">
-        Sent to WhatsApp for approval automatically. Use numbered placeholders like{" "}
-        {"{{1}}"} for dynamic values; you connect them to real values in a message.
+        Use numbered placeholders like {"{{1}}"} for dynamic values; you connect them to
+        real values in an automation.
       </p>
 
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -862,7 +578,7 @@ export function AddWhatsappTemplateForm() {
       ) : null}
       {state.saved ? (
         <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-          Template submitted. Its status will show as pending until WhatsApp approves it.
+          Template submitted. It shows as pending until WhatsApp approves it.
         </p>
       ) : null}
 
