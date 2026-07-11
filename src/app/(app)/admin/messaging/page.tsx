@@ -1,20 +1,17 @@
 import { redirect } from "next/navigation";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { Badge } from "@/components/ui/badge";
 import { getCurrentStaff } from "@/lib/auth";
 import { listWhatsappTemplates, type WhatsappTemplate } from "@/lib/sms/twilio-content";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
-import { AddWhatsappTemplateForm, MessagingRules } from "./messaging-forms";
+import {
+  AddWhatsappTemplateForm,
+  MessagingRules,
+  WhatsappTemplateList,
+} from "./messaging-forms";
 import type { ProductOption, RuleRow, WaTemplateOption } from "./messaging-lib";
 import { MessagingTabs } from "./messaging-tabs";
-
-const STATUS_TONE: Record<string, "success" | "warning" | "danger"> = {
-  approved: "success",
-  pending: "warning",
-  rejected: "danger",
-};
 
 /**
  * Owner-only automations: trigger (new booking, per product) -> actions
@@ -64,6 +61,7 @@ export default async function MessagingConfigPage() {
     name: template.name,
     body: template.body,
     status: template.status,
+    rejectionReason: template.rejectionReason ?? null,
   }));
 
   return (
@@ -92,29 +90,7 @@ export default async function MessagingConfigPage() {
                 No WhatsApp templates yet. Add the first one below.
               </p>
             ) : (
-              <ul className="space-y-2">
-                {whatsappTemplates.map((template) => (
-                  <li
-                    key={template.sid}
-                    className="rounded-xl border bg-card px-4 py-3 shadow-sm"
-                  >
-                    <div className="flex items-center gap-2">
-                      <p className="truncate text-sm font-medium">{template.name}</p>
-                      <Badge tone={STATUS_TONE[template.status] ?? "neutral"}>
-                        {template.status}
-                      </Badge>
-                    </div>
-                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                      {template.body}
-                    </p>
-                    {template.rejectionReason ? (
-                      <p className="mt-0.5 text-xs text-red-600">
-                        Rejected: {template.rejectionReason}
-                      </p>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
+              <WhatsappTemplateList templates={waOptions} />
             )}
 
             <AddWhatsappTemplateForm />

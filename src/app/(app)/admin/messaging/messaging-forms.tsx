@@ -23,6 +23,7 @@ import { FlowStep, Switch, channelIcon } from "./flow";
 import { EMPTY_DRAFT, MessageEditor } from "./message-editor";
 import {
   ANY_KEY,
+  STATUS_TONE,
   TRIGGERS,
   humanizeMinutes,
   renderPreview,
@@ -509,6 +510,62 @@ export function MessagingRules({
         </Button>
       )}
     </div>
+  );
+}
+
+/** WhatsApp template rows: click one to read the full message, click to close. */
+export function WhatsappTemplateList({ templates }: { templates: WaTemplateOption[] }) {
+  const [openSid, setOpenSid] = useState<string | null>(null);
+
+  return (
+    <ul className="space-y-2">
+      {templates.map((template) => {
+        const open = openSid === template.sid;
+        return (
+          <li key={template.sid} className="rounded-xl border bg-card shadow-sm">
+            <button
+              type="button"
+              onClick={() => setOpenSid((current) => (current === template.sid ? null : template.sid))}
+              aria-expanded={open}
+              className="block w-full px-4 py-3 text-left"
+            >
+              <span className="flex items-center gap-2">
+                <span className="truncate text-sm font-medium">{template.name}</span>
+                <Badge tone={STATUS_TONE[template.status] ?? "neutral"}>{template.status}</Badge>
+                <ChevronDown
+                  className={cn(
+                    "ml-auto h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+                    open && "rotate-180",
+                  )}
+                  aria-hidden
+                />
+              </span>
+              {open ? (
+                <span className="mt-2 block rounded-lg border bg-muted/40 px-3 py-2">
+                  <span className="block text-sm whitespace-pre-wrap break-words">
+                    {template.body}
+                  </span>
+                </span>
+              ) : (
+                <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                  {template.body}
+                </span>
+              )}
+              {template.rejectionReason ? (
+                <span
+                  className={cn(
+                    "mt-1 block text-xs text-red-600",
+                    !open && "truncate",
+                  )}
+                >
+                  Rejected: {template.rejectionReason}
+                </span>
+              ) : null}
+            </button>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
