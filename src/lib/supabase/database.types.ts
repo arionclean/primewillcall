@@ -323,6 +323,73 @@ export type Database = {
         }
         Relationships: []
       }
+      cash_sales: {
+        Row: {
+          amount_cents: number
+          booking_id: string | null
+          booking_ref: string | null
+          business_id: string
+          created_at: string
+          id: string
+          kiosk_id: string | null
+          kiosk_slug: string | null
+          product: string | null
+          source: string
+          status: string
+          type: string
+        }
+        Insert: {
+          amount_cents?: number
+          booking_id?: string | null
+          booking_ref?: string | null
+          business_id: string
+          created_at?: string
+          id?: string
+          kiosk_id?: string | null
+          kiosk_slug?: string | null
+          product?: string | null
+          source?: string
+          status?: string
+          type?: string
+        }
+        Update: {
+          amount_cents?: number
+          booking_id?: string | null
+          booking_ref?: string | null
+          business_id?: string
+          created_at?: string
+          id?: string
+          kiosk_id?: string | null
+          kiosk_slug?: string | null
+          product?: string | null
+          source?: string
+          status?: string
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cash_sales_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cash_sales_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cash_sales_kiosk_id_fkey"
+            columns: ["kiosk_id"]
+            isOneToOne: false
+            referencedRelation: "kiosks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       customers: {
         Row: {
           business_id: string
@@ -488,36 +555,59 @@ export type Database = {
       }
       kiosks: {
         Row: {
+          business_id: string | null
           created_at: string
           id: string
           last_seen_at: string | null
           name: string
           pairing_code: string
           revoked_at: string | null
+          simulated: boolean
+          slug: string | null
           status: Database["public"]["Enums"]["kiosk_status"]
+          stripe_account_id: string | null
+          terminal_location_id: string | null
           updated_at: string
         }
         Insert: {
+          business_id?: string | null
           created_at?: string
           id?: string
           last_seen_at?: string | null
           name: string
           pairing_code: string
           revoked_at?: string | null
+          simulated?: boolean
+          slug?: string | null
           status?: Database["public"]["Enums"]["kiosk_status"]
+          stripe_account_id?: string | null
+          terminal_location_id?: string | null
           updated_at?: string
         }
         Update: {
+          business_id?: string | null
           created_at?: string
           id?: string
           last_seen_at?: string | null
           name?: string
           pairing_code?: string
           revoked_at?: string | null
+          simulated?: boolean
+          slug?: string | null
           status?: Database["public"]["Enums"]["kiosk_status"]
+          stripe_account_id?: string | null
+          terminal_location_id?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "kiosks_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       messaging_rules: {
         Row: {
@@ -525,6 +615,7 @@ export type Database = {
           business_tour_id: string | null
           channel: string
           created_at: string
+          delay_minutes: number
           id: string
           is_active: boolean
           name: string
@@ -539,6 +630,7 @@ export type Database = {
           business_tour_id?: string | null
           channel: string
           created_at?: string
+          delay_minutes?: number
           id?: string
           is_active?: boolean
           name: string
@@ -553,6 +645,7 @@ export type Database = {
           business_tour_id?: string | null
           channel?: string
           created_at?: string
+          delay_minutes?: number
           id?: string
           is_active?: boolean
           name?: string
@@ -568,6 +661,80 @@ export type Database = {
             columns: ["business_tour_id"]
             isOneToOne: false
             referencedRelation: "business_tours"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      scheduled_messages: {
+        Row: {
+          attempts: number
+          body: string | null
+          booking_id: string | null
+          business_id: string | null
+          channel: string
+          created_at: string
+          customer_id: string | null
+          id: string
+          last_error: string | null
+          provider_sid: string | null
+          rule_id: string | null
+          send_at: string
+          sent_at: string | null
+          status: string
+          tag: string | null
+          to_phone: string
+          updated_at: string
+          whatsapp_content_sid: string | null
+          whatsapp_variables: Json | null
+        }
+        Insert: {
+          attempts?: number
+          body?: string | null
+          booking_id?: string | null
+          business_id?: string | null
+          channel: string
+          created_at?: string
+          customer_id?: string | null
+          id?: string
+          last_error?: string | null
+          provider_sid?: string | null
+          rule_id?: string | null
+          send_at: string
+          sent_at?: string | null
+          status?: string
+          tag?: string | null
+          to_phone: string
+          updated_at?: string
+          whatsapp_content_sid?: string | null
+          whatsapp_variables?: Json | null
+        }
+        Update: {
+          attempts?: number
+          body?: string | null
+          booking_id?: string | null
+          business_id?: string | null
+          channel?: string
+          created_at?: string
+          customer_id?: string | null
+          id?: string
+          last_error?: string | null
+          provider_sid?: string | null
+          rule_id?: string | null
+          send_at?: string
+          sent_at?: string | null
+          status?: string
+          tag?: string | null
+          to_phone?: string
+          updated_at?: string
+          whatsapp_content_sid?: string | null
+          whatsapp_variables?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scheduled_messages_rule_id_fkey"
+            columns: ["rule_id"]
+            isOneToOne: false
+            referencedRelation: "messaging_rules"
             referencedColumns: ["id"]
           },
         ]
@@ -1293,6 +1460,36 @@ export type Database = {
         }[]
       }
       app_norm: { Args: { s: string }; Returns: string }
+      claim_due_scheduled_messages: {
+        Args: { batch?: number }
+        Returns: {
+          attempts: number
+          body: string | null
+          booking_id: string | null
+          business_id: string | null
+          channel: string
+          created_at: string
+          customer_id: string | null
+          id: string
+          last_error: string | null
+          provider_sid: string | null
+          rule_id: string | null
+          send_at: string
+          sent_at: string | null
+          status: string
+          tag: string | null
+          to_phone: string
+          updated_at: string
+          whatsapp_content_sid: string | null
+          whatsapp_variables: Json | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "scheduled_messages"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       current_staff: {
         Args: never
         Returns: {
@@ -1398,6 +1595,17 @@ export type Database = {
           last_body: string
           last_direction: Database["public"]["Enums"]["sms_direction"]
           message_count: number
+        }[]
+      }
+      stripe_payments_summary: {
+        Args: { p_end: string; p_start: string }
+        Returns: {
+          application_fees: number
+          gross: number
+          net: number
+          refunded: number
+          stripe_fees: number
+          txn_count: number
         }[]
       }
     }
