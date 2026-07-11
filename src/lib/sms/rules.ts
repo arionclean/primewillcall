@@ -30,6 +30,7 @@ export interface MessagingRule {
   whatsapp_variables: Record<string, string> | null;
   only_first_contact: boolean;
   is_active: boolean;
+  delay_minutes: number;
 }
 
 export interface NewBookingContext {
@@ -62,6 +63,21 @@ export interface RuleRunResult extends SendSmsResult {
 }
 
 /**
+ * Fire-and-safe wrapper to call after creating a booking. Gated by
+ * MESSAGING_AUTOMATIONS_ENABLED so the Supabase automations stay dormant until
+ * Prime moves booking messaging off the live Xano stack (avoids double-texting).
+ * Never throws: a messaging failure must not break the booking that triggered it.
+ */
+export async function maybeRunNewBookingRules(ctx: NewBookingContext): Promise<void> {
+  if (process.env.MESSAGING_AUTOMATIONS_ENABLED !== "true") return;
+  try {
+    await runNewBookingRules(ctx);
+  } catch (e) {
+    console.error("Booking automations failed:", e instanceof Error ? e.message : e);
+  }
+}
+
+/**
  * Run every active new-booking rule that matches the booking's product.
  * Call this after creating a booking.
  */
@@ -82,7 +98,7 @@ export async function runNewBookingRules(ctx: NewBookingContext): Promise<RuleRu
   let query = db
     .from("messaging_rules")
     .select(
-      "id, name, trigger_event, business_tour_id, channel, body, whatsapp_content_sid, whatsapp_variables, only_first_contact, is_active",
+      "id, name, trigger_event, business_tour_id, channel, body, whatsapp_content_sid, whatsapp_variables, only_first_contact, is_active, delay_minutes",
     )
     .eq("trigger_event", "new_booking")
     .eq("is_active", true)
@@ -131,20 +147,51 @@ export async function runNewBookingRules(ctx: NewBookingContext): Promise<RuleRu
       continue;
     }
 
+    // Render once; used whether we send now or enqueue for later.
+    const tag = rule.only_first_contact ? "optIn" : "bookingConfirmation";
+    const renderedBody = rule.channel === "sms" ? renderTemplate(rule.body ?? "", vars) : null;
+    const contentVariables: Record<string, string> = {};
+    if (rule.channel === "whatsapp") {
+      for (const [slot, placeholder] of Object.entries(rule.whatsapp_variables ?? {})) {
+        contentVariables[slot] = vars[placeholder] ?? "";
+      }
+    }
+
+    // "Wait" actions: enqueue for the dispatcher instead of sending inline. The
+    // message is rendered now (a later rule edit won't rewrite what's queued).
+    if (rule.delay_minutes > 0) {
+      const sendAt = new Date(Date.now() + rule.delay_minutes * 60_000).toISOString();
+      const { error: enqueueError } = await db.from("scheduled_messages").insert({
+        rule_id: rule.id,
+        to_phone: to,
+        channel: rule.channel,
+        body: renderedBody,
+        whatsapp_content_sid: rule.channel === "whatsapp" ? rule.whatsapp_content_sid : null,
+        whatsapp_variables: rule.channel === "whatsapp" ? contentVariables : null,
+        business_id: linkFields.businessId,
+        booking_id: linkFields.bookingId,
+        customer_id: linkFields.customerId,
+        tag,
+        send_at: sendAt,
+      });
+      results.push(
+        enqueueError
+          ? { rule: rule.name, sent: false, status: "failed", reason: enqueueError.message }
+          : { rule: rule.name, sent: false, status: "scheduled", reason: `in ${rule.delay_minutes} min` },
+      );
+      continue;
+    }
+
     if (rule.channel === "sms") {
       const result = await sendSms({
         to,
-        body: renderTemplate(rule.body ?? "", vars),
-        tag: rule.only_first_contact ? "optIn" : "bookingConfirmation",
+        body: renderedBody ?? "",
+        tag,
         businessId: linkFields.businessId,
         bookingId: linkFields.bookingId,
       });
       results.push({ rule: rule.name, ...result });
     } else {
-      const contentVariables: Record<string, string> = {};
-      for (const [slot, placeholder] of Object.entries(rule.whatsapp_variables ?? {})) {
-        contentVariables[slot] = vars[placeholder] ?? "";
-      }
       const result = await sendWhatsappTemplateMessage({
         to,
         contentSid: rule.whatsapp_content_sid ?? "",

@@ -182,6 +182,15 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
 
 - Customers list (scoped by business) not built.
 - Profile / settings not built.
+- **Messaging automations** (`/admin/messaging`) are built: owner rules grouped as
+  trigger (a new booking, per product) plus one or more actions (SMS / WhatsApp), each with
+  an optional **wait** (`messaging_rules.delay_minutes`). The engine
+  (`runNewBookingRules` in `src/lib/sms/rules.ts`) sends immediate actions inline and
+  enqueues delayed ones into `scheduled_messages`; the `dispatch-scheduled-messages` edge
+  function (invoked by pg_cron) sends the due ones. **Not live yet**: booking creation only
+  fires the automations when `MESSAGING_AUTOMATIONS_ENABLED=true` (wired into `/schedule`,
+  still to wire `/api/gp/book`), and the cron + Twilio secrets must be set. Full model +
+  go-live checklist in [`docs/messaging-automations.md`](docs/messaging-automations.md).
 - **Groupon `/gp`** (public voucher redemption) is built: upload -> vision match -> details
   -> pending booking on the `groupon` channel. Owner sets the per-product fee at
   `/admin/groupon` (`business_tours.groupon_fee_cents`). Vision runs in the

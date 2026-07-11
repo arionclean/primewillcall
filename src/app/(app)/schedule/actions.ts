@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { maybeRunNewBookingRules } from "@/lib/sms/rules";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 export type CreateBookingState = {
@@ -244,7 +245,7 @@ export async function createBookingAction(
       pax_infant,
       tour_pax_breakdown: breakdown,
     })
-    .select("id")
+    .select("id, public_token")
     .single();
   if (bookingErr || !bookingRow) {
     if (
@@ -255,6 +256,20 @@ export async function createBookingAction(
     }
     return { error: bookingErr?.message ?? "Failed to save booking." };
   }
+
+  // Run messaging automations (dormant unless MESSAGING_AUTOMATIONS_ENABLED).
+  // Never throws, so a Twilio hiccup can't fail the booking that was just saved.
+  await maybeRunNewBookingRules({
+    phone: customer_phone ?? "",
+    firstName: customer_full_name.split(" ")[0] || customer_full_name,
+    productName: btRow.name,
+    confirmationId: bookingRow.public_token,
+    bookingDate: date,
+    businessTourId: btRow.id,
+    businessId: btRow.business_id,
+    bookingId: bookingRow.id,
+    customerId: customerRow.id,
+  });
 
   revalidatePath("/dashboard");
   revalidatePath("/schedule");
