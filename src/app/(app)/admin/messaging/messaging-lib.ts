@@ -28,6 +28,13 @@ export type WaTemplateOption = {
   name: string;
   body: string;
   status: string;
+  rejectionReason?: string | null;
+};
+
+export const STATUS_TONE: Record<string, "success" | "warning" | "danger"> = {
+  approved: "success",
+  pending: "warning",
+  rejected: "danger",
 };
 
 export type Channel = "sms" | "whatsapp";
