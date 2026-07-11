@@ -145,7 +145,7 @@ export function MessageEditor({
             className="ml-auto rounded-md p-2 text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive"
             aria-label="Delete message"
           >
-            <Trash2 className="h-4 w-4" />
+            <Trash2 size={16} />
           </button>
         ) : null}
       </div>

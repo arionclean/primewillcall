@@ -183,7 +183,7 @@ function MessageStep({
           {!rule.is_active ? <Badge>Paused</Badge> : null}
           {rule.only_first_contact ? (
             <Badge tone="primary" className="gap-1">
-              <Repeat className="h-3 w-3" aria-hidden />
+              <Repeat size={12} aria-hidden />
               First text only
             </Badge>
           ) : null}
@@ -192,10 +192,12 @@ function MessageStep({
               {rule.channel === "whatsapp" ? "WhatsApp" : "SMS"}
             </Badge>
             <ChevronDown
-              className={cn(
-                "h-4 w-4 text-muted-foreground transition-transform",
-                open && "rotate-180",
-              )}
+              size={16}
+              className="text-muted-foreground"
+              style={{
+                transform: open ? "rotate(180deg)" : "none",
+                transition: "transform 150ms ease",
+              }}
               aria-hidden
             />
           </span>
@@ -318,7 +320,7 @@ function AutomationCard({
 
       <div className="px-4 py-4">
         <ol>
-          <FlowStep tone="trigger" icon={<Zap className="h-4 w-4" aria-hidden />} connect>
+          <FlowStep tone="trigger" icon={<Zap size={16} aria-hidden />} connect>
             <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Trigger
             </p>
@@ -339,7 +341,7 @@ function AutomationCard({
           {steps.map((step) => (
             <Fragment key={step.id}>
               {step.delay_minutes > 0 ? (
-                <FlowStep tone="wait" icon={<Clock className="h-4 w-4" aria-hidden />} connect>
+                <FlowStep tone="wait" icon={<Clock size={16} aria-hidden />} connect>
                   <p className="text-sm font-medium">Wait {humanizeMinutes(step.delay_minutes)}</p>
                   <p className="text-xs text-muted-foreground">after the booking</p>
                 </FlowStep>
@@ -366,7 +368,7 @@ function AutomationCard({
         {!adding ? (
           <div className="pl-11">
             <Button type="button" variant="ghost" size="sm" onClick={() => setAdding(true)}>
-              <Plus className="h-4 w-4" aria-hidden />
+              <Plus size={16} aria-hidden />
               Add action
             </Button>
           </div>
@@ -397,7 +399,7 @@ function NewAutomationCard({
       </div>
       <div className="px-4 py-4">
         <ol>
-          <FlowStep tone="trigger" icon={<Zap className="h-4 w-4" aria-hidden />} connect>
+          <FlowStep tone="trigger" icon={<Zap size={16} aria-hidden />} connect>
             <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Trigger
             </p>
@@ -475,7 +477,7 @@ export function MessagingRules({
       {groups.length === 0 && !addingAutomation ? (
         <div className="rounded-xl border border-dashed bg-muted/20 px-6 py-10 text-center">
           <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg border bg-background">
-            <Zap className="h-5 w-5 text-muted-foreground" aria-hidden />
+            <Zap size={20} className="text-muted-foreground" aria-hidden />
           </span>
           <p className="mt-3 text-sm font-medium">No automations yet</p>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -505,7 +507,7 @@ export function MessagingRules({
         />
       ) : (
         <Button type="button" variant="outline" size="lg" onClick={() => setAddingAutomation(true)}>
-          <Plus className="h-4 w-4" aria-hidden />
+          <Plus size={16} aria-hidden />
           Add automation
         </Button>
       )}
@@ -533,10 +535,12 @@ export function WhatsappTemplateList({ templates }: { templates: WaTemplateOptio
                 <span className="truncate text-sm font-medium">{template.name}</span>
                 <Badge tone={STATUS_TONE[template.status] ?? "neutral"}>{template.status}</Badge>
                 <ChevronDown
-                  className={cn(
-                    "ml-auto h-4 w-4 shrink-0 text-muted-foreground transition-transform",
-                    open && "rotate-180",
-                  )}
+                  size={16}
+                  className="ml-auto shrink-0 text-muted-foreground"
+                  style={{
+                    transform: open ? "rotate(180deg)" : "none",
+                    transition: "transform 150ms ease",
+                  }}
                   aria-hidden
                 />
               </span>
@@ -576,7 +580,7 @@ export function AddWhatsappTemplateForm() {
   if (!open) {
     return (
       <Button type="button" variant="outline" size="lg" onClick={() => setOpen(true)}>
-        <Plus className="h-4 w-4" aria-hidden />
+        <Plus size={16} aria-hidden />
         Add template
       </Button>
     );

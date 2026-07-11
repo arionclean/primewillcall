@@ -9,18 +9,21 @@ import type { Channel } from "./messaging-lib";
 /**
  * Presentational pieces for the automation flow: the node chip + connector
  * rail, the on/off switch, and the SMS/WhatsApp segmented control.
+ *
+ * The chip and switch carry their size and color as explicit styles instead of
+ * utility classes: these tiny atoms kept rendering wrong under stale dev
+ * stylesheets, and pinning their pixels makes them immune to that class of
+ * problem. The app has no dark-mode toggle today; revisit these if it gets one.
  */
 
-const NODE_TONES = {
-  trigger:
-    "border-amber-200 bg-amber-50 text-amber-600 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300",
-  sms: "border-blue-200 bg-blue-50 text-blue-600 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300",
-  whatsapp:
-    "border-emerald-200 bg-emerald-50 text-emerald-600 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300",
-  wait: "border-indigo-200 bg-indigo-50 text-indigo-600 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-300",
+const NODE_STYLES = {
+  trigger: { backgroundColor: "#fffbeb", borderColor: "#fde68a", color: "#d97706" },
+  sms: { backgroundColor: "#eff6ff", borderColor: "#bfdbfe", color: "#2563eb" },
+  whatsapp: { backgroundColor: "#ecfdf5", borderColor: "#a7f3d0", color: "#059669" },
+  wait: { backgroundColor: "#eef2ff", borderColor: "#c7d2fe", color: "#4f46e5" },
 } as const;
 
-export type NodeTone = keyof typeof NODE_TONES;
+export type NodeTone = keyof typeof NODE_STYLES;
 
 /** One row of the vertical flow: an icon chip, a connector line, and content. */
 export function FlowStep({
@@ -38,25 +41,29 @@ export function FlowStep({
     <li className="flex gap-3">
       <div className="flex flex-col items-center">
         <span
-          className={cn(
-            "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border",
-            NODE_TONES[tone],
-          )}
+          className="flex shrink-0 items-center justify-center border"
+          style={{ width: 32, height: 32, borderRadius: 10, ...NODE_STYLES[tone] }}
         >
           {icon}
         </span>
-        {connect ? <span className="my-1 w-px flex-1 bg-border" /> : null}
+        {connect ? (
+          <span
+            className="my-1 flex-1"
+            style={{ width: 1, backgroundColor: "var(--border)" }}
+          />
+        ) : null}
       </div>
       <div className={cn("min-w-0 flex-1", connect ? "pb-4" : "pb-0")}>{children}</div>
     </li>
   );
 }
 
+/** Channel icons sized via SVG attributes so no stylesheet can distort them. */
 export function channelIcon(channel: Channel) {
   return channel === "whatsapp" ? (
-    <MessageCircle className="h-4 w-4" aria-hidden />
+    <MessageCircle size={16} aria-hidden />
   ) : (
-    <MessageSquare className="h-4 w-4" aria-hidden />
+    <MessageSquare size={16} aria-hidden />
   );
 }
 
@@ -84,16 +91,28 @@ export function Switch({
         aria-label={label}
         disabled={disabled}
         onClick={() => onChange(!checked)}
-        className={cn(
-          "relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full p-0.5 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60",
-          checked ? "bg-emerald-500" : "bg-muted-foreground/30",
-        )}
+        className="relative inline-flex shrink-0 cursor-pointer items-center outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60"
+        style={{
+          width: 36,
+          height: 20,
+          borderRadius: 9999,
+          padding: 2,
+          backgroundColor: checked ? "#10b981" : "rgba(115, 115, 115, 0.35)",
+          transition: "background-color 150ms ease",
+          border: "none",
+        }}
       >
         <span
-          className={cn(
-            "inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform",
-            checked ? "translate-x-4" : "translate-x-0",
-          )}
+          style={{
+            display: "inline-block",
+            width: 16,
+            height: 16,
+            borderRadius: 9999,
+            backgroundColor: "#ffffff",
+            boxShadow: "0 1px 2px rgba(0, 0, 0, 0.2)",
+            transform: checked ? "translateX(16px)" : "translateX(0)",
+            transition: "transform 150ms ease",
+          }}
         />
       </button>
     </>
