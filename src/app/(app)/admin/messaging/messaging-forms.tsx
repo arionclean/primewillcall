@@ -19,7 +19,7 @@ import {
   updateRuleAction,
   type MessagingActionState,
 } from "./actions";
-import { FlowStep, Switch, channelIcon } from "./flow";
+import { FlowStep, NODE_STYLES, Switch, channelIcon } from "./flow";
 import { EMPTY_DRAFT, MessageEditor } from "./message-editor";
 import {
   ANY_KEY,
@@ -233,25 +233,88 @@ function MessageStep({
   );
 }
 
-/** The instant "Add action" editor: pure local state, saved only on Create. */
+/** What kind of step the owner picked from the action menu. */
+type ActionChoice = { channel: Channel; withWait: boolean };
+
+const ACTION_CHOICES: { key: string; label: string; icon: React.ReactNode; choice: ActionChoice }[] = [
+  {
+    key: "sms",
+    label: "Send a text",
+    icon: <span style={{ color: NODE_STYLES.sms.color }}>{channelIcon("sms")}</span>,
+    choice: { channel: "sms", withWait: false },
+  },
+  {
+    key: "whatsapp",
+    label: "Send a WhatsApp",
+    icon: <span style={{ color: NODE_STYLES.whatsapp.color }}>{channelIcon("whatsapp")}</span>,
+    choice: { channel: "whatsapp", withWait: false },
+  },
+  {
+    key: "wait",
+    label: "Wait, then send",
+    icon: (
+      <span style={{ color: NODE_STYLES.wait.color }}>
+        <Clock size={16} aria-hidden />
+      </span>
+    ),
+    choice: { channel: "sms", withWait: true },
+  },
+];
+
+/** The "Add action" menu: pick the kind of step before anything opens. */
+function ActionPicker({
+  onPick,
+  onCancel,
+}: {
+  onPick: (choice: ActionChoice) => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 pl-11">
+      {ACTION_CHOICES.map((option) => (
+        <Button
+          key={option.key}
+          type="button"
+          variant="outline"
+          size="lg"
+          onClick={() => onPick(option.choice)}
+        >
+          {option.icon}
+          {option.label}
+        </Button>
+      ))}
+      <Button type="button" variant="ghost" size="lg" onClick={onCancel}>
+        Cancel
+      </Button>
+    </div>
+  );
+}
+
+/** The instant new-action editor: pure local state, saved only on Create. */
 function NewMessageStep({
   triggerEvent,
   businessTourId,
   waTemplates,
+  initial,
   onClose,
 }: {
   triggerEvent: string;
   businessTourId: string | null;
   waTemplates: WaTemplateOption[];
+  initial: ActionChoice;
   onClose: () => void;
 }) {
-  const [channel, setChannel] = useState<Channel>("sms");
+  const [channel, setChannel] = useState<Channel>(initial.channel);
   return (
     <FlowStep tone={channel} icon={channelIcon(channel)} connect>
       <MessageEditor
         action={createMessageAction}
         hiddenFields={{ trigger_event: triggerEvent, business_tour_id: businessTourId ?? "" }}
-        draft={EMPTY_DRAFT}
+        draft={{
+          ...EMPTY_DRAFT,
+          channel: initial.channel,
+          delayMinutes: initial.withWait ? 60 : 0,
+        }}
         waTemplates={waTemplates}
         submitLabel="Create message"
         onSaved={onClose}
@@ -294,7 +357,9 @@ function AutomationCard({
   openId: string | null;
   setOpenId: (updater: (current: string | null) => string | null) => void;
 }) {
-  const [adding, setAdding] = useState(false);
+  // Add-action flow: closed -> picker open -> editor open for the chosen kind.
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [newAction, setNewAction] = useState<ActionChoice | null>(null);
 
   const productName = businessTourId
     ? products.find((p) => p.id === businessTourId)?.name ?? "One product"
@@ -355,24 +420,33 @@ function AutomationCard({
             </Fragment>
           ))}
 
-          {adding ? (
+          {newAction ? (
             <NewMessageStep
               triggerEvent={triggerEvent}
               businessTourId={businessTourId}
               waTemplates={waTemplates}
-              onClose={() => setAdding(false)}
+              initial={newAction}
+              onClose={() => setNewAction(null)}
             />
           ) : null}
         </ol>
 
-        {!adding ? (
+        {newAction ? null : pickerOpen ? (
+          <ActionPicker
+            onPick={(choice) => {
+              setNewAction(choice);
+              setPickerOpen(false);
+            }}
+            onCancel={() => setPickerOpen(false)}
+          />
+        ) : (
           <div className="pl-11">
-            <Button type="button" variant="ghost" size="sm" onClick={() => setAdding(true)}>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setPickerOpen(true)}>
               <Plus size={16} aria-hidden />
               Add action
             </Button>
           </div>
-        ) : null}
+        )}
       </div>
     </div>
   );
@@ -390,6 +464,7 @@ function NewAutomationCard({
 }) {
   const [trigger, setTrigger] = useState<string>(TRIGGERS[0].value);
   const [productId, setProductId] = useState("");
+  const [firstAction, setFirstAction] = useState<ActionChoice | null>(null);
   const [channel, setChannel] = useState<Channel>("sms");
 
   return (
@@ -420,19 +495,35 @@ function NewAutomationCard({
 
           <StepsLabel />
 
-          <FlowStep tone={channel} icon={channelIcon(channel)} connect>
-            <MessageEditor
-              action={createMessageAction}
-              hiddenFields={{ trigger_event: trigger, business_tour_id: productId }}
-              draft={EMPTY_DRAFT}
-              waTemplates={waTemplates}
-              submitLabel="Create automation"
-              onSaved={onClose}
-              onCancel={onClose}
-              onChannelChange={setChannel}
-            />
-          </FlowStep>
+          {firstAction ? (
+            <FlowStep tone={channel} icon={channelIcon(channel)} connect>
+              <MessageEditor
+                action={createMessageAction}
+                hiddenFields={{ trigger_event: trigger, business_tour_id: productId }}
+                draft={{
+                  ...EMPTY_DRAFT,
+                  channel: firstAction.channel,
+                  delayMinutes: firstAction.withWait ? 60 : 0,
+                }}
+                waTemplates={waTemplates}
+                submitLabel="Create automation"
+                onSaved={onClose}
+                onCancel={onClose}
+                onChannelChange={setChannel}
+              />
+            </FlowStep>
+          ) : null}
         </ol>
+
+        {firstAction ? null : (
+          <ActionPicker
+            onPick={(choice) => {
+              setFirstAction(choice);
+              setChannel(choice.channel);
+            }}
+            onCancel={onClose}
+          />
+        )}
       </div>
     </div>
   );

@@ -16,7 +16,7 @@ import type { Channel } from "./messaging-lib";
  * problem. The app has no dark-mode toggle today; revisit these if it gets one.
  */
 
-const NODE_STYLES = {
+export const NODE_STYLES = {
   trigger: { backgroundColor: "#fffbeb", borderColor: "#fde68a", color: "#d97706" },
   sms: { backgroundColor: "#eff6ff", borderColor: "#bfdbfe", color: "#2563eb" },
   whatsapp: { backgroundColor: "#ecfdf5", borderColor: "#a7f3d0", color: "#059669" },
