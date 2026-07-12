@@ -146,6 +146,28 @@ export async function updateRuleAction(
   return { saved: true };
 }
 
+/**
+ * Save just the wait on a message (the Wait node's own editor). 0 removes the
+ * wait; anything else is minutes to hold the message after the trigger.
+ */
+export async function updateRuleDelayAction(formData: FormData): Promise<void> {
+  const auth = await requireOwner();
+  if (!auth.ok) return;
+
+  const id = String(formData.get("rule_id") ?? "").trim();
+  if (!id) return;
+  const delayMinutes = Math.min(
+    43200,
+    Math.max(0, Math.round(Number(formData.get("rule_delay_minutes") ?? 0) || 0)),
+  );
+
+  await auth.supabase
+    .from("messaging_rules")
+    .update({ delay_minutes: delayMinutes })
+    .eq("id", id);
+  revalidatePath("/admin/messaging");
+}
+
 export async function deleteRuleAction(formData: FormData): Promise<void> {
   const auth = await requireOwner();
   if (!auth.ok) return;
