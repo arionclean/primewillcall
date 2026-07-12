@@ -17,14 +17,18 @@ import {
   toggleAutomationActiveAction,
   updateAutomationProductAction,
   updateRuleAction,
+  updateRuleDelayAction,
   type MessagingActionState,
 } from "./actions";
 import { FlowStep, NODE_STYLES, Switch, channelIcon } from "./flow";
 import { EMPTY_DRAFT, MessageEditor } from "./message-editor";
 import {
   ANY_KEY,
+  MAX_DELAY_MINUTES,
   STATUS_TONE,
   TRIGGERS,
+  UNIT_FACTOR,
+  decomposeDelay,
   humanizeMinutes,
   renderPreview,
   triggerLabel,
@@ -136,6 +140,156 @@ function AutomationToggle({
         label={optimisticActive ? "Pause automation" : "Activate automation"}
       />
     </span>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Wait steps                                                                */
+/* -------------------------------------------------------------------------- */
+
+type WaitDraft = { value: string; unit: "minutes" | "hours" | "days" };
+
+function waitToMinutes(draft: WaitDraft): number {
+  return Math.min(
+    MAX_DELAY_MINUTES,
+    Math.max(1, Math.round(Number(draft.value) || 0)) * UNIT_FACTOR[draft.unit],
+  );
+}
+
+/** The duration controls shared by the Wait node editor and the new-wait module. */
+function WaitFields({
+  draft,
+  onChange,
+}: {
+  draft: WaitDraft;
+  onChange: (draft: WaitDraft) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm">
+      <span className="font-medium">Wait</span>
+      <Input
+        type="number"
+        min={1}
+        value={draft.value}
+        onChange={(event) => onChange({ ...draft, value: event.target.value })}
+        className="h-9 w-16"
+        aria-label="Wait amount"
+      />
+      <Select
+        value={draft.unit}
+        onChange={(event) =>
+          onChange({ ...draft, unit: event.target.value as WaitDraft["unit"] })
+        }
+        className="h-9 w-auto"
+        aria-label="Wait unit"
+      >
+        <option value="minutes">minutes</option>
+        <option value="hours">hours</option>
+        <option value="days">days</option>
+      </Select>
+      <span className="text-muted-foreground">after the booking</span>
+    </div>
+  );
+}
+
+/** A saved wait: its own node in the flow, click to edit or remove it. */
+function WaitStep({ rule }: { rule: RuleRow }) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState<WaitDraft>(() => {
+    const d = decomposeDelay(rule.delay_minutes);
+    return { value: d.value, unit: d.unit };
+  });
+  const [pending, startTransition] = useTransition();
+
+  const submit = (minutes: number) =>
+    startTransition(async () => {
+      const fd = new FormData();
+      fd.set("rule_id", rule.id);
+      fd.set("rule_delay_minutes", String(minutes));
+      await updateRuleDelayAction(fd);
+      setOpen(false);
+    });
+
+  return (
+    <FlowStep tone="wait" icon={<Clock size={16} aria-hidden />} connect>
+      {!open ? (
+        <button
+          type="button"
+          onClick={() => {
+            const d = decomposeDelay(rule.delay_minutes);
+            setDraft({ value: d.value, unit: d.unit });
+            setOpen(true);
+          }}
+          aria-expanded={open}
+          className="group -my-1 block w-full rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted/50"
+        >
+          <span className="flex items-center gap-2">
+            <span className="text-sm font-medium">Wait {humanizeMinutes(rule.delay_minutes)}</span>
+            <ChevronDown size={16} className="ml-auto shrink-0 text-muted-foreground" aria-hidden />
+          </span>
+          <span className="mt-0.5 block text-xs text-muted-foreground">after the booking</span>
+        </button>
+      ) : (
+        <div className="space-y-3 rounded-lg border bg-background p-3 shadow-sm">
+          <WaitFields draft={draft} onChange={setDraft} />
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={pending}
+              onClick={() => submit(0)}
+              className="text-muted-foreground"
+            >
+              Remove wait
+            </Button>
+            <div className="flex items-center gap-2">
+              <Button type="button" variant="ghost" size="lg" onClick={() => setOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                size="lg"
+                disabled={pending}
+                onClick={() => submit(waitToMinutes(draft))}
+              >
+                {pending ? "Saving..." : "Save wait"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </FlowStep>
+  );
+}
+
+/** Offered while editing a message that has no wait yet. */
+function AddWaitRow({ ruleId }: { ruleId: string }) {
+  const [pending, startTransition] = useTransition();
+  return (
+    <li className="flex gap-3 pb-2">
+      <div className="w-8" aria-hidden />
+      <div className="flex-1">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={pending}
+          className="text-muted-foreground"
+          onClick={() =>
+            startTransition(async () => {
+              const fd = new FormData();
+              fd.set("rule_id", ruleId);
+              fd.set("rule_delay_minutes", "60");
+              await updateRuleDelayAction(fd);
+            })
+          }
+        >
+          <Plus size={16} aria-hidden />
+          {pending ? "Adding wait..." : "Add a wait before this message"}
+        </Button>
+      </div>
+    </li>
   );
 }
 
@@ -290,38 +444,51 @@ function ActionPicker({
   );
 }
 
-/** The instant new-action editor: pure local state, saved only on Create. */
+/**
+ * The instant new-action editor: pure local state, saved only on Create.
+ * A wait renders as its own node above the message; both save as one step.
+ */
 function NewMessageStep({
   triggerEvent,
   businessTourId,
   waTemplates,
   initial,
+  submitLabel = "Create message",
   onClose,
 }: {
   triggerEvent: string;
   businessTourId: string | null;
   waTemplates: WaTemplateOption[];
   initial: ActionChoice;
+  submitLabel?: string;
   onClose: () => void;
 }) {
   const [channel, setChannel] = useState<Channel>(initial.channel);
+  const [wait, setWait] = useState<WaitDraft>({ value: "1", unit: "hours" });
+
   return (
-    <FlowStep tone={channel} icon={channelIcon(channel)} connect>
-      <MessageEditor
-        action={createMessageAction}
-        hiddenFields={{ trigger_event: triggerEvent, business_tour_id: businessTourId ?? "" }}
-        draft={{
-          ...EMPTY_DRAFT,
-          channel: initial.channel,
-          delayMinutes: initial.withWait ? 60 : 0,
-        }}
-        waTemplates={waTemplates}
-        submitLabel="Create message"
-        onSaved={onClose}
-        onCancel={onClose}
-        onChannelChange={setChannel}
-      />
-    </FlowStep>
+    <>
+      {initial.withWait ? (
+        <FlowStep tone="wait" icon={<Clock size={16} aria-hidden />} connect>
+          <div className="rounded-lg border bg-background p-3 shadow-sm">
+            <WaitFields draft={wait} onChange={setWait} />
+          </div>
+        </FlowStep>
+      ) : null}
+      <FlowStep tone={channel} icon={channelIcon(channel)} connect>
+        <MessageEditor
+          action={createMessageAction}
+          hiddenFields={{ trigger_event: triggerEvent, business_tour_id: businessTourId ?? "" }}
+          draft={{ ...EMPTY_DRAFT, channel: initial.channel }}
+          delayMinutes={initial.withWait ? waitToMinutes(wait) : 0}
+          waTemplates={waTemplates}
+          submitLabel={submitLabel}
+          onSaved={onClose}
+          onCancel={onClose}
+          onChannelChange={setChannel}
+        />
+      </FlowStep>
+    </>
   );
 }
 
@@ -406,10 +573,9 @@ function AutomationCard({
           {steps.map((step) => (
             <Fragment key={step.id}>
               {step.delay_minutes > 0 ? (
-                <FlowStep tone="wait" icon={<Clock size={16} aria-hidden />} connect>
-                  <p className="text-sm font-medium">Wait {humanizeMinutes(step.delay_minutes)}</p>
-                  <p className="text-xs text-muted-foreground">after the booking</p>
-                </FlowStep>
+                <WaitStep rule={step} />
+              ) : openId === step.id ? (
+                <AddWaitRow ruleId={step.id} />
               ) : null}
               <MessageStep
                 rule={step}
@@ -465,7 +631,6 @@ function NewAutomationCard({
   const [trigger, setTrigger] = useState<string>(TRIGGERS[0].value);
   const [productId, setProductId] = useState("");
   const [firstAction, setFirstAction] = useState<ActionChoice | null>(null);
-  const [channel, setChannel] = useState<Channel>("sms");
 
   return (
     <div className="rounded-xl border bg-card shadow-sm">
@@ -496,33 +661,19 @@ function NewAutomationCard({
           <StepsLabel />
 
           {firstAction ? (
-            <FlowStep tone={channel} icon={channelIcon(channel)} connect>
-              <MessageEditor
-                action={createMessageAction}
-                hiddenFields={{ trigger_event: trigger, business_tour_id: productId }}
-                draft={{
-                  ...EMPTY_DRAFT,
-                  channel: firstAction.channel,
-                  delayMinutes: firstAction.withWait ? 60 : 0,
-                }}
-                waTemplates={waTemplates}
-                submitLabel="Create automation"
-                onSaved={onClose}
-                onCancel={onClose}
-                onChannelChange={setChannel}
-              />
-            </FlowStep>
+            <NewMessageStep
+              triggerEvent={trigger}
+              businessTourId={productId || null}
+              waTemplates={waTemplates}
+              initial={firstAction}
+              submitLabel="Create automation"
+              onClose={onClose}
+            />
           ) : null}
         </ol>
 
         {firstAction ? null : (
-          <ActionPicker
-            onPick={(choice) => {
-              setFirstAction(choice);
-              setChannel(choice.channel);
-            }}
-            onCancel={onClose}
-          />
+          <ActionPicker onPick={setFirstAction} onCancel={onClose} />
         )}
       </div>
     </div>

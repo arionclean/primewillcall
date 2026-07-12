@@ -12,11 +12,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { deleteRuleAction, type MessagingActionState } from "./actions";
 import { ChannelToggle, Switch } from "./flow";
 import {
-  MAX_DELAY_MINUTES,
   PLACEHOLDER_LABELS,
   PLACEHOLDERS,
-  UNIT_FACTOR,
-  decomposeDelay,
   renderPreview,
   type Channel,
   type WaTemplateOption,
@@ -50,11 +47,16 @@ export const EMPTY_DRAFT: MessageDraft = {
  * The message form, shared by "edit this message" and "add a new one". Local
  * state opens instantly; only Save talks to the server. `hiddenFields` carries
  * the identity (rule_id when editing, trigger + product when creating).
+ *
+ * Waits are NOT edited here: the Wait node in the flow owns them. This form
+ * only carries the delay along (`delayMinutes`) so saving a message never
+ * wipes its wait.
  */
 export function MessageEditor({
   action,
   hiddenFields,
   draft,
+  delayMinutes,
   waTemplates,
   submitLabel,
   deletableName,
@@ -65,6 +67,8 @@ export function MessageEditor({
   action: (prev: MessagingActionState, formData: FormData) => Promise<MessagingActionState>;
   hiddenFields: Record<string, string>;
   draft: MessageDraft;
+  /** The wait to submit with the form; defaults to the draft's stored wait. */
+  delayMinutes?: number;
   waTemplates: WaTemplateOption[];
   submitLabel: string;
   deletableName?: string;
@@ -78,18 +82,6 @@ export function MessageEditor({
   const [waSid, setWaSid] = useState(draft.whatsappContentSid);
   const [active, setActive] = useState(draft.isActive);
   const [firstContact, setFirstContact] = useState(draft.onlyFirstContact);
-
-  const initialDelay = decomposeDelay(draft.delayMinutes);
-  const [delayMode, setDelayMode] = useState<"immediately" | "delay">(initialDelay.mode);
-  const [delayValue, setDelayValue] = useState(initialDelay.value);
-  const [delayUnit, setDelayUnit] = useState<"minutes" | "hours" | "days">(initialDelay.unit);
-  const computedDelay =
-    delayMode === "immediately"
-      ? 0
-      : Math.min(
-          MAX_DELAY_MINUTES,
-          Math.max(1, Math.round(Number(delayValue) || 0)) * UNIT_FACTOR[delayUnit],
-        );
 
   const setChannel = (next: Channel) => {
     setChannelState(next);
@@ -122,7 +114,7 @@ export function MessageEditor({
         <input key={name} type="hidden" name={name} value={value} />
       ))}
       <input type="hidden" name="rule_channel" value={channel} />
-      <input type="hidden" name="rule_delay_minutes" value={computedDelay} />
+      <input type="hidden" name="rule_delay_minutes" value={delayMinutes ?? draft.delayMinutes} />
 
       <div className="flex flex-wrap items-center gap-3">
         <Input
@@ -147,42 +139,6 @@ export function MessageEditor({
           >
             <Trash2 size={16} />
           </button>
-        ) : null}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2 text-sm">
-        <span className="font-medium">When to send</span>
-        <Select
-          value={delayMode}
-          onChange={(event) => setDelayMode(event.target.value as "immediately" | "delay")}
-          className="h-9 w-auto"
-          aria-label="When to send"
-        >
-          <option value="immediately">Immediately</option>
-          <option value="delay">After a wait</option>
-        </Select>
-        {delayMode === "delay" ? (
-          <>
-            <Input
-              type="number"
-              min={1}
-              value={delayValue}
-              onChange={(event) => setDelayValue(event.target.value)}
-              className="h-9 w-16"
-              aria-label="Wait amount"
-            />
-            <Select
-              value={delayUnit}
-              onChange={(event) => setDelayUnit(event.target.value as "minutes" | "hours" | "days")}
-              className="h-9 w-auto"
-              aria-label="Wait unit"
-            >
-              <option value="minutes">minutes</option>
-              <option value="hours">hours</option>
-              <option value="days">days</option>
-            </Select>
-            <span className="text-muted-foreground">after the booking</span>
-          </>
         ) : null}
       </div>
 
