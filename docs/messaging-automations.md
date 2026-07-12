@@ -14,9 +14,12 @@ An **automation** is a **trigger** plus one or more **actions**:
   (`sms` / `whatsapp`), the body or WhatsApp template, `only_first_contact`, `is_active`,
   and now `delay_minutes`.
 
-**Wait** = `delay_minutes > 0` on an action: send it that many minutes after the booking
-(0 = immediately). The builder shows it as a "Wait 2 hours" node before the message. Max
-30 days (`43200`).
+**Waits**: the builder treats an automation as a SEQUENCE. A Wait node is the gap
+between the previous step and the next message ("wait 1 day, then continue"); editing a
+gap shifts that message and every step after it. Storage stays absolute:
+`messaging_rules.delay_minutes` is each message's total delay from the trigger (the sum
+of the gaps above it, 0 = immediately, max 30 days = `43200`), because that is what the
+send queue schedules on. `updateWaitGapAction` does the gap-to-absolute math.
 
 ## How a wait actually fires
 

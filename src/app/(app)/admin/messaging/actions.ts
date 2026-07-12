@@ -147,24 +147,56 @@ export async function updateRuleAction(
 }
 
 /**
- * Save just the wait on a message (the Wait node's own editor). 0 removes the
- * wait; anything else is minutes to hold the message after the trigger.
+ * Save a Wait node. The automation is a sequence: a wait is the GAP between
+ * the previous step and this message, so changing it shifts this message and
+ * every step after it by the same amount. 0 removes the wait. The database
+ * still stores each message's absolute delay from the trigger (that is what
+ * the send queue schedules on); this action does the gap-to-absolute math.
  */
-export async function updateRuleDelayAction(formData: FormData): Promise<void> {
+export async function updateWaitGapAction(formData: FormData): Promise<void> {
   const auth = await requireOwner();
   if (!auth.ok) return;
 
   const id = String(formData.get("rule_id") ?? "").trim();
   if (!id) return;
-  const delayMinutes = Math.min(
+  const gap = Math.min(
     43200,
-    Math.max(0, Math.round(Number(formData.get("rule_delay_minutes") ?? 0) || 0)),
+    Math.max(0, Math.round(Number(formData.get("wait_gap_minutes") ?? 0) || 0)),
   );
 
-  await auth.supabase
+  const { data: rule } = await auth.supabase
     .from("messaging_rules")
-    .update({ delay_minutes: delayMinutes })
-    .eq("id", id);
+    .select("id, trigger_event, business_tour_id, delay_minutes")
+    .eq("id", id)
+    .maybeSingle();
+  if (!rule) return;
+
+  // The message's siblings in send order (same trigger + product).
+  const siblingsQuery = auth.supabase
+    .from("messaging_rules")
+    .select("id, delay_minutes")
+    .eq("trigger_event", rule.trigger_event)
+    .order("delay_minutes", { ascending: true })
+    .order("created_at", { ascending: true });
+  const { data: siblings } = await (rule.business_tour_id
+    ? siblingsQuery.eq("business_tour_id", rule.business_tour_id)
+    : siblingsQuery.is("business_tour_id", null));
+  const steps = siblings ?? [];
+
+  const index = steps.findIndex((step) => step.id === id);
+  if (index < 0) return;
+  const prevDelay = index > 0 ? steps[index - 1].delay_minutes : 0;
+  const delta = gap - (rule.delay_minutes - prevDelay);
+  if (delta === 0) return;
+
+  // Shift this step and everything after it, keeping their gaps intact.
+  for (const step of steps.slice(index)) {
+    const next = Math.min(43200, Math.max(0, step.delay_minutes + delta));
+    await auth.supabase
+      .from("messaging_rules")
+      .update({ delay_minutes: next })
+      .eq("id", step.id);
+  }
   revalidatePath("/admin/messaging");
 }
 

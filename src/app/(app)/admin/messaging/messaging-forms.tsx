@@ -17,7 +17,7 @@ import {
   toggleAutomationActiveAction,
   updateAutomationProductAction,
   updateRuleAction,
-  updateRuleDelayAction,
+  updateWaitGapAction,
   type MessagingActionState,
 } from "./actions";
 import { FlowStep, NODE_STYLES, Switch, channelIcon } from "./flow";
@@ -187,16 +187,20 @@ function WaitFields({
         <option value="hours">hours</option>
         <option value="days">days</option>
       </Select>
-      <span className="text-muted-foreground">after the booking</span>
+      <span className="text-muted-foreground">then continue</span>
     </div>
   );
 }
 
-/** A saved wait: its own node in the flow, click to edit or remove it. */
-function WaitStep({ rule }: { rule: RuleRow }) {
+/**
+ * A saved wait: its own node in the sequence, click to edit or remove it.
+ * `gapMinutes` is the pause since the previous step; saving shifts this
+ * message and everything after it (updateWaitGapAction does the math).
+ */
+function WaitStep({ ruleId, gapMinutes }: { ruleId: string; gapMinutes: number }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<WaitDraft>(() => {
-    const d = decomposeDelay(rule.delay_minutes);
+    const d = decomposeDelay(gapMinutes);
     return { value: d.value, unit: d.unit };
   });
   const [pending, startTransition] = useTransition();
@@ -204,9 +208,9 @@ function WaitStep({ rule }: { rule: RuleRow }) {
   const submit = (minutes: number) =>
     startTransition(async () => {
       const fd = new FormData();
-      fd.set("rule_id", rule.id);
-      fd.set("rule_delay_minutes", String(minutes));
-      await updateRuleDelayAction(fd);
+      fd.set("rule_id", ruleId);
+      fd.set("wait_gap_minutes", String(minutes));
+      await updateWaitGapAction(fd);
       setOpen(false);
     });
 
@@ -216,7 +220,7 @@ function WaitStep({ rule }: { rule: RuleRow }) {
         <button
           type="button"
           onClick={() => {
-            const d = decomposeDelay(rule.delay_minutes);
+            const d = decomposeDelay(gapMinutes);
             setDraft({ value: d.value, unit: d.unit });
             setOpen(true);
           }}
@@ -224,10 +228,9 @@ function WaitStep({ rule }: { rule: RuleRow }) {
           className="group -my-1 block w-full rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted/50"
         >
           <span className="flex items-center gap-2">
-            <span className="text-sm font-medium">Wait {humanizeMinutes(rule.delay_minutes)}</span>
+            <span className="text-sm font-medium">Wait {humanizeMinutes(gapMinutes)}</span>
             <ChevronDown size={16} className="ml-auto shrink-0 text-muted-foreground" aria-hidden />
           </span>
-          <span className="mt-0.5 block text-xs text-muted-foreground">after the booking</span>
         </button>
       ) : (
         <div className="space-y-3 rounded-lg border bg-background p-3 shadow-sm">
@@ -280,8 +283,8 @@ function AddWaitRow({ ruleId }: { ruleId: string }) {
             startTransition(async () => {
               const fd = new FormData();
               fd.set("rule_id", ruleId);
-              fd.set("rule_delay_minutes", "60");
-              await updateRuleDelayAction(fd);
+              fd.set("wait_gap_minutes", "60");
+              await updateWaitGapAction(fd);
             })
           }
         >
@@ -447,12 +450,15 @@ function ActionPicker({
 /**
  * The instant new-action editor: pure local state, saved only on Create.
  * A wait renders as its own node above the message; both save as one step.
+ * New steps join the END of the sequence, so their stored delay builds on the
+ * previous step's time (`baseDelay`) plus the wait gap, if any.
  */
 function NewMessageStep({
   triggerEvent,
   businessTourId,
   waTemplates,
   initial,
+  baseDelay = 0,
   submitLabel = "Create message",
   onClose,
 }: {
@@ -460,6 +466,7 @@ function NewMessageStep({
   businessTourId: string | null;
   waTemplates: WaTemplateOption[];
   initial: ActionChoice;
+  baseDelay?: number;
   submitLabel?: string;
   onClose: () => void;
 }) {
@@ -480,7 +487,7 @@ function NewMessageStep({
           action={createMessageAction}
           hiddenFields={{ trigger_event: triggerEvent, business_tour_id: businessTourId ?? "" }}
           draft={{ ...EMPTY_DRAFT, channel: initial.channel }}
-          delayMinutes={initial.withWait ? waitToMinutes(wait) : 0}
+          delayMinutes={baseDelay + (initial.withWait ? waitToMinutes(wait) : 0)}
           waTemplates={waTemplates}
           submitLabel={submitLabel}
           onSaved={onClose}
@@ -533,6 +540,11 @@ function AutomationCard({
     : "Any product";
   const activeCount = steps.filter((s) => s.is_active).length;
 
+  // The sequence in send order (stable sort keeps creation order for ties).
+  // Wait nodes render from the GAP between consecutive steps.
+  const ordered = [...steps].sort((a, b) => a.delay_minutes - b.delay_minutes);
+  const lastDelay = ordered.length > 0 ? ordered[ordered.length - 1].delay_minutes : 0;
+
   return (
     <div className="rounded-xl border bg-card shadow-sm">
       <div className="flex items-center gap-3 border-b px-4 py-3">
@@ -570,21 +582,25 @@ function AutomationCard({
 
           <StepsLabel />
 
-          {steps.map((step) => (
-            <Fragment key={step.id}>
-              {step.delay_minutes > 0 ? (
-                <WaitStep rule={step} />
-              ) : openId === step.id ? (
-                <AddWaitRow ruleId={step.id} />
-              ) : null}
-              <MessageStep
-                rule={step}
-                waTemplates={waTemplates}
-                open={openId === step.id}
-                onToggle={() => setOpenId((current) => (current === step.id ? null : step.id))}
-              />
-            </Fragment>
-          ))}
+          {ordered.map((step, index) => {
+            const prevDelay = index > 0 ? ordered[index - 1].delay_minutes : 0;
+            const gap = step.delay_minutes - prevDelay;
+            return (
+              <Fragment key={step.id}>
+                {gap > 0 ? (
+                  <WaitStep ruleId={step.id} gapMinutes={gap} />
+                ) : openId === step.id ? (
+                  <AddWaitRow ruleId={step.id} />
+                ) : null}
+                <MessageStep
+                  rule={step}
+                  waTemplates={waTemplates}
+                  open={openId === step.id}
+                  onToggle={() => setOpenId((current) => (current === step.id ? null : step.id))}
+                />
+              </Fragment>
+            );
+          })}
 
           {newAction ? (
             <NewMessageStep
@@ -592,6 +608,7 @@ function AutomationCard({
               businessTourId={businessTourId}
               waTemplates={waTemplates}
               initial={newAction}
+              baseDelay={lastDelay}
               onClose={() => setNewAction(null)}
             />
           ) : null}
