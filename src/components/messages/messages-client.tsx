@@ -130,6 +130,32 @@ export function MessagesClient() {
     };
   }, [loadConversations]);
 
+  // Safety nets for the conversation list: realtime can miss inserts when the
+  // tab is backgrounded or the socket drops, so also refresh when the tab
+  // regains focus and on a slow poll. Keeps new inbound threads appearing
+  // without a manual reload.
+  useEffect(() => {
+    const refresh = () => {
+      loadConversations();
+      if (activeRef.current) {
+        openThread(activeRef.current);
+      }
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        refresh();
+      }
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", onVisible);
+    const interval = window.setInterval(loadConversations, 20_000);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.clearInterval(interval);
+    };
+  }, [loadConversations, openThread]);
+
   useEffect(() => {
     threadEndRef.current?.scrollIntoView({ block: "end" });
   }, [messages]);
