@@ -28,19 +28,50 @@ gap shifts that message and every step after it. Storage stays absolute:
 of the gaps above it, 0 = immediately, max 30 days = `43200`), because that is what the
 send queue schedules on. `updateWaitGapAction` does the gap-to-absolute math.
 
-## How a wait actually fires
+## How firing works (DB-triggered, page-independent)
 
-1. A booking is created and calls `maybeRunNewBookingRules(ctx)`
-   (`src/lib/sms/rules.ts`). Gated by `MESSAGING_AUTOMATIONS_ENABLED` and never throws.
-2. `runNewBookingRules` loads the matching active rules. For each:
-   - `delay_minutes === 0` -> send **inline** via Twilio (unchanged behaviour).
-   - `delay_minutes > 0` -> render now and **enqueue** a row in `public.scheduled_messages`
-     with `send_at = now + delay` (a later edit to the rule does not rewrite what is queued).
-3. `pg_cron` calls the **`dispatch-scheduled-messages`** edge function every minute. It
-   `claim_due_scheduled_messages()` (atomic `FOR UPDATE SKIP LOCKED`, so concurrent runs
-   never double-send), sends each due row through Twilio, and marks it `sent` / `failed`.
+Firing lives in the **database**, not in app code, so it works for a booking from ANY
+source, not just whichever page remembered to call it. Everything funnels through one
+queue and one sender, and that sender enforces a hard spend cap.
 
-Tables/functions live in `supabase/migrations/20260711120000_scheduled_messages.sql`.
+1. A booking row is inserted. An `AFTER INSERT` trigger on `bookings`,
+   `WHEN (NEW.legacy_id IS NULL)`, runs `on_native_booking_created()`. The `legacy_id IS
+   NULL` clause means it fires only for **Supabase-native** bookings and **never** for the
+   ~90k Xano-synced rows (which still have Xano do their texting). It also no-ops unless
+   `messaging_settings.automations_enabled` is true.
+2. The trigger `pg_net`-POSTs the booking id to the **`run-booking-automations`** edge
+   function (enqueue only, never calls Twilio). It matches the active rules for the
+   product, renders each, and inserts rows into `public.scheduled_messages`
+   (`send_at = now + delay_minutes`, immediate = `now`). Idempotent per booking.
+3. `pg_cron` calls **`dispatch-scheduled-messages`** every minute. It enforces the
+   **global hourly cap** (see below), `claim_due_scheduled_messages()` up to the remaining
+   budget (atomic `FOR UPDATE SKIP LOCKED`), sends via Twilio, marks `sent` / `failed`.
+
+The old inline path (`maybeRunNewBookingRules` in `src/lib/sms/rules.ts`, called from
+`/schedule`) is **retired** — it bypassed the cap and would double-send alongside the
+trigger. `rules.ts` is kept only as the reference the edge function was ported from.
+
+## Guardrails (money safety)
+
+`public.messaging_settings` (single row) is the control panel; everything defaults to safe:
+
+- `automations_enabled` (default **false**) — the master kill switch. Off = the trigger
+  does nothing and nothing is enqueued.
+- `sms_hourly_cap` (default **100**) — the dispatcher never sends more than this many
+  messages per rolling hour, globally. Overflow stays `pending` (delayed, **not dropped**)
+  and drains on later runs. This makes a runaway spend impossible regardless of how many
+  bookings flood in.
+- `alert_phone` — when the cap actively throttles work, the dispatcher logs a
+  `public.messaging_alerts` row and (if this is set) texts an alert naming the top
+  products/sources filling the queue. Deduped to once per hour. **SMS only** — it cannot
+  be an email address.
+- `booking_link_base` — base for `{{booking_link}}` (set to the app's `/booking`).
+
+To turn automations on: set `messaging_settings.automations_enabled = true`, make sure
+`run-booking-automations` has the `CRON_SECRET` function secret (same value as the
+dispatcher), and set `alert_phone`. Migration:
+`supabase/migrations/20260712140000_booking_automations_guardrails.sql`. Queue tables/RPC:
+`supabase/migrations/20260711120000_scheduled_messages.sql`.
 
 ## Go-live checklist
 
