@@ -44,19 +44,32 @@ Tables/functions live in `supabase/migrations/20260711120000_scheduled_messages.
 
 ## Go-live checklist
 
-The schema migration is already applied. To turn sending on:
+Status on project `qbnizuhozzwkiitfkjee` (as of 2026-07-12):
 
-1. **Twilio env on the Next app** (Vercel): `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`,
-   `TWILIO_FROM_NUMBER`, `TWILIO_WHATSAPP_FROM`, and `BOOKING_LINK_BASE_URL`
-   (defaults to `https://bked.io/booking`).
-2. **Deploy the dispatcher** (no JWT gate; it authenticates with a shared secret):
-   `supabase functions deploy dispatch-scheduled-messages --no-verify-jwt`
-   Set its secrets: `supabase secrets set TWILIO_ACCOUNT_SID=... TWILIO_AUTH_TOKEN=...
-   TWILIO_FROM_NUMBER=... TWILIO_WHATSAPP_FROM=... CRON_SECRET=<random-long-string>`
-3. **Schedule the cron** (SQL below), storing the same `CRON_SECRET` in Vault.
+- [x] Schema migrations applied (`scheduled_messages`, `delay_minutes`, `automation_id`).
+- [x] Dispatcher edge function `dispatch-scheduled-messages` deployed and ACTIVE (JWT off).
+- [x] `pg_cron` + `pg_net` enabled; `CRON_SECRET` in Vault (`dispatch_cron_secret`); the
+      every-minute cron job is scheduled and active.
+- [x] Edge-function secrets set (`CRON_SECRET` + the four Twilio values) and **verified
+      end to end**: a test row queued to a real number was sent (cron -> function 200 ->
+      Twilio `SM...` SID -> row `sent`).
+- [ ] **Wire the Groupon path** (step 4 below).
+- [ ] **Flip `MESSAGING_AUTOMATIONS_ENABLED=true`** on the Next app (step 5).
+
+Remaining steps to turn sending on:
+
+1. **Twilio env on the Next app** (Vercel), for the *inline* (delay 0) sends:
+   `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`, `TWILIO_WHATSAPP_FROM`,
+   and `BOOKING_LINK_BASE_URL` (set to `https://<app-domain>/booking`, not the bked.io
+   default, so ticket links hit the new app's page).
+2. ~~Deploy the dispatcher~~ (done). To redeploy after code changes:
+   `supabase functions deploy dispatch-scheduled-messages --no-verify-jwt`. Its secrets
+   (`TWILIO_*`, `CRON_SECRET`) are set on the function; the cron reads `CRON_SECRET` from Vault.
+3. ~~Schedule the cron~~ (done; SQL kept below for reference / disaster recovery).
 4. **Wire the other booking path**: add the same `maybeRunNewBookingRules({...})` call after
    the booking insert in `src/app/api/gp/book/route.ts` (the internal `/schedule` flow is
-   already wired in `src/app/(app)/schedule/actions.ts`).
+   already wired in `src/app/(app)/schedule/actions.ts`). Until then, Groupon (`/gp`)
+   bookings never enqueue or fire any automation.
 5. **Flip it on**: set `MESSAGING_AUTOMATIONS_ENABLED=true` on the Next app — but only once
    Xano no longer sends the same booking texts, or customers get double-messaged.
 
