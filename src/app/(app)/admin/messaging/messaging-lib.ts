@@ -6,6 +6,7 @@
 export type RuleRow = {
   id: string;
   name: string;
+  automation_id: string;
   trigger_event: string;
   business_tour_id: string | null;
   channel: "sms" | "whatsapp";

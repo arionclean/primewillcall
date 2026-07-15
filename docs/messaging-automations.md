@@ -8,11 +8,18 @@ path, and the checklist to make it actually send in production.
 
 An **automation** is a **trigger** plus one or more **actions**:
 
-- **Trigger**: `messaging_rules.trigger_event` (only `new_booking` today) + `business_tour_id`
-  (the product, `null` = any product). Rows that share a trigger render as one automation.
+- **Identity**: `messaging_rules.automation_id`. Rows sharing this id are one automation.
+  This is what lets two automations share the same trigger and product without merging
+  (added in `20260712120000_messaging_rules_automation_id.sql`; backfilled by the old
+  trigger+product grouping). Creating a message with no `automation_id` starts a new
+  automation (the column default mints a fresh id); "Add action" passes the existing id.
+- **Trigger**: `trigger_event` (only `new_booking` today) + `business_tour_id` (the
+  product, `null` = any product). Shared across an automation's rows; changing the product
+  moves them all (scoped by `automation_id`, so it never merges two automations).
 - **Action**: a single `messaging_rules` row (a message). Each has a `channel`
   (`sms` / `whatsapp`), the body or WhatsApp template, `only_first_contact`, `is_active`,
-  and now `delay_minutes`.
+  and `delay_minutes`. Messages have no user-facing name; the row's `name` is auto-derived
+  for storage and the UI shows the message content.
 
 **Waits**: the builder treats an automation as a SEQUENCE. A Wait node is the gap
 between the previous step and the next message ("wait 1 day, then continue"); editing a

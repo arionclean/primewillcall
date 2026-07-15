@@ -99,9 +99,13 @@ function parseMessageFields(
 }
 
 /**
- * Create a message inside an automation. The automation identity (trigger +
- * product) rides along as hidden fields; the message itself is authored in the
- * editor before anything touches the database, so there are no draft rows.
+ * Create a message. The message is authored fully in the editor before
+ * anything touches the database, so there are no draft rows.
+ *
+ * `automation_id` decides which automation it joins: pass an existing id to add
+ * an action to that automation, or omit it to start a brand-new automation (the
+ * column default mints a fresh id). This is what lets two automations share a
+ * trigger and product without merging.
  */
 export async function createMessageAction(
   _prev: MessagingActionState,
@@ -114,10 +118,12 @@ export async function createMessageAction(
   if (!parsed.ok) return { error: parsed.error };
 
   const businessTourId = String(formData.get("business_tour_id") ?? "").trim() || null;
+  const automationId = String(formData.get("automation_id") ?? "").trim();
   const { error } = await auth.supabase.from("messaging_rules").insert({
     ...parsed.fields,
     trigger_event: readTrigger(formData),
     business_tour_id: businessTourId,
+    ...(automationId ? { automation_id: automationId } : {}),
   });
   if (error) return { error: `Could not save: ${error.message}` };
 
@@ -169,21 +175,18 @@ export async function updateWaitGapAction(formData: FormData): Promise<void> {
 
   const { data: rule } = await auth.supabase
     .from("messaging_rules")
-    .select("id, trigger_event, business_tour_id, delay_minutes")
+    .select("id, automation_id, delay_minutes")
     .eq("id", id)
     .maybeSingle();
   if (!rule) return;
 
-  // The message's siblings in send order (same trigger + product).
-  const siblingsQuery = auth.supabase
+  // The message's siblings in send order (same automation).
+  const { data: siblings } = await auth.supabase
     .from("messaging_rules")
     .select("id, delay_minutes")
-    .eq("trigger_event", rule.trigger_event)
+    .eq("automation_id", rule.automation_id)
     .order("delay_minutes", { ascending: true })
     .order("created_at", { ascending: true });
-  const { data: siblings } = await (rule.business_tour_id
-    ? siblingsQuery.eq("business_tour_id", rule.business_tour_id)
-    : siblingsQuery.is("business_tour_id", null));
   const steps = siblings ?? [];
 
   const index = steps.findIndex((step) => step.id === id);
@@ -214,56 +217,48 @@ export async function deleteRuleAction(formData: FormData): Promise<void> {
 }
 
 /**
- * Turn a whole automation on or off in one click: flips every message in the
- * group (trigger + product). If any message is active it pauses them all;
- * otherwise it activates them all. The engine only fires active messages, so a
- * fully-paused automation simply does nothing.
+ * Turn a whole automation on or off in one click: flips every message in it. If
+ * any message is active it pauses them all; otherwise it activates them all. The
+ * engine only fires active messages, so a fully-paused automation does nothing.
  */
 export async function toggleAutomationActiveAction(formData: FormData): Promise<void> {
   const auth = await requireOwner();
   if (!auth.ok) return;
 
-  const trigger = readTrigger(formData);
-  const productId = String(formData.get("automation_product") ?? "").trim() || null;
+  const automationId = String(formData.get("automation_id") ?? "").trim();
+  if (!automationId) return;
 
-  const read = auth.supabase.from("messaging_rules").select("is_active").eq("trigger_event", trigger);
-  const { data } = await (productId
-    ? read.eq("business_tour_id", productId)
-    : read.is("business_tour_id", null));
+  const { data } = await auth.supabase
+    .from("messaging_rules")
+    .select("is_active")
+    .eq("automation_id", automationId);
   const anyActive = (data ?? []).some((row) => row.is_active);
 
-  const update = auth.supabase
+  await auth.supabase
     .from("messaging_rules")
     .update({ is_active: !anyActive })
-    .eq("trigger_event", trigger);
-  await (productId
-    ? update.eq("business_tour_id", productId)
-    : update.is("business_tour_id", null));
+    .eq("automation_id", automationId);
 
   revalidatePath("/admin/messaging");
 }
 
 /**
- * Re-point a whole automation at a different product. The automation is the
- * group of messages sharing a trigger product, so this updates every message
- * in it at once. If the new product already has an automation, they merge.
+ * Re-point a whole automation at a different product. Every message in the
+ * automation moves together. Automations are keyed by `automation_id`, so this
+ * never merges two automations that happen to land on the same product.
  */
 export async function updateAutomationProductAction(formData: FormData): Promise<void> {
   const auth = await requireOwner();
   if (!auth.ok) return;
 
-  const oldId = String(formData.get("automation_product_old") ?? "").trim() || null;
+  const automationId = String(formData.get("automation_id") ?? "").trim();
+  if (!automationId) return;
   const newId = String(formData.get("automation_product_new") ?? "").trim() || null;
-  if (oldId === newId) return;
 
-  // Scope to this automation's trigger so only its messages move.
-  const query = auth.supabase
+  const { error } = await auth.supabase
     .from("messaging_rules")
     .update({ business_tour_id: newId })
-    .eq("trigger_event", readTrigger(formData));
-  const { error } = oldId
-    ? await query.eq("business_tour_id", oldId)
-    : await query.is("business_tour_id", null);
+    .eq("automation_id", automationId);
   if (error) return;
 
   revalidatePath("/admin/messaging");

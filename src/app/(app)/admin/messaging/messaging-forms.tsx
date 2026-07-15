@@ -23,7 +23,6 @@ import {
 import { FlowStep, NODE_STYLES, Switch, channelIcon } from "./flow";
 import { EMPTY_DRAFT, MessageEditor } from "./message-editor";
 import {
-  ANY_KEY,
   MAX_DELAY_MINUTES,
   STATUS_TONE,
   TRIGGERS,
@@ -76,11 +75,11 @@ function ProductOptions({ products }: { products: ProductOption[] }) {
 
 /** Product picker on an existing automation: saves on change, no submit button. */
 function TriggerProductSelect({
-  triggerEvent,
+  automationId,
   businessTourId,
   products,
 }: {
-  triggerEvent: string;
+  automationId: string;
   businessTourId: string | null;
   products: ProductOption[];
 }) {
@@ -93,8 +92,7 @@ function TriggerProductSelect({
         const next = event.target.value;
         startTransition(async () => {
           const fd = new FormData();
-          fd.set("trigger_event", triggerEvent);
-          fd.set("automation_product_old", businessTourId ?? "");
+          fd.set("automation_id", automationId);
           fd.set("automation_product_new", next);
           await updateAutomationProductAction(fd);
         });
@@ -108,15 +106,7 @@ function TriggerProductSelect({
 }
 
 /** Header switch: pauses or resumes every message, with instant visual feedback. */
-function AutomationToggle({
-  triggerEvent,
-  businessTourId,
-  active,
-}: {
-  triggerEvent: string;
-  businessTourId: string | null;
-  active: boolean;
-}) {
+function AutomationToggle({ automationId, active }: { automationId: string; active: boolean }) {
   const [, startTransition] = useTransition();
   const [optimisticActive, setOptimisticActive] = useOptimistic(active);
 
@@ -124,8 +114,7 @@ function AutomationToggle({
     startTransition(async () => {
       setOptimisticActive(!optimisticActive);
       const fd = new FormData();
-      fd.set("trigger_event", triggerEvent);
-      fd.set("automation_product", businessTourId ?? "");
+      fd.set("automation_id", automationId);
       await toggleAutomationActiveAction(fd);
     });
 
@@ -450,6 +439,7 @@ function ActionPicker({
  * previous step's time (`baseDelay`) plus the wait gap, if any.
  */
 function NewMessageStep({
+  automationId,
   triggerEvent,
   businessTourId,
   waTemplates,
@@ -458,6 +448,8 @@ function NewMessageStep({
   submitLabel = "Create message",
   onClose,
 }: {
+  /** Existing automation to add to; omit to start a brand-new automation. */
+  automationId?: string;
   triggerEvent: string;
   businessTourId: string | null;
   waTemplates: WaTemplateOption[];
@@ -481,7 +473,11 @@ function NewMessageStep({
       <FlowStep tone={channel} icon={channelIcon(channel)} connect>
         <MessageEditor
           action={createMessageAction}
-          hiddenFields={{ trigger_event: triggerEvent, business_tour_id: businessTourId ?? "" }}
+          hiddenFields={{
+            trigger_event: triggerEvent,
+            business_tour_id: businessTourId ?? "",
+            ...(automationId ? { automation_id: automationId } : {}),
+          }}
           draft={{ ...EMPTY_DRAFT, channel: initial.channel }}
           delayMinutes={baseDelay + (initial.withWait ? waitToMinutes(wait) : 0)}
           waTemplates={waTemplates}
@@ -511,6 +507,7 @@ function StepsLabel() {
 }
 
 function AutomationCard({
+  automationId,
   triggerEvent,
   businessTourId,
   steps,
@@ -519,6 +516,7 @@ function AutomationCard({
   openId,
   setOpenId,
 }: {
+  automationId: string;
   triggerEvent: string;
   businessTourId: string | null;
   steps: RuleRow[];
@@ -551,11 +549,7 @@ function AutomationCard({
             {activeCount > 0 && activeCount < steps.length ? ` (${activeCount} active)` : ""}
           </p>
         </div>
-        <AutomationToggle
-          triggerEvent={triggerEvent}
-          businessTourId={businessTourId}
-          active={activeCount > 0}
-        />
+        <AutomationToggle automationId={automationId} active={activeCount > 0} />
       </div>
 
       <div className="px-4 py-4">
@@ -569,7 +563,7 @@ function AutomationCard({
               <TriggerSelect value={triggerEvent} />
               <span className="font-medium">for</span>
               <TriggerProductSelect
-                triggerEvent={triggerEvent}
+                automationId={automationId}
                 businessTourId={businessTourId}
                 products={products}
               />
@@ -600,6 +594,7 @@ function AutomationCard({
 
           {newAction ? (
             <NewMessageStep
+              automationId={automationId}
               triggerEvent={triggerEvent}
               businessTourId={businessTourId}
               waTemplates={waTemplates}
@@ -709,18 +704,23 @@ export function MessagingRules({
   const [openId, setOpenId] = useState<string | null>(null);
   const [addingAutomation, setAddingAutomation] = useState(false);
 
-  // Group messages into automations by their trigger (event + product, null = any).
+  // Group messages into automations by automation_id. Trigger and product are
+  // shared across an automation's rules, so read them off the first one.
   const groups = useMemo(() => {
     const map = new Map<
       string,
-      { triggerEvent: string; businessTourId: string | null; steps: RuleRow[] }
+      { automationId: string; triggerEvent: string; businessTourId: string | null; steps: RuleRow[] }
     >();
     for (const rule of rules) {
-      const key = `${rule.trigger_event}::${rule.business_tour_id ?? ANY_KEY}`;
-      let group = map.get(key);
+      let group = map.get(rule.automation_id);
       if (!group) {
-        group = { triggerEvent: rule.trigger_event, businessTourId: rule.business_tour_id, steps: [] };
-        map.set(key, group);
+        group = {
+          automationId: rule.automation_id,
+          triggerEvent: rule.trigger_event,
+          businessTourId: rule.business_tour_id,
+          steps: [],
+        };
+        map.set(rule.automation_id, group);
       }
       group.steps.push(rule);
     }
@@ -742,7 +742,8 @@ export function MessagingRules({
       ) : (
         groups.map((group) => (
           <AutomationCard
-            key={`${group.triggerEvent}::${group.businessTourId ?? ANY_KEY}`}
+            key={group.automationId}
+            automationId={group.automationId}
             triggerEvent={group.triggerEvent}
             businessTourId={group.businessTourId}
             steps={group.steps}

@@ -29,7 +29,7 @@ export default async function MessagingConfigPage() {
     supabase
       .from("messaging_rules")
       .select(
-        "id, name, trigger_event, business_tour_id, channel, body, whatsapp_content_sid, whatsapp_variables, only_first_contact, is_active, delay_minutes",
+        "id, name, automation_id, trigger_event, business_tour_id, channel, body, whatsapp_content_sid, whatsapp_variables, only_first_contact, is_active, delay_minutes",
       )
       .order("created_at", { ascending: true }),
     supabase
