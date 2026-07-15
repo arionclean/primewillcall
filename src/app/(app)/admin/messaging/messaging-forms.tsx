@@ -336,7 +336,7 @@ function MessageStep({
         className="group -my-1 block w-full rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted/50"
       >
         <span className="flex items-center gap-2">
-          <span className="truncate text-sm font-medium">{rule.name}</span>
+          <span className="truncate text-sm font-medium">{snippet}</span>
           {!rule.is_active ? <Badge>Paused</Badge> : null}
           {rule.only_first_contact ? (
             <Badge tone="primary" className="gap-1">
@@ -359,9 +359,6 @@ function MessageStep({
             />
           </span>
         </span>
-        {!open ? (
-          <span className="mt-0.5 block truncate text-xs text-muted-foreground">{snippet}</span>
-        ) : null}
       </button>
 
       {open ? (
@@ -370,7 +367,6 @@ function MessageStep({
             action={updateRuleAction}
             hiddenFields={{ rule_id: rule.id }}
             draft={{
-              name: rule.name,
               channel: rule.channel,
               body: rule.body ?? "",
               whatsappContentSid: rule.whatsapp_content_sid ?? "",
@@ -381,7 +377,7 @@ function MessageStep({
             }}
             waTemplates={waTemplates}
             submitLabel="Save message"
-            deletableName={rule.name}
+            deletable
             onChannelChange={setLiveChannel}
           />
         </div>

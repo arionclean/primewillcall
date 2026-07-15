@@ -54,7 +54,6 @@ type MessageFields = {
 function parseMessageFields(
   formData: FormData,
 ): { ok: true; fields: MessageFields } | { ok: false; error: string } {
-  const name = String(formData.get("rule_name") ?? "").trim() || "Untitled message";
   const channel = String(formData.get("rule_channel") ?? "sms");
   const body = String(formData.get("rule_body") ?? "").trim();
   const contentSid = String(formData.get("rule_wa_template") ?? "").trim();
@@ -79,6 +78,10 @@ function parseMessageFields(
       whatsappVariables[match[1]] = value;
     }
   }
+
+  // Messages have no user-facing name; the UI shows the message itself. Store a
+  // derived label so the NOT NULL column stays populated and readable in the DB.
+  const name = channel === "sms" ? body.slice(0, 60) || "Text message" : "WhatsApp message";
 
   return {
     ok: true,
