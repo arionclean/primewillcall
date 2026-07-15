@@ -5,7 +5,6 @@ import { useActionState } from "react";
 import { Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -22,7 +21,6 @@ import {
 const INITIAL: MessagingActionState = {};
 
 export type MessageDraft = {
-  name: string;
   channel: Channel;
   body: string;
   whatsappContentSid: string;
@@ -33,7 +31,6 @@ export type MessageDraft = {
 };
 
 export const EMPTY_DRAFT: MessageDraft = {
-  name: "",
   channel: "sms",
   body: "",
   whatsappContentSid: "",
@@ -59,7 +56,7 @@ export function MessageEditor({
   delayMinutes,
   waTemplates,
   submitLabel,
-  deletableName,
+  deletable,
   onSaved,
   onCancel,
   onChannelChange,
@@ -71,7 +68,7 @@ export function MessageEditor({
   delayMinutes?: number;
   waTemplates: WaTemplateOption[];
   submitLabel: string;
-  deletableName?: string;
+  deletable?: boolean;
   onSaved?: () => void;
   onCancel?: () => void;
   onChannelChange?: (channel: Channel) => void;
@@ -117,22 +114,15 @@ export function MessageEditor({
       <input type="hidden" name="rule_delay_minutes" value={delayMinutes ?? draft.delayMinutes} />
 
       <div className="flex flex-wrap items-center gap-3">
-        <Input
-          name="rule_name"
-          defaultValue={draft.name}
-          placeholder="Name this message"
-          className="h-9 w-full max-w-56 font-medium sm:w-56"
-          aria-label="Message name"
-        />
         <label className="flex cursor-pointer items-center gap-2 text-sm">
           <Switch name="rule_active" checked={active} onChange={setActive} label="Message active" />
           <span className="text-muted-foreground">{active ? "Active" : "Paused"}</span>
         </label>
-        {deletableName ? (
+        {deletable ? (
           <button
             formAction={deleteRuleAction}
             onClick={(event) => {
-              if (!confirm(`Delete the message "${deletableName}"?`)) event.preventDefault();
+              if (!confirm("Delete this message?")) event.preventDefault();
             }}
             className="ml-auto rounded-md p-2 text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive"
             aria-label="Delete message"
