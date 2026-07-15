@@ -611,6 +611,7 @@ export type Database = {
       }
       messaging_rules: {
         Row: {
+          automation_id: string
           body: string | null
           business_tour_id: string | null
           channel: string
@@ -626,6 +627,7 @@ export type Database = {
           whatsapp_variables: Json | null
         }
         Insert: {
+          automation_id?: string
           body?: string | null
           business_tour_id?: string | null
           channel: string
@@ -641,6 +643,7 @@ export type Database = {
           whatsapp_variables?: Json | null
         }
         Update: {
+          automation_id?: string
           body?: string | null
           business_tour_id?: string | null
           channel?: string
