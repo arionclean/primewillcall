@@ -1,18 +1,18 @@
-// Scheduled-message dispatcher: the "cron worker" behind messaging waits.
+// Scheduled-message dispatcher: the "cron worker" behind messaging waits, and
+// the SINGLE place that calls Twilio for automations. A pg_cron job hits this
+// once a minute.
 //
-// A pg_cron job hits this once a minute. It atomically claims the due rows from
-// public.scheduled_messages (via claim_due_scheduled_messages, which flips them
-// to 'sending' with FOR UPDATE SKIP LOCKED so concurrent runs never double-send),
-// sends each through Twilio, and marks it 'sent' or 'failed'. Immediate messages
-// never reach here; only "wait N then send" actions are enqueued by
-// runNewBookingRules in the Next app.
+// HARD SPEND GUARDRAIL: before sending, it computes how many messages were sent
+// in the trailing hour and never lets the total exceed messaging_settings
+// .sms_hourly_cap (default 100). Overflow stays 'pending' (delayed, not dropped)
+// and drains on later runs. When the cap actively throttles work, it logs a
+// messaging_alerts row and (if alert_phone is set) texts an alert explaining
+// what is queued. This is the backstop that makes a runaway impossible.
 //
-// Secrets (Supabase function secrets): TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN,
-// TWILIO_FROM_NUMBER (SMS sender), TWILIO_WHATSAPP_FROM (WhatsApp sender), and
-// CRON_SECRET (the shared token pg_cron sends in x-cron-secret).
-// SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY are injected automatically.
+// Secrets: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER,
+// TWILIO_WHATSAPP_FROM, CRON_SECRET. SUPABASE_URL + SERVICE_ROLE auto-injected.
 
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -23,7 +23,9 @@ const WHATSAPP_FROM_RAW = Deno.env.get("TWILIO_WHATSAPP_FROM") ?? "";
 const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
 
 const TWILIO_MESSAGES = `https://api.twilio.com/2010-04-01/Accounts/${ACCOUNT_SID}/Messages.json`;
+const DEFAULT_CAP = 100;
 const BATCH = 50;
+const HOUR_MS = 3_600_000;
 
 interface ScheduledMessage {
   id: string;
@@ -88,24 +90,127 @@ async function sendOne(
   return twilioSend(params);
 }
 
+/** Count messages already sent in the trailing hour (drives the cap). */
+async function sentLastHour(db: SupabaseClient): Promise<number> {
+  const since = new Date(Date.now() - HOUR_MS).toISOString();
+  const { count } = await db
+    .from("scheduled_messages")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "sent")
+    .gte("sent_at", since);
+  return count ?? 0;
+}
+
+/** Count messages due to send right now. */
+async function dueNow(db: SupabaseClient): Promise<number> {
+  const { count } = await db
+    .from("scheduled_messages")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "pending")
+    .lte("send_at", new Date().toISOString());
+  return count ?? 0;
+}
+
+/**
+ * Fire an alert when the cap is actively holding work back. Deduped to at most
+ * once per hour via messaging_settings.alert_last_sent_at. Logs always (when not
+ * deduped) and texts alert_phone if configured. The alert SMS is operational and
+ * sent directly.
+ */
+async function alertCapHit(
+  db: SupabaseClient,
+  settings: { alert_phone: string | null; alert_last_sent_at: string | null },
+  sent: number,
+  queuedRemaining: number,
+): Promise<void> {
+  const last = settings.alert_last_sent_at ? new Date(settings.alert_last_sent_at).getTime() : 0;
+  if (Date.now() - last < HOUR_MS) return; // already alerted this hour
+
+  // "What is triggering": break down the held queue by product + source.
+  const { data: sample } = await db
+    .from("scheduled_messages")
+    .select("booking:bookings(source_channel, product:business_tours(name))")
+    .eq("status", "pending")
+    .lte("send_at", new Date().toISOString())
+    .limit(200);
+  const counts = new Map<string, number>();
+  for (const r of sample ?? []) {
+    const b = (r as { booking: { source_channel: string | null; product: { name: string | null } | null } | null }).booking;
+    const key = `${b?.product?.name ?? "?"} / ${b?.source_channel ?? "?"}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const top = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+  let notified = false;
+  if (settings.alert_phone && SMS_FROM && ACCOUNT_SID && AUTH_TOKEN) {
+    const lines = top.map(([k, n]) => `${n}x ${k}`).join("; ");
+    const res = await twilioSend(
+      new URLSearchParams({
+        To: settings.alert_phone,
+        From: SMS_FROM,
+        Body:
+          `PrimeWillCall ALERT: SMS hourly cap hit (${sent} sent/hr). ` +
+          `${queuedRemaining} queued and throttled. Top: ${lines || "n/a"}. ` +
+          `Automations auto-limited; disable in messaging_settings if unexpected.`,
+      }),
+    );
+    notified = res.ok;
+  }
+
+  await db.from("messaging_alerts").insert({
+    kind: "hourly_cap",
+    sent_last_hour: sent,
+    queued_remaining: queuedRemaining,
+    notified,
+    detail: { top: Object.fromEntries(top) },
+  });
+  await db.from("messaging_settings").update({ alert_last_sent_at: new Date().toISOString() }).eq("id", true);
+}
+
 Deno.serve(async (req) => {
-  // Only the scheduler (which knows the shared secret) may run this.
   if (!CRON_SECRET || req.headers.get("x-cron-secret") !== CRON_SECRET) {
     return new Response("Forbidden", { status: 403 });
   }
 
   const db = createClient(SUPABASE_URL, SERVICE_KEY);
 
-  const { data, error } = await db.rpc("claim_due_scheduled_messages", { batch: BATCH });
-  if (error) {
-    return Response.json({ error: error.message }, { status: 500 });
+  const { data: settings } = await db
+    .from("messaging_settings")
+    .select("sms_hourly_cap, alert_phone, alert_last_sent_at")
+    .eq("id", true)
+    .maybeSingle();
+  const cap = settings?.sms_hourly_cap ?? DEFAULT_CAP;
+  const alertCfg = {
+    alert_phone: settings?.alert_phone ?? null,
+    alert_last_sent_at: settings?.alert_last_sent_at ?? null,
+  };
+
+  const due = await dueNow(db);
+  if (due === 0) {
+    return Response.json({ claimed: 0, sent: 0, failed: 0, capped: false });
   }
+
+  const alreadySent = await sentLastHour(db);
+  const budget = Math.max(0, cap - alreadySent);
+
+  // The cap is actively throttling if there's more due work than budget.
+  if (due > budget) {
+    await alertCapHit(db, alertCfg, alreadySent, Math.max(0, due - budget));
+  }
+  if (budget <= 0) {
+    return Response.json({ claimed: 0, sent: 0, failed: 0, capped: true, cap, sentLastHour: alreadySent });
+  }
+
+  // Claim only up to the remaining budget so we can never exceed the cap.
+  const { data, error } = await db.rpc("claim_due_scheduled_messages", {
+    batch: Math.min(BATCH, budget),
+  });
+  if (error) return Response.json({ error: error.message }, { status: 500 });
   const rows = (data ?? []) as ScheduledMessage[];
 
   let sent = 0;
   let failed = 0;
   const nowIso = new Date().toISOString();
-
   for (const row of rows) {
     const result = await sendOne(row);
     if (result.ok) {
@@ -123,5 +228,12 @@ Deno.serve(async (req) => {
     }
   }
 
-  return Response.json({ claimed: rows.length, sent, failed });
+  return Response.json({
+    claimed: rows.length,
+    sent,
+    failed,
+    capped: due > budget,
+    cap,
+    sentLastHour: alreadySent + sent,
+  });
 });
