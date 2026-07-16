@@ -6,11 +6,13 @@
 // in the trailing hour and never lets the total exceed messaging_settings
 // .sms_hourly_cap (default 100). Overflow stays 'pending' (delayed, not dropped)
 // and drains on later runs. When the cap actively throttles work, it logs a
-// messaging_alerts row and (if alert_phone is set) texts an alert explaining
-// what is queued. This is the backstop that makes a runaway impossible.
+// messaging_alerts row and alerts: an email via Resend to alert_email (primary)
+// and/or an SMS to alert_phone. This is the backstop that makes a runaway
+// impossible.
 //
 // Secrets: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER,
-// TWILIO_WHATSAPP_FROM, CRON_SECRET. SUPABASE_URL + SERVICE_ROLE auto-injected.
+// TWILIO_WHATSAPP_FROM, CRON_SECRET, RESEND_API_KEY (for the email alert).
+// SUPABASE_URL + SERVICE_ROLE auto-injected.
 
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 
@@ -21,6 +23,7 @@ const AUTH_TOKEN = Deno.env.get("TWILIO_AUTH_TOKEN") ?? "";
 const SMS_FROM = Deno.env.get("TWILIO_FROM_NUMBER") ?? "";
 const WHATSAPP_FROM_RAW = Deno.env.get("TWILIO_WHATSAPP_FROM") ?? "";
 const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
+const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
 
 const TWILIO_MESSAGES = `https://api.twilio.com/2010-04-01/Accounts/${ACCOUNT_SID}/Messages.json`;
 const DEFAULT_CAP = 100;
@@ -90,6 +93,29 @@ async function sendOne(
   return twilioSend(params);
 }
 
+/** Send an email via Resend (used for the cap alert). Returns ok. */
+async function sendResendEmail(
+  from: string,
+  to: string,
+  subject: string,
+  text: string,
+): Promise<boolean> {
+  if (!RESEND_API_KEY) return false;
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${RESEND_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ from, to: [to], subject, text }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 /** Count messages already sent in the trailing hour (drives the cap). */
 async function sentLastHour(db: SupabaseClient): Promise<number> {
   const since = new Date(Date.now() - HOUR_MS).toISOString();
@@ -119,7 +145,12 @@ async function dueNow(db: SupabaseClient): Promise<number> {
  */
 async function alertCapHit(
   db: SupabaseClient,
-  settings: { alert_phone: string | null; alert_last_sent_at: string | null },
+  settings: {
+    alert_phone: string | null;
+    alert_email: string | null;
+    alert_email_from: string | null;
+    alert_last_sent_at: string | null;
+  },
   sent: number,
   queuedRemaining: number,
 ): Promise<void> {
@@ -140,21 +171,40 @@ async function alertCapHit(
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
   const top = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const lines = top.map(([k, n]) => `${n}x ${k}`).join("; ") || "n/a";
 
   let notified = false;
+
+  // Email (Resend) is the primary alert channel.
+  if (settings.alert_email && RESEND_API_KEY) {
+    const ok = await sendResendEmail(
+      settings.alert_email_from ?? "PrimeWillCall Alerts <alerts@alert.primewillcall.com>",
+      settings.alert_email,
+      `PrimeWillCall: SMS hourly cap hit (${sent}/hr)`,
+      `The messaging automations hit the hourly SMS cap.\n\n` +
+        `Sent in the last hour: ${sent}\n` +
+        `Queued and throttled right now: ${queuedRemaining}\n\n` +
+        `What is filling the queue (product / source):\n` +
+        top.map(([k, n]) => `  - ${n}x ${k}`).join("\n") +
+        `\n\nSending is auto-limited to the cap; nothing was dropped. ` +
+        `If this is unexpected, set messaging_settings.automations_enabled = false to stop it.`,
+    );
+    notified = notified || ok;
+  }
+
+  // Optional SMS alert (only if a phone is configured).
   if (settings.alert_phone && SMS_FROM && ACCOUNT_SID && AUTH_TOKEN) {
-    const lines = top.map(([k, n]) => `${n}x ${k}`).join("; ");
     const res = await twilioSend(
       new URLSearchParams({
         To: settings.alert_phone,
         From: SMS_FROM,
         Body:
           `PrimeWillCall ALERT: SMS hourly cap hit (${sent} sent/hr). ` +
-          `${queuedRemaining} queued and throttled. Top: ${lines || "n/a"}. ` +
+          `${queuedRemaining} queued and throttled. Top: ${lines}. ` +
           `Automations auto-limited; disable in messaging_settings if unexpected.`,
       }),
     );
-    notified = res.ok;
+    notified = notified || res.ok;
   }
 
   await db.from("messaging_alerts").insert({
@@ -176,12 +226,14 @@ Deno.serve(async (req) => {
 
   const { data: settings } = await db
     .from("messaging_settings")
-    .select("sms_hourly_cap, alert_phone, alert_last_sent_at")
+    .select("sms_hourly_cap, alert_phone, alert_email, alert_email_from, alert_last_sent_at")
     .eq("id", true)
     .maybeSingle();
   const cap = settings?.sms_hourly_cap ?? DEFAULT_CAP;
   const alertCfg = {
     alert_phone: settings?.alert_phone ?? null,
+    alert_email: settings?.alert_email ?? null,
+    alert_email_from: settings?.alert_email_from ?? null,
     alert_last_sent_at: settings?.alert_last_sent_at ?? null,
   };
 
