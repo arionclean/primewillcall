@@ -61,10 +61,13 @@ trigger. `rules.ts` is kept only as the reference the edge function was ported f
   messages per rolling hour, globally. Overflow stays `pending` (delayed, **not dropped**)
   and drains on later runs. This makes a runaway spend impossible regardless of how many
   bookings flood in.
-- `alert_phone` — when the cap actively throttles work, the dispatcher logs a
-  `public.messaging_alerts` row and (if this is set) texts an alert naming the top
-  products/sources filling the queue. Deduped to once per hour. **SMS only** — it cannot
-  be an email address.
+- Alerts — when the cap actively throttles work, the dispatcher logs a
+  `public.messaging_alerts` row and notifies, naming the top products/sources filling the
+  queue (deduped to once per hour):
+  - `alert_email` (primary) — emailed via **Resend** from `alert_email_from` (must be a
+    Resend-verified domain; we use `alerts@alert.primewillcall.com`). Needs the
+    `RESEND_API_KEY` function secret. Verified end to end 2026-07-12 (cap=0 dry run).
+  - `alert_phone` (optional) — SMS via Twilio, if set.
 - `booking_link_base` — base for `{{booking_link}}` (set to the app's `/booking`).
 
 To turn automations on: set `messaging_settings.automations_enabled = true`, make sure
