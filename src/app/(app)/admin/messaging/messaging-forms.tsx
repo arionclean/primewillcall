@@ -2,7 +2,7 @@
 
 import { Fragment, useMemo, useOptimistic, useState, useTransition } from "react";
 import { useActionState } from "react";
-import { ChevronDown, Clock, Plus, Repeat, Zap } from "lucide-react";
+import { ChevronDown, Clock, Plus, Repeat, Trash2, Zap } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import {
   createMessageAction,
   createWhatsappTemplateAction,
   toggleAutomationActiveAction,
+  deleteAutomationAction,
   updateAutomationProductAction,
   updateRuleAction,
   updateWaitGapAction,
@@ -129,6 +130,29 @@ function AutomationToggle({ automationId, active }: { automationId: string; acti
         label={optimisticActive ? "Pause automation" : "Activate automation"}
       />
     </span>
+  );
+}
+
+/** Header button to delete the whole automation (all its actions). */
+function AutomationDelete({ automationId }: { automationId: string }) {
+  const [pending, startTransition] = useTransition();
+  return (
+    <button
+      type="button"
+      disabled={pending}
+      aria-label="Delete automation"
+      onClick={() => {
+        if (!confirm("Delete this whole automation and all its messages?")) return;
+        startTransition(async () => {
+          const fd = new FormData();
+          fd.set("automation_id", automationId);
+          await deleteAutomationAction(fd);
+        });
+      }}
+      className="shrink-0 rounded-md p-2 text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+    >
+      <Trash2 size={16} aria-hidden />
+    </button>
   );
 }
 
@@ -529,9 +553,6 @@ function AutomationCard({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [newAction, setNewAction] = useState<ActionChoice | null>(null);
 
-  const productName = businessTourId
-    ? products.find((p) => p.id === businessTourId)?.name ?? "One product"
-    : "Any product";
   const activeCount = steps.filter((s) => s.is_active).length;
 
   // The sequence in send order (stable sort keeps creation order for ties).
@@ -544,12 +565,9 @@ function AutomationCard({
       <div className="flex items-center gap-3 border-b px-4 py-3">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{triggerLabel(triggerEvent)}</p>
-          <p className="truncate text-xs text-muted-foreground">
-            for {productName} · {steps.length} message{steps.length === 1 ? "" : "s"}
-            {activeCount > 0 && activeCount < steps.length ? ` (${activeCount} active)` : ""}
-          </p>
         </div>
         <AutomationToggle automationId={automationId} active={activeCount > 0} />
+        <AutomationDelete automationId={automationId} />
       </div>
 
       <div className="px-4 py-4">

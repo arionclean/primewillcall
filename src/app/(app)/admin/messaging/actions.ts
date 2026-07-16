@@ -216,6 +216,17 @@ export async function deleteRuleAction(formData: FormData): Promise<void> {
   revalidatePath("/admin/messaging");
 }
 
+/** Delete a whole automation: every message sharing this `automation_id`. */
+export async function deleteAutomationAction(formData: FormData): Promise<void> {
+  const auth = await requireOwner();
+  if (!auth.ok) return;
+
+  const automationId = String(formData.get("automation_id") ?? "").trim();
+  if (!automationId) return;
+  await auth.supabase.from("messaging_rules").delete().eq("automation_id", automationId);
+  revalidatePath("/admin/messaging");
+}
+
 /**
  * Turn a whole automation on or off in one click: flips every message in it. If
  * any message is active it pauses them all; otherwise it activates them all. The
