@@ -54,6 +54,7 @@ type CashSale = {
   amount_cents: number;
   kiosk_slug: string | null;
   created_at: string;
+  customer_name: string | null;
   business: { name: string } | null;
 };
 
@@ -437,7 +438,10 @@ export function PaymentsView({
                       </td>
                       <td className="max-w-[16rem] px-3 py-2">
                         <p className="truncate font-medium">
-                          {item.booking_ref ? `Sale ${item.booking_ref}` : "Cash sale"}
+                          {item.customer_name ??
+                            (item.booking_ref
+                              ? `Sale ${item.booking_ref}`
+                              : "Cash sale")}
                         </p>
                         {secondary && (
                           <p className="truncate text-xs text-muted-foreground">

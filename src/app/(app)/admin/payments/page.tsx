@@ -120,9 +120,33 @@ export default async function PaymentsPage({
       : Promise.resolve({ data: null }),
   ]);
 
+  // Cash rows carry the sale's KS code in booking_ref (newer app builds); it
+  // matches bookings.legacy_id, which is how the customer's name is found.
+  // Older rows hold Xano's numeric id and simply find no match.
+  const cashRefs = (cashRows ?? []).flatMap((c) =>
+    c.booking_ref ? [c.booking_ref] : [],
+  );
+  const cashNames = new Map<string, string>();
+  if (cashRefs.length > 0) {
+    const { data: cashBookings } = await supabase
+      .from("bookings")
+      .select("legacy_id, customer:customers(full_name)")
+      .in("legacy_id", cashRefs);
+    for (const b of cashBookings ?? []) {
+      const name = b.customer?.full_name?.trim();
+      if (b.legacy_id && name) cashNames.set(b.legacy_id, name);
+    }
+  }
+
   const items: FeedItem[] = [
     ...(cardRows ?? []).map((t) => ({ kind: "card" as const, ...t })),
-    ...(cashRows ?? []).map((c) => ({ kind: "cash" as const, ...c })),
+    ...(cashRows ?? []).map((c) => ({
+      kind: "cash" as const,
+      ...c,
+      customer_name: c.booking_ref
+        ? (cashNames.get(c.booking_ref) ?? null)
+        : null,
+    })),
   ]
     .sort((a, b) => {
       const ta = a.kind === "card" ? (a.stripe_created ?? "") : a.created_at;
