@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { getCurrentStaff } from "@/lib/auth";
+import { nyDateISO, shiftDayISO } from "@/lib/dashboard/queries";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 import { PaymentsView } from "./payments-view";
@@ -15,12 +16,9 @@ import { PaymentsView } from "./payments-view";
  * DB) rather than summing rows in JS, which the 1000-row read cap would truncate.
  */
 
-// Default window: the last 30 days.
+// Default window: the last 30 days, in business time (America/New_York) so the
+// server default matches the client's range presets.
 const DEFAULT_RANGE_DAYS = 30;
-
-function isoDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
 
 export default async function PaymentsPage({
   searchParams,
@@ -37,11 +35,8 @@ export default async function PaymentsPage({
   if (staff.role === "check_in") redirect("/dashboard");
 
   const sp = await searchParams;
-  const now = new Date();
-  const to = sp.to ?? isoDate(now);
-  const from =
-    sp.from ??
-    isoDate(new Date(now.getTime() - (DEFAULT_RANGE_DAYS - 1) * 86_400_000));
+  const to = sp.to ?? nyDateISO();
+  const from = sp.from ?? shiftDayISO(to, -(DEFAULT_RANGE_DAYS - 1));
   const businessFilter = sp.business && sp.business !== "" ? sp.business : null;
   // Strip PostgREST or() delimiters so the term cannot break the filter string.
   const q = (sp.q ?? "").replace(/[,()]/g, "").trim();

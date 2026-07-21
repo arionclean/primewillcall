@@ -412,6 +412,22 @@ export function formatCents(cents: number, currency = "usd"): string {
   }
 }
 
+/** Today's date (or `d`) as YYYY-MM-DD in business time (America/New_York). */
+export function nyDateISO(d: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
+/** Shift a YYYY-MM-DD date string by whole calendar days (no timezone math). */
+export function shiftDayISO(iso: string, days: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
 /** Like formatCents but keeps the cents ($10.70), for per-charge ledger rows. */
 export function formatCentsExact(cents: number, currency = "usd"): string {
   try {

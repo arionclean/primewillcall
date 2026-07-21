@@ -8,7 +8,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { formatCents, formatCentsExact } from "@/lib/dashboard/queries";
+import {
+  formatCents,
+  formatCentsExact,
+  nyDateISO,
+  shiftDayISO,
+} from "@/lib/dashboard/queries";
 import type { Database } from "@/lib/supabase/database.types";
 
 import { refundTransaction } from "./actions";
@@ -52,6 +57,52 @@ type PaymentsViewProps = {
 };
 
 const NY_TZ = "America/New_York";
+
+// Date-range presets, computed in business time (America/New_York). "Custom"
+// reveals the From/To inputs; every other choice applies its range directly.
+const RANGE_PRESETS = [
+  { key: "today", label: "Today" },
+  { key: "yesterday", label: "Yesterday" },
+  { key: "7d", label: "Last 7 days" },
+  { key: "30d", label: "Last 30 days" },
+  { key: "month", label: "This month" },
+  { key: "lastMonth", label: "Last month" },
+] as const;
+
+type PresetKey = (typeof RANGE_PRESETS)[number]["key"] | "custom";
+
+function presetRange(key: PresetKey): { from: string; to: string } | null {
+  const today = nyDateISO();
+  switch (key) {
+    case "today":
+      return { from: today, to: today };
+    case "yesterday": {
+      const y = shiftDayISO(today, -1);
+      return { from: y, to: y };
+    }
+    case "7d":
+      return { from: shiftDayISO(today, -6), to: today };
+    case "30d":
+      return { from: shiftDayISO(today, -29), to: today };
+    case "month":
+      return { from: `${today.slice(0, 8)}01`, to: today };
+    case "lastMonth": {
+      const firstOfThis = `${today.slice(0, 8)}01`;
+      const lastOfPrev = shiftDayISO(firstOfThis, -1);
+      return { from: `${lastOfPrev.slice(0, 8)}01`, to: lastOfPrev };
+    }
+    default:
+      return null;
+  }
+}
+
+function detectPreset(from: string, to: string): PresetKey {
+  for (const p of RANGE_PRESETS) {
+    const range = presetRange(p.key);
+    if (range && range.from === from && range.to === to) return p.key;
+  }
+  return "custom";
+}
 
 function formatDateTime(iso: string | null): string {
   if (!iso) return "—";
@@ -109,6 +160,9 @@ export function PaymentsView({
   const router = useRouter();
   const [from, setFrom] = useState(filters.from);
   const [to, setTo] = useState(filters.to);
+  const [preset, setPreset] = useState<PresetKey>(() =>
+    detectPreset(filters.from, filters.to),
+  );
   const [business, setBusiness] = useState(filters.business ?? "");
   const [q, setQ] = useState(filters.q);
   const [isPending, startTransition] = useTransition();
@@ -119,13 +173,26 @@ export function PaymentsView({
   const [refundPin, setRefundPin] = useState("");
   const [refundError, setRefundError] = useState<string | null>(null);
 
-  function applyFilters() {
+  function pushFilters(fromV: string, toV: string) {
     const params = new URLSearchParams();
-    if (from) params.set("from", from);
-    if (to) params.set("to", to);
+    if (fromV) params.set("from", fromV);
+    if (toV) params.set("to", toV);
     if (business) params.set("business", business);
     if (q.trim()) params.set("q", q.trim());
     router.push(`/admin/payments?${params.toString()}`);
+  }
+
+  function applyFilters() {
+    pushFilters(from, to);
+  }
+
+  function onPresetChange(key: PresetKey) {
+    setPreset(key);
+    const range = presetRange(key);
+    if (!range) return; // custom: reveal From/To, wait for Apply
+    setFrom(range.from);
+    setTo(range.to);
+    pushFilters(range.from, range.to);
   }
 
   function openRefund(txn: Txn) {
@@ -188,23 +255,42 @@ export function PaymentsView({
           />
         </label>
         <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-          From
-          <Input
-            type="date"
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-            className="h-9 w-[9.5rem]"
-          />
+          Range
+          <Select
+            value={preset}
+            onChange={(e) => onPresetChange(e.target.value as PresetKey)}
+            className="h-9 w-[10rem]"
+          >
+            {RANGE_PRESETS.map((p) => (
+              <option key={p.key} value={p.key}>
+                {p.label}
+              </option>
+            ))}
+            <option value="custom">Custom</option>
+          </Select>
         </label>
-        <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-          To
-          <Input
-            type="date"
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-            className="h-9 w-[9.5rem]"
-          />
-        </label>
+        {preset === "custom" && (
+          <>
+            <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+              From
+              <Input
+                type="date"
+                value={from}
+                onChange={(e) => setFrom(e.target.value)}
+                className="h-9 w-[9.5rem]"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+              To
+              <Input
+                type="date"
+                value={to}
+                onChange={(e) => setTo(e.target.value)}
+                className="h-9 w-[9.5rem]"
+              />
+            </label>
+          </>
+        )}
         {role === "owner" && businesses.length > 0 && (
           <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
             Business
