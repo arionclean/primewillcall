@@ -1,6 +1,6 @@
 import type { Database } from "@/lib/supabase/database.types";
 
-import { AppSidebar } from "./app-sidebar";
+import { AppSidebar, type SidebarBadges } from "./app-sidebar";
 import { AppTopbar } from "./app-topbar";
 import { GlobalSearch } from "./global-search";
 import { SidebarManifest } from "./sidebar-manifest";
@@ -11,6 +11,7 @@ type AppShellProps = {
   role: StaffRole;
   fullName: string;
   canCreateBookings: boolean;
+  badges?: SidebarBadges;
   children: React.ReactNode;
 };
 
@@ -18,6 +19,7 @@ export function AppShell({
   role,
   fullName,
   canCreateBookings,
+  badges,
   children,
 }: AppShellProps) {
   return (
@@ -26,11 +28,16 @@ export function AppShell({
         role={role}
         fullName={fullName}
         canCreateBookings={canCreateBookings}
+        badges={badges}
       />
       <div className="mx-auto grid w-full max-w-7xl gap-6 px-6 py-8 md:grid-cols-[200px_1fr]">
         <aside className="hidden space-y-4 md:sticky md:top-6 md:block md:self-start">
           <GlobalSearch />
-          <AppSidebar role={role} canCreateBookings={canCreateBookings} />
+          <AppSidebar
+            role={role}
+            canCreateBookings={canCreateBookings}
+            badges={badges}
+          />
           {role === "check_in" && <SidebarManifest />}
         </aside>
         <main className="min-w-0">{children}</main>

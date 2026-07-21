@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { Database } from "@/lib/supabase/database.types";
 
+import type { SidebarBadges } from "./app-sidebar";
 import { MobileNav } from "./mobile-nav";
 
 type StaffRole = Database["public"]["Enums"]["staff_role"];
@@ -24,14 +25,24 @@ type AppTopbarProps = {
   role: StaffRole;
   fullName: string;
   canCreateBookings: boolean;
+  badges?: SidebarBadges;
 };
 
-export function AppTopbar({ role, fullName, canCreateBookings }: AppTopbarProps) {
+export function AppTopbar({
+  role,
+  fullName,
+  canCreateBookings,
+  badges,
+}: AppTopbarProps) {
   return (
     <header className="border-b bg-background/80 backdrop-blur">
       <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-3">
         <div className="flex items-center gap-3">
-          <MobileNav role={role} canCreateBookings={canCreateBookings} />
+          <MobileNav
+            role={role}
+            canCreateBookings={canCreateBookings}
+            badges={badges}
+          />
           <Link
             href="/dashboard"
             className="text-sm font-semibold tracking-tight"

@@ -32,7 +32,12 @@ type NavItem = {
   roles: StaffRole[];
   matchPrefix?: string; // path prefix that highlights this item
   needsCreateBookings?: boolean; // hidden when the staffer can't create bookings
+  badge?: BadgeKey; // shows an outstanding-work count from `badges`
 };
+
+/** Counts of work waiting for the user, surfaced as a pill on the nav item. */
+export type BadgeKey = "unmatched";
+export type SidebarBadges = Partial<Record<BadgeKey, number>>;
 
 type NavSection = {
   title: string | null;
@@ -123,6 +128,7 @@ const SECTIONS: NavSection[] = [
       {
         href: "/admin/unmatched",
         label: "Unrecognized",
+        badge: "unmatched",
         icon: Inbox,
         roles: ["owner"],
         matchPrefix: "/admin/unmatched",
@@ -155,10 +161,12 @@ const SECTIONS: NavSection[] = [
 export function AppSidebar({
   role,
   canCreateBookings,
+  badges,
   onNavigate,
 }: {
   role: StaffRole;
   canCreateBookings: boolean;
+  badges?: SidebarBadges;
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
@@ -184,6 +192,7 @@ export function AppSidebar({
                 pathname === it.href ||
                 (it.matchPrefix && pathname.startsWith(it.matchPrefix));
               const Icon = it.icon;
+              const count = it.badge ? badges?.[it.badge] ?? 0 : 0;
               return (
                 <Link
                   key={it.href}
@@ -197,7 +206,16 @@ export function AppSidebar({
                   )}
                 >
                   <Icon aria-hidden className="h-[18px] w-[18px] shrink-0" />
-                  <span>{it.label}</span>
+                  <span className="min-w-0 flex-1 truncate">{it.label}</span>
+                  {count > 0 ? (
+                    <span
+                      // Outstanding work, so it reads as "needs you", not decoration.
+                      className="shrink-0 rounded-full bg-red-50 px-1.5 py-0.5 text-[11px] font-semibold leading-none text-red-600 tabular-nums dark:bg-red-950/50 dark:text-red-400"
+                      aria-label={`${count.toLocaleString()} need review`}
+                    >
+                      {count > 999 ? "999+" : count.toLocaleString()}
+                    </span>
+                  ) : null}
                 </Link>
               );
             })}
