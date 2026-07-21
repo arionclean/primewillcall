@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useState, useTransition, type CSSProperties } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -377,10 +377,17 @@ export function PaymentsView({
                 </label>
                 <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
                   Refund passcode
+                  {/* Plain text input masked via CSS: type="password" (or the
+                      one-time-code hint) makes Safari/1Password offer to
+                      autofill or save it, which makes no sense for this pin. */}
                   <Input
-                    type="password"
+                    type="text"
                     inputMode="numeric"
-                    autoComplete="one-time-code"
+                    autoComplete="off"
+                    name="refund-code"
+                    data-1p-ignore=""
+                    data-lpignore="true"
+                    style={{ WebkitTextSecurity: "disc" } as CSSProperties}
                     value={refundPin}
                     onChange={(e) => setRefundPin(e.target.value)}
                     className="h-9"
