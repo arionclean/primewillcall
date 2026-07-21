@@ -716,6 +716,7 @@ export type Database = {
           automations_enabled: boolean
           booking_link_base: string
           id: boolean
+          review_ask_delay_hours: number
           review_ask_lookback_hours: number
           review_automation_enabled: boolean
           review_reminder_hours: number
@@ -730,6 +731,7 @@ export type Database = {
           automations_enabled?: boolean
           booking_link_base?: string
           id?: boolean
+          review_ask_delay_hours?: number
           review_ask_lookback_hours?: number
           review_automation_enabled?: boolean
           review_reminder_hours?: number
@@ -744,6 +746,7 @@ export type Database = {
           automations_enabled?: boolean
           booking_link_base?: string
           id?: boolean
+          review_ask_delay_hours?: number
           review_ask_lookback_hours?: number
           review_automation_enabled?: boolean
           review_reminder_hours?: number
@@ -757,6 +760,8 @@ export type Database = {
           asked_at: string | null
           booking_id: string | null
           business_id: string
+          cancel_reason: string | null
+          cancelled_at: string | null
           comment: string | null
           created_at: string
           customer_id: string | null
@@ -764,7 +769,7 @@ export type Database = {
           link_clicked_at: string | null
           link_sent_at: string | null
           rating: number | null
-          reminder_sent_at: string | null
+          reask_sent_at: string | null
           responded_at: string | null
           source: string
           token: string
@@ -774,6 +779,8 @@ export type Database = {
           asked_at?: string | null
           booking_id?: string | null
           business_id: string
+          cancel_reason?: string | null
+          cancelled_at?: string | null
           comment?: string | null
           created_at?: string
           customer_id?: string | null
@@ -781,7 +788,7 @@ export type Database = {
           link_clicked_at?: string | null
           link_sent_at?: string | null
           rating?: number | null
-          reminder_sent_at?: string | null
+          reask_sent_at?: string | null
           responded_at?: string | null
           source?: string
           token?: string
@@ -791,6 +798,8 @@ export type Database = {
           asked_at?: string | null
           booking_id?: string | null
           business_id?: string
+          cancel_reason?: string | null
+          cancelled_at?: string | null
           comment?: string | null
           created_at?: string
           customer_id?: string | null
@@ -798,7 +807,7 @@ export type Database = {
           link_clicked_at?: string | null
           link_sent_at?: string | null
           rating?: number | null
-          reminder_sent_at?: string | null
+          reask_sent_at?: string | null
           responded_at?: string | null
           source?: string
           token?: string
@@ -1641,6 +1650,14 @@ export type Database = {
         }[]
       }
       app_norm: { Args: { s: string }; Returns: string }
+      bookings_checkin_manifest: {
+        Args: { p_end: string; p_start: string }
+        Returns: {
+          remaining_pax: number
+          slot_start: string
+          total_pax: number
+        }[]
+      }
       claim_due_scheduled_messages: {
         Args: { batch?: number }
         Returns: {
@@ -1776,6 +1793,21 @@ export type Database = {
           last_body: string
           last_direction: Database["public"]["Enums"]["sms_direction"]
           message_count: number
+        }[]
+      }
+      payments_summary: {
+        Args: {
+          p_business?: string
+          p_end: string
+          p_source?: string
+          p_start: string
+        }
+        Returns: {
+          card_count: number
+          card_gross: number
+          cash_count: number
+          cash_total: number
+          refunded: number
         }[]
       }
       stripe_payments_summary: {

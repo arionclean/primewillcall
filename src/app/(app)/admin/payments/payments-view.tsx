@@ -41,19 +41,50 @@ type Txn = {
   business: { name: string } | null;
 };
 
+type CashSale = {
+  id: string;
+  business_id: string | null;
+  booking_ref: string | null;
+  amount_cents: number;
+  kiosk_slug: string | null;
+  created_at: string;
+  business: { name: string } | null;
+};
+
+export type FeedItem =
+  | ({ kind: "card" } & Txn)
+  | ({ kind: "cash" } & CashSale);
+
 type Summary = {
-  gross: number;
+  card_gross: number;
+  card_count: number;
   refunded: number;
-  txn_count: number;
+  cash_total: number;
+  cash_count: number;
 } | null;
+
+const SOURCE_OPTIONS = [
+  { value: "kiosk1", label: "Kiosk 1" },
+  { value: "kiosk2", label: "Kiosk 2" },
+  { value: "kiosk3", label: "Kiosk 3" },
+  { value: "kiosk4", label: "Kiosk 4" },
+  { value: "online", label: "Online" },
+  { value: "groupon", label: "Groupon" },
+];
 
 type PaymentsViewProps = {
   role: StaffRole;
   paymentsConfigured: boolean;
-  transactions: Txn[];
+  items: FeedItem[];
   summary: Summary;
   businesses: { id: string; name: string }[];
-  filters: { from: string; to: string; business: string | null; q: string };
+  filters: {
+    from: string;
+    to: string;
+    business: string | null;
+    q: string;
+    source: string | null;
+  };
 };
 
 const NY_TZ = "America/New_York";
@@ -119,9 +150,9 @@ function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-/** "Visa ···· 4242", "···· 8215", or null when Stripe sent no card details. */
-function cardLabel(txn: Txn): string | null {
-  if (!txn.card_last4) return txn.card_brand ? capitalize(txn.card_brand) : null;
+/** "Visa ···· 4242", "···· 8215", or "Card" when Stripe sent no card details. */
+function cardLabel(txn: Txn): string {
+  if (!txn.card_last4) return txn.card_brand ? capitalize(txn.card_brand) : "Card";
   const brand = txn.card_brand ? `${capitalize(txn.card_brand)} ` : "";
   return `${brand}···· ${txn.card_last4}`;
 }
@@ -152,7 +183,7 @@ function statusBadge(txn: Txn): { label: string; tone: "success" | "warning" | "
 export function PaymentsView({
   role,
   paymentsConfigured,
-  transactions,
+  items,
   summary,
   businesses,
   filters,
@@ -164,6 +195,7 @@ export function PaymentsView({
     detectPreset(filters.from, filters.to),
   );
   const [business, setBusiness] = useState(filters.business ?? "");
+  const [source, setSource] = useState(filters.source ?? "");
   const [q, setQ] = useState(filters.q);
   const [isPending, startTransition] = useTransition();
 
@@ -178,6 +210,7 @@ export function PaymentsView({
     if (fromV) params.set("from", fromV);
     if (toV) params.set("to", toV);
     if (business) params.set("business", business);
+    if (source) params.set("source", source);
     if (q.trim()) params.set("q", q.trim());
     router.push(`/admin/payments?${params.toString()}`);
   }
@@ -291,6 +324,21 @@ export function PaymentsView({
             </label>
           </>
         )}
+        <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+          Source
+          <Select
+            value={source}
+            onChange={(e) => setSource(e.target.value)}
+            className="h-9 w-[9rem]"
+          >
+            <option value="">All sources</option>
+            {SOURCE_OPTIONS.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
+              </option>
+            ))}
+          </Select>
+        </label>
         {role === "owner" && businesses.length > 0 && (
           <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
             Business
@@ -313,10 +361,10 @@ export function PaymentsView({
         </Button>
       </div>
 
-      {transactions.length === 0 ? (
+      {items.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            No charges in this range.
+            No sales in this range.
           </CardContent>
         </Card>
       ) : (
@@ -326,14 +374,49 @@ export function PaymentsView({
               <tr className="border-b bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <th className="px-3 py-2 font-medium">Date</th>
                 <th className="px-3 py-2 font-medium">Customer</th>
-                <th className="px-3 py-2 font-medium">Card</th>
+                <th className="px-3 py-2 font-medium">Payment</th>
                 <th className="px-3 py-2 text-right font-medium">Amount</th>
                 <th className="px-3 py-2 font-medium">Status</th>
                 <th className="px-3 py-2 text-right font-medium">Action</th>
               </tr>
             </thead>
             <tbody>
-              {transactions.map((txn) => {
+              {items.map((item) => {
+                if (item.kind === "cash") {
+                  const secondary = [item.kiosk_slug, item.business?.name]
+                    .filter(Boolean)
+                    .join(" · ");
+                  return (
+                    <tr key={`cash-${item.id}`} className="border-b last:border-0">
+                      <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
+                        {formatDateTime(item.created_at)}
+                      </td>
+                      <td className="max-w-[16rem] px-3 py-2">
+                        <p className="truncate font-medium">
+                          {item.booking_ref ? `Sale ${item.booking_ref}` : "Cash sale"}
+                        </p>
+                        {secondary && (
+                          <p className="truncate text-xs text-muted-foreground">
+                            {secondary}
+                          </p>
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2">
+                        <Badge tone="success">Cash</Badge>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right font-medium">
+                        {formatCentsExact(item.amount_cents)}
+                      </td>
+                      <td className="px-3 py-2">
+                        <Badge tone="success">Succeeded</Badge>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right text-muted-foreground">
+                        —
+                      </td>
+                    </tr>
+                  );
+                }
+                const txn = item;
                 const badge = statusBadge(txn);
                 const card = cardLabel(txn);
                 const customer = customerLabel(txn);
@@ -356,7 +439,7 @@ export function PaymentsView({
                       )}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
-                      {card ?? "—"}
+                      {card}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-right font-medium">
                       {formatCentsExact(txn.amount, txn.currency)}
@@ -404,9 +487,9 @@ export function PaymentsView({
         </div>
       )}
 
-      {transactions.length >= 200 && (
+      {items.length >= 200 && (
         <p className="mt-3 text-xs text-muted-foreground">
-          Showing the 200 most recent charges in this range. Narrow the dates to
+          Showing the 200 most recent sales in this range. Narrow the dates to
           see older ones. (Totals above cover the full range.)
         </p>
       )}
@@ -516,17 +599,23 @@ export function PaymentsView({
 }
 
 function SummaryCards({ summary }: { summary: Summary }) {
-  const gross = summary?.gross ?? 0;
+  const cardGross = summary?.card_gross ?? 0;
+  const cardCount = summary?.card_count ?? 0;
+  const cashTotal = summary?.cash_total ?? 0;
+  const cashCount = summary?.cash_count ?? 0;
   const refunded = summary?.refunded ?? 0;
-  const count = summary?.txn_count ?? 0;
+  const total = cardGross + cashTotal;
+  const count = cardCount + cashCount;
 
   const cards: { label: string; value: string; hint?: string }[] = [
-    { label: "Gross", value: formatCents(gross), hint: `${count} charge${count === 1 ? "" : "s"}` },
+    { label: "Gross", value: formatCents(total), hint: `${count} sale${count === 1 ? "" : "s"}` },
+    { label: "Card", value: formatCents(cardGross), hint: `${cardCount} charge${cardCount === 1 ? "" : "s"}` },
+    { label: "Cash", value: formatCents(cashTotal), hint: `${cashCount} sale${cashCount === 1 ? "" : "s"}` },
     { label: "Refunded", value: formatCents(refunded) },
   ];
 
   return (
-    <div className="grid grid-cols-2 gap-3">
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
       {cards.map((c) => (
         <Card key={c.label}>
           <CardContent className="py-4">
