@@ -43,7 +43,7 @@ function pathFromPublicUrl(url: string | null, bucket: string): string | null {
 export type UpdateBusinessState = {
   error?: string;
   fieldErrors?: Partial<
-    Record<"name" | "phone" | "contact_email" | "logo", string>
+    Record<"name" | "phone" | "contact_email" | "google_review_url" | "logo", string>
   >;
   saved?: true;
 };
@@ -59,6 +59,8 @@ export async function updateBusinessAction(
   const phone = String(formData.get("phone") ?? "").trim() || null;
   const contact_email =
     String(formData.get("contact_email") ?? "").trim() || null;
+  const google_review_url =
+    String(formData.get("google_review_url") ?? "").trim() || null;
   const removeLogo = formData.get("remove_logo") === "1";
   const logoEntry = formData.get("logo");
   const logoFile =
@@ -68,6 +70,9 @@ export async function updateBusinessAction(
   if (!name) fieldErrors.name = "Name is required.";
   if (contact_email && !/^\S+@\S+\.\S+$/.test(contact_email)) {
     fieldErrors.contact_email = "Enter a valid email address.";
+  }
+  if (google_review_url && !/^https:\/\/\S+$/.test(google_review_url)) {
+    fieldErrors.google_review_url = "Enter the full link, starting with https://";
   }
   if (logoFile) {
     if (!ALLOWED_LOGO_TYPES.includes(logoFile.type)) {
@@ -108,7 +113,7 @@ export async function updateBusinessAction(
     logo_url = null;
   }
 
-  const patch: BusinessUpdate = { name, phone, contact_email };
+  const patch: BusinessUpdate = { name, phone, contact_email, google_review_url };
   if (logo_url !== undefined) patch.logo_url = logo_url;
 
   const { error: updateErr } = await supabase

@@ -45,6 +45,10 @@ export const ANY_KEY = "__any__";
 /**
  * The events an automation can start from. Only "a new booking comes in" is
  * wired to the sending engine today; this list is the seam for adding more.
+ *
+ * The post-tour review funnel is deliberately NOT here. It branches on the
+ * customer's reply and cancels itself on uncheck, which this rules model
+ * cannot express, so it is a fixed flow instead. See docs/review-automation.md.
  */
 export const TRIGGERS = [{ value: "new_booking", label: "A new booking comes in" }] as const;
 

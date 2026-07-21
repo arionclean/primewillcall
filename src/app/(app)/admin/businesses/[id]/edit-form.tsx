@@ -34,6 +34,7 @@ type EditBusinessFormProps = {
     name: string;
     phone: string | null;
     contact_email: string | null;
+    google_review_url: string | null;
     logo_url: string | null;
   };
 };
@@ -154,6 +155,21 @@ export function EditBusinessForm({ business }: EditBusinessFormProps) {
               type="email"
               defaultValue={business.contact_email ?? ""}
               placeholder="e.g. reservations@yourbusiness.com"
+            />
+          </Field>
+
+          <Field
+            label="Google review link"
+            htmlFor="google_review_url"
+            hint="Where happy customers are sent to leave a review. Until this is set, this business never gets review texts."
+            error={state.fieldErrors?.google_review_url}
+          >
+            <Input
+              id="google_review_url"
+              name="google_review_url"
+              type="url"
+              defaultValue={business.google_review_url ?? ""}
+              placeholder="e.g. https://g.page/r/.../review"
             />
           </Field>
 

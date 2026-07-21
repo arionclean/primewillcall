@@ -12,6 +12,7 @@ import {
 } from "./messaging-forms";
 import type { ProductOption, RuleRow, WaTemplateOption } from "./messaging-lib";
 import { MessagingTabs } from "./messaging-tabs";
+import { ReviewFunnelCard } from "./review-funnel-card";
 
 /**
  * Owner-only automations: trigger (new booking, per product) -> actions
@@ -25,7 +26,7 @@ export default async function MessagingConfigPage() {
 
   const supabase = (await getSupabaseServerClient()) as unknown as SupabaseClient;
 
-  const [rulesResult, productsResult] = await Promise.all([
+  const [rulesResult, productsResult, reviewSettings, linkedBusinesses] = await Promise.all([
     supabase
       .from("messaging_rules")
       .select(
@@ -37,6 +38,15 @@ export default async function MessagingConfigPage() {
       .select("id, name, business:businesses!business_tours_business_id_fkey(name)")
       .eq("is_active", true)
       .order("name"),
+    supabase
+      .from("messaging_settings")
+      .select("review_automation_enabled")
+      .eq("id", true)
+      .maybeSingle(),
+    supabase
+      .from("businesses")
+      .select("id", { count: "exact", head: true })
+      .not("google_review_url", "is", null),
   ]);
 
   const rules = (rulesResult.data ?? []) as RuleRow[];
@@ -76,7 +86,13 @@ export default async function MessagingConfigPage() {
               Could not load automations: {rulesResult.error.message}
             </p>
           ) : (
-            <MessagingRules rules={rules} products={products} waTemplates={waOptions} />
+            <>
+              <MessagingRules rules={rules} products={products} waTemplates={waOptions} />
+              <ReviewFunnelCard
+                enabled={reviewSettings.data?.review_automation_enabled ?? false}
+                businessesWithLink={linkedBusinesses.count ?? 0}
+              />
+            </>
           )
         }
         templates={

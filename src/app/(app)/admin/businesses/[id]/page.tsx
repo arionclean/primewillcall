@@ -23,7 +23,7 @@ export default async function EditBusinessPage({
   const { data: business } = await supabase
     .from("businesses")
     .select(
-      "id, name, phone, contact_email, logo_url, stripe_account_id, stripe_charges_enabled, stripe_payouts_enabled, stripe_details_submitted, stripe_requirements_due",
+      "id, name, phone, contact_email, google_review_url, logo_url, stripe_account_id, stripe_charges_enabled, stripe_payouts_enabled, stripe_details_submitted, stripe_requirements_due",
     )
     .eq("id", id)
     .maybeSingle();

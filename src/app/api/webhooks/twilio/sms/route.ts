@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { handleInboundReviewReply } from "@/lib/reviews/funnel";
 import { normalizeUsPhone } from "@/lib/sms/format";
 import { classifyOptKeyword, logSmsMessage, setOptOut } from "@/lib/sms/messages";
 import { validateTwilioSignature } from "@/lib/sms/twilio";
@@ -92,11 +93,20 @@ export async function POST(request: NextRequest) {
     if (phone) {
       await setOptOut(phone, optAction === "opt_out", body.trim().toUpperCase());
     }
+    // STOP/START are never a review reply, so stop here.
+    return twimlResponse();
   }
 
-  // TODO: port the Xano "analyze inbound message_v2" follow-up (cancel pending
-  // flow timers, classify rateAsk replies with an LLM, create review records,
-  // send the Google-review ask) once contacts/bookings/reviews exist in Supabase.
+  // Review funnel: if this is a reply to a post-tour "rate us 1-5" ask, record
+  // the rating and send the matching follow-up. No-ops entirely while
+  // messaging_settings.review_automation_enabled is false, which it is until
+  // Xano stops handling these replies (this webhook still mirrors to it above).
+  try {
+    await handleInboundReviewReply({ fromPhone: params.From ?? "", body });
+  } catch (error) {
+    // An inbound webhook must always 200, or Twilio retries the message.
+    console.error("Review reply handling failed:", error);
+  }
 
   return twimlResponse();
 }

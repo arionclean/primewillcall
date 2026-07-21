@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { getCurrentStaff } from "@/lib/auth";
@@ -10,6 +11,10 @@ import { cn } from "@/lib/utils";
 import { resolveUnmatched, ignoreUnmatched } from "./actions";
 
 const BUSINESS_TZ = "America/New_York";
+
+/** How many queue rows to render at once, and how far "Show more" can go. */
+const PAGE_SIZE = 25;
+const MAX_SHOW = 500;
 
 const REASON_META: Record<
   string,
@@ -52,24 +57,41 @@ function fmtDate(iso: string | null): string {
  * Resolving teaches the matcher (adds a name alias) and assigns the tour to the
  * operator, all in one step (the resolve_email_match RPC).
  */
-export default async function UnmatchedPage() {
+export default async function UnmatchedPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ show?: string }>;
+}) {
   const { user, staff } = await getCurrentStaff();
   if (!user) redirect("/login?next=/admin/unmatched");
   if (!staff || !staff.is_active) redirect("/dashboard");
   if (staff.role !== "owner") redirect("/dashboard");
 
+  // The queue can hold thousands of rows. Render a page at a time: loading them
+  // all built a huge DOM (a tour <select> per card) and silently truncated at
+  // Supabase's 1000-row read cap, hiding the rest.
+  const { show } = await searchParams;
+  const limit = Math.min(Math.max(Number(show) || PAGE_SIZE, PAGE_SIZE), MAX_SHOW);
+
   const supabase = await getSupabaseServerClient();
   const [rowsRes, toursRes, bizRes] = await Promise.all([
     supabase
       .from("email_match_queue")
-      .select("*")
+      // Only the columns the card renders, so we never pull heavy payloads.
+      .select(
+        "id, reason, parsed, suggested_tour_id, original_product_name, business_id, booking_channel, supplier",
+        { count: "exact" },
+      )
       .in("status", ["urgent", "verify"])
-      .order("created_at", { ascending: false }),
+      .order("created_at", { ascending: false })
+      .range(0, limit - 1),
     supabase.from("tours").select("id, name").eq("is_active", true).order("name"),
     supabase.from("businesses").select("id, name"),
   ]);
 
   const rows = rowsRes.data ?? [];
+  const totalCount = rowsRes.count ?? rows.length;
+  const hasMore = rows.length < totalCount;
   const tours = toursRes.data ?? [];
   const tourName = new Map(tours.map((t) => [t.id, t.name]));
   const bizName = new Map((bizRes.data ?? []).map((b) => [b.id, b.name]));
@@ -85,6 +107,11 @@ export default async function UnmatchedPage() {
           one. Your choice is remembered, so the same product matches
           automatically next time.
         </p>
+        {totalCount > 0 ? (
+          <p className="mt-2 text-sm text-muted-foreground">
+            Showing {rows.length} of {totalCount.toLocaleString()} needing review.
+          </p>
+        ) : null}
       </header>
 
       {rows.length === 0 ? (
@@ -184,6 +211,22 @@ export default async function UnmatchedPage() {
               </Card>
             );
           })}
+
+          {hasMore ? (
+            <div className="pt-2 text-center">
+              <Link
+                href={`/admin/unmatched?show=${Math.min(limit + PAGE_SIZE, MAX_SHOW)}`}
+                className={cn(buttonVariants({ variant: "outline" }), "h-9")}
+                scroll={false}
+              >
+                Show {Math.min(PAGE_SIZE, totalCount - rows.length)} more
+              </Link>
+              <p className="mt-2 text-xs text-muted-foreground">
+                {(totalCount - rows.length).toLocaleString()} still hidden.
+                Resolving or ignoring one removes it from the queue.
+              </p>
+            </div>
+          ) : null}
         </div>
       )}
     </div>

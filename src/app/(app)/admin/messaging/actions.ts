@@ -11,7 +11,14 @@ export type MessagingActionState = {
   saved?: true;
 };
 
-/** Triggers the engine can actually fire on today. New ones need engine work. */
+/**
+ * Triggers the engine can actually fire on today. New ones need engine work.
+ *
+ * Keep in sync with TRIGGERS in messaging-lib.ts and the
+ * messaging_rules_trigger_event_check constraint. Anything missing here is
+ * silently rewritten to new_booking by readTrigger, so a value that reaches
+ * the form but not this set becomes a live new-booking message.
+ */
 const ALLOWED_TRIGGERS = new Set(["new_booking"]);
 
 function readTrigger(formData: FormData): string {
