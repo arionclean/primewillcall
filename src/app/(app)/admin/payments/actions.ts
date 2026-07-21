@@ -75,10 +75,17 @@ export async function refundTransaction(
     return { error: "Only card charges can be refunded here." };
   }
 
+  // Recomputed from the DB row, not the client's copy: if someone else already
+  // refunded part of this charge, a stale page cannot push the total over.
   const remaining = (txn.amount ?? 0) - (txn.amount_refunded ?? 0);
   if (remaining <= 0) return { error: "This charge is already fully refunded." };
 
-  const amount = Math.min(Math.floor(amountCents), remaining);
+  const amount = Math.floor(amountCents);
+  if (amount > remaining) {
+    return {
+      error: `The most you can refund is $${(remaining / 100).toFixed(2)}. Reload the page to see the latest refunds.`,
+    };
+  }
 
   try {
     // Direct charges live on the connected account, so the refund must be

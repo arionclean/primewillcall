@@ -127,9 +127,8 @@ export function PaymentsView({
   }
 
   function openRefund(txn: Txn) {
-    const remaining = txn.amount - (txn.amount_refunded ?? 0);
     setRefundFor(txn);
-    setRefundAmount((remaining / 100).toFixed(2));
+    setRefundAmount("");
     setRefundPin("");
     setRefundError(null);
   }
@@ -329,12 +328,33 @@ export function PaymentsView({
 
               <div className="mt-4 flex flex-col gap-3">
                 <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-                  Amount
+                  <span className="flex items-center justify-between">
+                    Amount
+                    <button
+                      type="button"
+                      className="font-medium text-blue-600 hover:underline"
+                      onClick={() =>
+                        setRefundAmount(
+                          (
+                            (refundFor.amount - (refundFor.amount_refunded ?? 0)) /
+                            100
+                          ).toFixed(2),
+                        )
+                      }
+                    >
+                      Max{" "}
+                      {formatCentsExact(
+                        refundFor.amount - (refundFor.amount_refunded ?? 0),
+                        refundFor.currency,
+                      )}
+                    </button>
+                  </span>
                   <Input
                     type="number"
                     inputMode="decimal"
                     min="0.01"
                     step="0.01"
+                    placeholder="0.00"
                     value={refundAmount}
                     onChange={(e) => setRefundAmount(e.target.value)}
                     className="h-9"
@@ -371,7 +391,9 @@ export function PaymentsView({
                 <Button
                   type="button"
                   variant="destructive"
-                  disabled={isPending}
+                  disabled={
+                    isPending || !refundAmount.trim() || !refundPin.trim()
+                  }
                   onClick={submitRefund}
                 >
                   {isPending ? "Refunding…" : "Refund"}
