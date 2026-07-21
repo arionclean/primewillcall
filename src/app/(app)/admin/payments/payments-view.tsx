@@ -1,7 +1,13 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition, type CSSProperties } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+  useTransition,
+  type CSSProperties,
+} from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -211,27 +217,45 @@ export function PaymentsView({
   const [refundPin, setRefundPin] = useState("");
   const [refundError, setRefundError] = useState<string | null>(null);
 
-  function pushFilters(fromV: string, toV: string) {
-    const params = new URLSearchParams();
-    if (fromV) params.set("from", fromV);
-    if (toV) params.set("to", toV);
-    if (business) params.set("business", business);
-    if (source) params.set("source", source);
-    if (q.trim()) params.set("q", q.trim());
-    router.push(`/admin/payments?${params.toString()}`);
-  }
+  // Filters apply on change (no Apply button). Handlers pass the value they
+  // just set as an override because React state updates are async.
+  const pushFilters = useCallback(
+    (
+      overrides: Partial<{
+        from: string;
+        to: string;
+        business: string;
+        source: string;
+        q: string;
+      }> = {},
+    ) => {
+      const v = { from, to, business, source, q: q.trim(), ...overrides };
+      const params = new URLSearchParams();
+      if (v.from) params.set("from", v.from);
+      if (v.to) params.set("to", v.to);
+      if (v.business) params.set("business", v.business);
+      if (v.source) params.set("source", v.source);
+      if (v.q) params.set("q", v.q);
+      router.push(`/admin/payments?${params.toString()}`);
+    },
+    [from, to, business, source, q, router],
+  );
 
-  function applyFilters() {
-    pushFilters(from, to);
-  }
+  // Search applies as you type, debounced; Enter applies immediately.
+  useEffect(() => {
+    const term = q.trim();
+    if (term === filters.q) return;
+    const t = setTimeout(() => pushFilters({ q: term }), 400);
+    return () => clearTimeout(t);
+  }, [q, filters.q, pushFilters]);
 
   function onPresetChange(key: PresetKey) {
     setPreset(key);
     const range = presetRange(key);
-    if (!range) return; // custom: reveal From/To, wait for Apply
+    if (!range) return; // custom: reveal From/To, they apply on change
     setFrom(range.from);
     setTo(range.to);
-    pushFilters(range.from, range.to);
+    pushFilters({ from: range.from, to: range.to });
   }
 
   function openRefund(txn: Txn) {
@@ -288,7 +312,7 @@ export function PaymentsView({
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") applyFilters();
+              if (e.key === "Enter") pushFilters({ q: q.trim() });
             }}
             className="h-9 w-[16rem]"
           />
@@ -315,7 +339,10 @@ export function PaymentsView({
               <Input
                 type="date"
                 value={from}
-                onChange={(e) => setFrom(e.target.value)}
+                onChange={(e) => {
+                  setFrom(e.target.value);
+                  if (e.target.value) pushFilters({ from: e.target.value });
+                }}
                 className="h-9 w-[9.5rem]"
               />
             </label>
@@ -324,7 +351,10 @@ export function PaymentsView({
               <Input
                 type="date"
                 value={to}
-                onChange={(e) => setTo(e.target.value)}
+                onChange={(e) => {
+                  setTo(e.target.value);
+                  if (e.target.value) pushFilters({ to: e.target.value });
+                }}
                 className="h-9 w-[9.5rem]"
               />
             </label>
@@ -334,7 +364,10 @@ export function PaymentsView({
           Source
           <Select
             value={source}
-            onChange={(e) => setSource(e.target.value)}
+            onChange={(e) => {
+              setSource(e.target.value);
+              pushFilters({ source: e.target.value });
+            }}
             className="h-9 w-[9rem]"
           >
             <option value="">All sources</option>
@@ -355,7 +388,10 @@ export function PaymentsView({
             Business
             <Select
               value={business}
-              onChange={(e) => setBusiness(e.target.value)}
+              onChange={(e) => {
+                setBusiness(e.target.value);
+                pushFilters({ business: e.target.value });
+              }}
               className="h-9 w-[12rem]"
             >
               <option value="">All businesses</option>
@@ -367,9 +403,6 @@ export function PaymentsView({
             </Select>
           </label>
         )}
-        <Button type="button" variant="outline" onClick={applyFilters}>
-          Apply
-        </Button>
       </div>
 
       {items.length === 0 ? (
