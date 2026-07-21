@@ -379,8 +379,31 @@ Deno.serve(async (req) => {
     }
   }
   const upserted = results.filter((r) => r.ok).length;
+
+  // Self-heal the payments ledger: a kiosk Stripe charge can land BEFORE its
+  // booking syncs, leaving the charge without customer_name / booking_id. Now
+  // that these bookings exist, backfill any charge referencing them (KS ref =
+  // legacy_id). Best-effort: a heal failure never fails the sync.
+  let healed = 0;
+  const okRefs = results.flatMap((r) => (r.ok && r.legacy_id ? [r.legacy_id] : []));
+  if (okRefs.length > 0) {
+    try {
+      const { data } = await sb.rpc("heal_ledger_booking_links", { p_refs: okRefs });
+      healed = typeof data === "number" ? data : 0;
+    } catch {
+      // ignore; the next sync or a manual heal sweeps it
+    }
+  }
+
   return json(
-    { ok: true, processed: results.length, upserted, failed: results.length - upserted, results },
+    {
+      ok: true,
+      processed: results.length,
+      upserted,
+      failed: results.length - upserted,
+      healed,
+      results,
+    },
     200,
   );
 });
