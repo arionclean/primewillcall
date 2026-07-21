@@ -52,6 +52,39 @@ const ROLE_OPTIONS: { value: StaffRole; label: string; hint: string }[] = [
   },
 ];
 
+type CapabilityName =
+  | "can_create_bookings"
+  | "can_edit_bookings"
+  | "can_check_in"
+  | "can_delete_bookings";
+
+const CAPABILITY_OPTIONS: {
+  name: CapabilityName;
+  label: string;
+  hint: string;
+}[] = [
+  {
+    name: "can_create_bookings",
+    label: "Create bookings",
+    hint: "Add new bookings from the Schedule page.",
+  },
+  {
+    name: "can_edit_bookings",
+    label: "Edit bookings",
+    hint: "Change details, times, and payment status on existing bookings.",
+  },
+  {
+    name: "can_check_in",
+    label: "Check guests in",
+    hint: "Mark guests as arrived from the Bookings page.",
+  },
+  {
+    name: "can_delete_bookings",
+    label: "Delete bookings",
+    hint: "Remove bookings entirely. Leave off unless they really need it.",
+  },
+];
+
 type Props = {
   businesses: { id: string; name: string }[];
   tours: { id: string; name: string }[];
@@ -66,6 +99,13 @@ export function NewStaffForm({ businesses, tours }: Props) {
   const [selectedTours, setSelectedTours] = useState<Set<string>>(
     () => new Set(),
   );
+  // Delete defaults on for managers, off for check-in staff.
+  const [caps, setCaps] = useState<Record<CapabilityName, boolean>>({
+    can_create_bookings: true,
+    can_edit_bookings: true,
+    can_check_in: true,
+    can_delete_bookings: false,
+  });
   const [password, setPassword] = useState<string>("");
   const [copied, setCopied] = useState(false);
 
@@ -140,7 +180,14 @@ export function NewStaffForm({ businesses, tours }: Props) {
             id="role"
             name="role"
             value={role}
-            onChange={(e) => setRole(e.target.value as StaffRole)}
+            onChange={(e) => {
+              const next = e.target.value as StaffRole;
+              setRole(next);
+              setCaps((prev) => ({
+                ...prev,
+                can_delete_bookings: next === "business_manager",
+              }));
+            }}
             required
           >
             <option value="" disabled>
@@ -212,6 +259,41 @@ export function NewStaffForm({ businesses, tours }: Props) {
           </div>
         </Field>
       </FormSection>
+
+      {role !== "" && (
+        <FormSection
+          title="Permissions"
+          description="What this team member can do with bookings. You can change these later."
+          contentClassName="grid gap-3 sm:grid-cols-2"
+        >
+          {CAPABILITY_OPTIONS.map((cap) => (
+            <label
+              key={cap.name}
+              className="flex cursor-pointer items-start gap-2.5 rounded-md border px-3 py-2.5 text-sm transition hover:bg-muted/50"
+            >
+              <input
+                type="checkbox"
+                name={cap.name}
+                value="1"
+                checked={caps[cap.name]}
+                onChange={(e) =>
+                  setCaps((prev) => ({
+                    ...prev,
+                    [cap.name]: e.target.checked,
+                  }))
+                }
+                className="mt-0.5 h-4 w-4 accent-primary"
+              />
+              <span>
+                <span className="block font-medium">{cap.label}</span>
+                <span className="block text-xs text-muted-foreground">
+                  {cap.hint}
+                </span>
+              </span>
+            </label>
+          ))}
+        </FormSection>
+      )}
 
       {needsTours && (
         <FormSection

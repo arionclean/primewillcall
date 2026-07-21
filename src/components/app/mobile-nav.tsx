@@ -9,6 +9,7 @@ import type { Database } from "@/lib/supabase/database.types";
 
 import { AppSidebar } from "./app-sidebar";
 import { GlobalSearch } from "./global-search";
+import { SidebarManifest } from "./sidebar-manifest";
 
 type StaffRole = Database["public"]["Enums"]["staff_role"];
 
@@ -18,7 +19,13 @@ type StaffRole = Database["public"]["Enums"]["staff_role"];
  * drawer closes on navigation (including search-result jumps) so it never
  * lingers over the page the user just opened.
  */
-export function MobileNav({ role }: { role: StaffRole }) {
+export function MobileNav({
+  role,
+  canCreateBookings,
+}: {
+  role: StaffRole;
+  canCreateBookings: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
@@ -70,7 +77,12 @@ export function MobileNav({ role }: { role: StaffRole }) {
                   </button>
                 </div>
                 <GlobalSearch />
-                <AppSidebar role={role} onNavigate={() => setOpen(false)} />
+                <AppSidebar
+                  role={role}
+                  canCreateBookings={canCreateBookings}
+                  onNavigate={() => setOpen(false)}
+                />
+                {role === "check_in" && <SidebarManifest />}
               </div>
             </div>,
             document.body,

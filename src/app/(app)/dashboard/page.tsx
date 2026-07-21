@@ -32,47 +32,10 @@ export default async function DashboardPage({
   const supabase = await getSupabaseServerClient();
   const range = getTodayRange();
 
-  // Check-in desk staff get a focused, operational view: today's guest counts
-  // and tours, plus a direct path to the Bookings page where they check guests
-  // in. No analytics chart or onboarding (that is for owners/managers), which
-  // also means fewer queries and a faster page for the desk.
+  // Check-in desk staff work out of the Bookings page (the sidebar Manifest
+  // covers their at-a-glance counts), so the dashboard just forwards them.
   if (staff.role === "check_in") {
-    const [kpis, byTour] = await Promise.all([
-      getTodayKpis(supabase, range),
-      getTodayByTour(supabase, range),
-    ]);
-    return (
-      <div>
-        <header className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Today, {range.localDateLabel}
-            </p>
-          </div>
-          <Link
-            href="/bookings"
-            className={cn(buttonVariants({ variant: "default" }))}
-          >
-            Check in guests
-          </Link>
-        </header>
-
-        <div className="mt-6">
-          <KpiStrip kpis={kpis} />
-        </div>
-
-        {byTour.length > 0 ? (
-          <div className="mt-4">
-            <TourTallyStrip tallies={byTour} />
-          </div>
-        ) : (
-          <p className="mt-8 rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">
-            No tours scheduled for today.
-          </p>
-        )}
-      </div>
-    );
+    redirect("/bookings");
   }
 
   // Selected month for the chart (?month=YYYY-MM), default to the current month.
@@ -168,8 +131,8 @@ function UnlinkedAccount({ email }: { email: string }) {
         </h1>
         <p className="mt-3 text-sm text-muted-foreground">
           You are signed in as <span className="font-medium">{email}</span>, but
-          there is no active staff record linked to this account yet. Ask an
-          owner to invite you, then sign out and back in.
+          this account hasn&apos;t been added to the team yet. Ask Prime to add
+          you, then sign out and back in.
         </p>
         <form action="/api/auth/signout" method="post" className="mt-6">
           <Button type="submit" variant="outline">

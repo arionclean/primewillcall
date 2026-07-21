@@ -28,7 +28,7 @@ export async function POST(
   }
   if (!staff) {
     return NextResponse.json(
-      { error: "No active staff row linked to your auth user" },
+      { error: "Your account isn't set up yet. Ask Prime to add you to the team." },
       { status: 403 },
     );
   }

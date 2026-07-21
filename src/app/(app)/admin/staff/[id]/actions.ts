@@ -38,7 +38,7 @@ export async function updateStaffAction(
   if (!current) return { error: "Team member not found." };
   if (current.role === "owner") {
     return {
-      error: "Owner accounts can't be edited from here. Use the Supabase dashboard.",
+      error: "Owner accounts can't be edited from here.",
     };
   }
 
@@ -47,6 +47,10 @@ export async function updateStaffAction(
   const business_id_raw = String(formData.get("business_id") ?? "").trim();
   const passwordRaw = String(formData.get("password") ?? "");
   const is_active = formData.get("is_active") === "1";
+  const can_create_bookings = formData.get("can_create_bookings") === "1";
+  const can_edit_bookings = formData.get("can_edit_bookings") === "1";
+  const can_check_in = formData.get("can_check_in") === "1";
+  const can_delete_bookings = formData.get("can_delete_bookings") === "1";
   const tour_ids = formData
     .getAll("tour_ids")
     .map((v) => String(v))
@@ -69,7 +73,16 @@ export async function updateStaffAction(
 
   const { error: updErr } = await supabase
     .from("staff")
-    .update({ full_name, role, business_id, is_active })
+    .update({
+      full_name,
+      role,
+      business_id,
+      is_active,
+      can_create_bookings,
+      can_edit_bookings,
+      can_check_in,
+      can_delete_bookings,
+    })
     .eq("id", id);
   if (updErr) return { error: updErr.message };
 
@@ -108,13 +121,13 @@ export async function updateStaffAction(
     if (!admin) {
       return {
         error:
-          "Saved everything else, but couldn't reset the password: SUPABASE_SERVICE_ROLE_KEY isn't set.",
+          "Saved everything else, but the password couldn't be reset. Try again in a moment.",
       };
     }
     if (!current.user_id) {
       return {
         error:
-          "Saved everything else, but no auth user is linked to this team member yet, so the password can't be set.",
+          "Saved everything else, but this team member doesn't have a login yet, so the password can't be set.",
       };
     }
     const { error: pwErr } = await admin.auth.admin.updateUserById(

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { staffCapabilities } from "@/lib/auth";
 import {
   BUSINESS_TZ,
   getLocalDateRange,
@@ -33,11 +34,15 @@ export default async function BookingsPage({
 
   const { data: staff } = await supabase
     .from("staff")
-    .select("id, role, business_id, is_active")
+    .select(
+      "id, role, business_id, is_active, can_create_bookings, can_edit_bookings, can_check_in, can_delete_bookings",
+    )
     .eq("user_id", user.id)
     .maybeSingle();
 
   if (!staff || !staff.is_active) redirect("/dashboard");
+
+  const caps = staffCapabilities(staff);
 
   const { date: dateParam } = await searchParams;
   const dateIso = parseLocalYmd(dateParam) ?? todayLocalIso(DEFAULT_TIMEZONE);
@@ -171,14 +176,16 @@ export default async function BookingsPage({
             Bookings for the selected date. {friendlyLabel}.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Link
-            href="/schedule"
-            className={cn(buttonVariants({ variant: "default" }))}
-          >
-            + Booking
-          </Link>
-        </div>
+        {caps.canCreateBookings ? (
+          <div className="flex items-center gap-2">
+            <Link
+              href="/schedule"
+              className={cn(buttonVariants({ variant: "default" }))}
+            >
+              + Booking
+            </Link>
+          </div>
+        ) : null}
       </header>
 
       <div className="mt-6">
@@ -187,6 +194,7 @@ export default async function BookingsPage({
           tours={tourOptions}
           date={dateIso}
           role={staff.role}
+          caps={caps}
           businessId={staff.business_id}
           rangeStartUtc={range.startUtc}
           rangeEndUtcExclusive={range.endUtcExclusive}

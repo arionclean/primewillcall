@@ -167,11 +167,20 @@ export type BookingRow = {
   } | null;
 };
 
+/** Owner-editable per-staff booking permissions (see /admin/staff/[id]). */
+export type BookingCaps = {
+  canCreateBookings: boolean;
+  canEditBookings: boolean;
+  canCheckIn: boolean;
+  canDeleteBookings: boolean;
+};
+
 type BookingsListProps = {
   initial: BookingRow[];
   tours: TourOption[];
   date: string; // YYYY-MM-DD
   role: "owner" | "business_manager" | "check_in";
+  caps: BookingCaps;
   businessId: string | null; // scopes the realtime subscription for non-owners
   rangeStartUtc: string;
   rangeEndUtcExclusive: string;
@@ -576,6 +585,7 @@ export function BookingsList({
   tours,
   date,
   role,
+  caps,
   businessId,
   rangeStartUtc,
   rangeEndUtcExclusive,
@@ -1036,6 +1046,7 @@ export function BookingsList({
                       key={booking.id}
                       booking={booking}
                       role={role}
+                      caps={caps}
                       privacyOn={privacyOn}
                       busy={busyId === booking.id}
                       copiedKey={copiedKey}
@@ -1168,6 +1179,7 @@ export function BookingsList({
           booking={editBooking}
           tours={tours}
           role={role}
+          caps={caps}
           onClose={() => setEditBooking(null)}
           onSaved={(updated) => {
             setBookings((current) =>
@@ -1193,6 +1205,7 @@ const rowActionButtonClass =
 function BookingRowItem({
   booking,
   role,
+  caps,
   privacyOn,
   busy,
   copiedKey,
@@ -1211,6 +1224,7 @@ function BookingRowItem({
 }: {
   booking: BookingRow;
   role: "owner" | "business_manager" | "check_in";
+  caps: BookingCaps;
   privacyOn: boolean;
   busy: boolean;
   copiedKey: string | null;
@@ -1312,14 +1326,16 @@ function BookingRowItem({
             type="checkbox"
             checked={checkedIn}
             onChange={onToggleCheckIn}
-            disabled={busy || cancelled}
+            disabled={busy || cancelled || !caps.canCheckIn}
             aria-label="Toggle check-in"
             className="size-5 accent-fuchsia-600 disabled:cursor-not-allowed disabled:opacity-50"
           />
-          <button type="button" onClick={onEdit} className={rowActionButtonClass}>
-            <span className="sr-only">Edit booking</span>
-            <PencilLine className="size-4" />
-          </button>
+          {caps.canEditBookings ? (
+            <button type="button" onClick={onEdit} className={rowActionButtonClass}>
+              <span className="sr-only">Edit booking</span>
+              <PencilLine className="size-4" />
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -1420,7 +1436,7 @@ function BookingRowItem({
           type="checkbox"
           checked={checkedIn}
           onChange={onToggleCheckIn}
-          disabled={busy || cancelled}
+          disabled={busy || cancelled || !caps.canCheckIn}
           aria-label="Toggle check-in"
           className="size-4 accent-fuchsia-600 disabled:cursor-not-allowed disabled:opacity-50"
         />
@@ -1506,10 +1522,14 @@ function BookingRowItem({
         ) : (
           <span className="size-8" aria-hidden="true" />
         )}
-        <button type="button" onClick={onEdit} className={rowActionButtonClass}>
-          <span className="sr-only">Edit booking</span>
-          <PencilLine className="size-4" />
-        </button>
+        {caps.canEditBookings ? (
+          <button type="button" onClick={onEdit} className={rowActionButtonClass}>
+            <span className="sr-only">Edit booking</span>
+            <PencilLine className="size-4" />
+          </button>
+        ) : (
+          <span className="size-8" aria-hidden="true" />
+        )}
       </div>
       </div>
     </article>
@@ -1590,6 +1610,7 @@ function EditBookingModal({
   booking,
   tours,
   role,
+  caps,
   onClose,
   onSaved,
   onDeleted,
@@ -1597,6 +1618,7 @@ function EditBookingModal({
   booking: BookingRow;
   tours: TourOption[];
   role: "owner" | "business_manager" | "check_in";
+  caps: BookingCaps;
   onClose: () => void;
   onSaved: (updated: BookingRow) => void;
   onDeleted: (id: string) => void;
@@ -2058,22 +2080,26 @@ function EditBookingModal({
         ) : null}
 
         <div className="flex items-center justify-between gap-3 border-t bg-muted/40 px-5 py-4">
-          {role !== "check_in" ? (
+          {caps.canDeleteBookings || role !== "check_in" ? (
             <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="destructive"
-                onClick={() => void handleDelete()}
-                disabled={busy}
-              >
-                {deleting ? "Deleting..." : "Delete"}
-              </Button>
-              <PaymentLinkButton
-                bookingId={booking.id}
-                amountCents={booking.total_cents}
-                status={booking.status}
-                disabled={busy}
-              />
+              {caps.canDeleteBookings ? (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={() => void handleDelete()}
+                  disabled={busy}
+                >
+                  {deleting ? "Deleting..." : "Delete"}
+                </Button>
+              ) : null}
+              {role !== "check_in" ? (
+                <PaymentLinkButton
+                  bookingId={booking.id}
+                  amountCents={booking.total_cents}
+                  status={booking.status}
+                  disabled={busy}
+                />
+              ) : null}
             </div>
           ) : (
             <span />

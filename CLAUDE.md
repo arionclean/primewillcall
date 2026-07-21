@@ -38,8 +38,16 @@ Realtime). Supabase project id: `qbnizuhozzwkiitfkjee`.
 - `owner` — Prime. Platform-wide. Manages businesses, tours, staff, everything.
 - `business_manager` — belongs to one business (`staff.business_id`). Manages that
   business's bookings, customers, and its own copy of each assigned tour (name + prices).
-- `check_in` — desk staff for one business. Sees bookings on assigned tours and checks
-  guests in from the Bookings page (inline check-in checkbox). Lands on `/dashboard`.
+- `check_in` — desk staff for one business (the kiosk accounts). Sees bookings on
+  assigned tours, checks guests in, and can create bookings on those tours from
+  `/schedule`. Lands on `/bookings` (no dashboard; the sidebar Manifest shows
+  today's remaining check-ins per departure).
+
+Non-owner staff also carry four per-person booking permissions
+(`staff.can_create_bookings / can_edit_bookings / can_check_in / can_delete_bookings`),
+owner-editable in the "Permissions" section of `/admin/staff/[id]`. Owners always have
+all four. Enforcement is layered (UI, server action, RLS, plus a bookings trigger that
+limits check-in-only accounts to the check-in stamp); see `docs/DATABASE.md`.
 
 A Postgres trigger links `auth.users` to a `staff` row by email on sign-up. The
 `current_staff()` SECURITY DEFINER function returns `(staff_id, role, business_id)` and
@@ -195,6 +203,26 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   fires the automations when `MESSAGING_AUTOMATIONS_ENABLED=true` (wired into `/schedule`,
   still to wire `/api/gp/book`), and the cron + Twilio secrets must be set. Full model +
   go-live checklist in [`docs/messaging-automations.md`](docs/messaging-automations.md).
+- **Review automation** (post-tour rating funnel) is built and deployed but
+  **switched OFF**: 3h after a tour ends the customer is texted for a 1-5 rating;
+  a 5 gets the Google review link (plus one 24h nudge if never clicked), a 1-4 gets
+  a private "what could we have done better" and never reaches Google. A 24h re-ask
+  chases anyone who never replied (that follow-up earns a lot of the responses).
+  It is a **fixed flow, not an editable automation**: it branches on the reply and
+  cancels itself, which `messaging_rules` cannot express, so the copy lives in
+  `src/lib/reviews/copy.ts` and `/admin/messaging` shows the four steps read-only
+  with one on/off switch. Only checked-in guests qualify; un-checking or cancelling
+  a booking kills the funnel via the `cancel_review_funnel` DB trigger (unchecking
+  is a direct browser-client mutation, so app-side hooks would be bypassed). A reply
+  only counts as a rating if the last thing we sent was the ask. The sweep is
+  `enqueue-review-asks`, the reply branch is `src/lib/reviews/*` off the Twilio
+  webhook, and `/r/<token>` is the click-tracked link. It has its **own** kill
+  switch, `messaging_settings.review_automation_enabled` (default false), because
+  `automations_enabled` is already true and Xano still runs the same funnel plus
+  still receives every inbound SMS via the webhook mirror, so turning this on early
+  double-texts customers. Five brakes, go-live checklist and known gaps in
+  [`docs/review-automation.md`](docs/review-automation.md). The `/reviews`
+  management section (the other half of the Xano feature) is deliberately not built.
 - **Groupon `/gp`** (public voucher redemption) is built: upload -> vision match -> details
   -> pending booking on the `groupon` channel. Owner sets the per-product fee at
   `/admin/groupon` (`business_tours.groupon_fee_cents`). Vision runs in the

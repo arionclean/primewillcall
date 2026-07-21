@@ -63,11 +63,42 @@ type Props = {
     role: StaffRole;
     business_id: string | null;
     is_active: boolean;
+    can_create_bookings: boolean;
+    can_edit_bookings: boolean;
+    can_check_in: boolean;
+    can_delete_bookings: boolean;
   };
   businesses: { id: string; name: string }[];
   tours: { id: string; name: string }[];
   assignedTourIds: string[];
 };
+
+const CAPABILITY_OPTIONS: {
+  name: "can_create_bookings" | "can_edit_bookings" | "can_check_in" | "can_delete_bookings";
+  label: string;
+  hint: string;
+}[] = [
+  {
+    name: "can_create_bookings",
+    label: "Create bookings",
+    hint: "Add new bookings from the Schedule page.",
+  },
+  {
+    name: "can_edit_bookings",
+    label: "Edit bookings",
+    hint: "Change details, times, and payment status on existing bookings.",
+  },
+  {
+    name: "can_check_in",
+    label: "Check guests in",
+    hint: "Mark guests as arrived from the Bookings page.",
+  },
+  {
+    name: "can_delete_bookings",
+    label: "Delete bookings",
+    hint: "Remove bookings entirely. Leave off unless they really need it.",
+  },
+];
 
 export function EditStaffForm({
   staff,
@@ -147,11 +178,7 @@ export function EditStaffForm({
             />
           </Field>
 
-          <Field
-            label="Email"
-            htmlFor="email_display"
-            hint="The email is locked here. To change it, edit the auth user in the Supabase dashboard."
-          >
+          <Field label="Email" htmlFor="email_display">
             <Input
               id="email_display"
               type="email"
@@ -261,6 +288,33 @@ export function EditStaffForm({
               </Button>
             </div>
           </Field>
+        </FormSection>
+
+        <FormSection
+          title="Permissions"
+          description="What this team member can do with bookings. Changes apply the next time they load a page."
+          contentClassName="grid gap-3 sm:grid-cols-2"
+        >
+          {CAPABILITY_OPTIONS.map((cap) => (
+            <label
+              key={cap.name}
+              className="flex cursor-pointer items-start gap-2.5 rounded-md border px-3 py-2.5 text-sm transition hover:bg-muted/50"
+            >
+              <input
+                type="checkbox"
+                name={cap.name}
+                value="1"
+                defaultChecked={staff[cap.name]}
+                className="mt-0.5 h-4 w-4 accent-primary"
+              />
+              <span>
+                <span className="block font-medium">{cap.label}</span>
+                <span className="block text-xs text-muted-foreground">
+                  {cap.hint}
+                </span>
+              </span>
+            </label>
+          ))}
         </FormSection>
 
         {role === "check_in" && (

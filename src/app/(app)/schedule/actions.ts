@@ -53,11 +53,14 @@ export async function createBookingAction(
 
   const { data: staff } = await supabase
     .from("staff")
-    .select("id, role, business_id, is_active")
+    .select("id, role, business_id, is_active, can_create_bookings")
     .eq("user_id", user.id)
     .maybeSingle();
   if (!staff || !staff.is_active) {
     return { error: "Your account isn't set up to create bookings." };
+  }
+  if (staff.role !== "owner" && !staff.can_create_bookings) {
+    return { error: "Your account doesn't have permission to create bookings." };
   }
 
   const fieldErrors: Record<string, string> = {};
@@ -143,6 +146,18 @@ export async function createBookingAction(
   }
   if (staff.role !== "owner" && btRow.business_id !== staff.business_id) {
     return { error: "You can't create bookings for that business." };
+  }
+  if (staff.role === "check_in") {
+    // Check-in staff only sell tours assigned to them (mirrors their RLS scope).
+    const { data: assignment } = await supabase
+      .from("staff_tours")
+      .select("tour_id")
+      .eq("staff_id", staff.id)
+      .eq("tour_id", btRow.tour?.id ?? "")
+      .maybeSingle();
+    if (!assignment) {
+      return { error: "You can only create bookings for tours assigned to you." };
+    }
   }
 
   // Authoritative tier prices.

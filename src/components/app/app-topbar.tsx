@@ -23,14 +23,15 @@ const ROLE_TONE = {
 type AppTopbarProps = {
   role: StaffRole;
   fullName: string;
+  canCreateBookings: boolean;
 };
 
-export function AppTopbar({ role, fullName }: AppTopbarProps) {
+export function AppTopbar({ role, fullName, canCreateBookings }: AppTopbarProps) {
   return (
     <header className="border-b bg-background/80 backdrop-blur">
       <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-3">
         <div className="flex items-center gap-3">
-          <MobileNav role={role} />
+          <MobileNav role={role} canCreateBookings={canCreateBookings} />
           <Link
             href="/dashboard"
             className="text-sm font-semibold tracking-tight"

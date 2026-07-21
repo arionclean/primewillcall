@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app/app-shell";
-import { getCurrentStaff } from "@/lib/auth";
+import { getCurrentStaff, staffCapabilities } from "@/lib/auth";
 
 export default async function AppLayout({
   children,
@@ -18,7 +18,11 @@ export default async function AppLayout({
   }
 
   return (
-    <AppShell role={staff.role} fullName={staff.full_name}>
+    <AppShell
+      role={staff.role}
+      fullName={staff.full_name}
+      canCreateBookings={staffCapabilities(staff).canCreateBookings}
+    >
       {children}
     </AppShell>
   );

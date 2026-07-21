@@ -21,7 +21,9 @@ export default async function EditStaffPage({
     await Promise.all([
       supabase
         .from("staff")
-        .select("id, full_name, email, role, business_id, is_active")
+        .select(
+          "id, full_name, email, role, business_id, is_active, can_create_bookings, can_edit_bookings, can_check_in, can_delete_bookings",
+        )
         .eq("id", id)
         .maybeSingle(),
       supabase.from("businesses").select("id, name").order("name"),
@@ -65,6 +67,10 @@ export default async function EditStaffPage({
             role: staff.role as "business_manager" | "check_in",
             business_id: staff.business_id,
             is_active: staff.is_active,
+            can_create_bookings: staff.can_create_bookings,
+            can_edit_bookings: staff.can_edit_bookings,
+            can_check_in: staff.can_check_in,
+            can_delete_bookings: staff.can_delete_bookings,
           }}
           businesses={businesses ?? []}
           tours={tours ?? []}

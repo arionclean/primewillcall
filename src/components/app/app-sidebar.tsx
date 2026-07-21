@@ -31,6 +31,7 @@ type NavItem = {
   icon: LucideIcon;
   roles: StaffRole[];
   matchPrefix?: string; // path prefix that highlights this item
+  needsCreateBookings?: boolean; // hidden when the staffer can't create bookings
 };
 
 type NavSection = {
@@ -48,7 +49,7 @@ const SECTIONS: NavSection[] = [
         href: "/dashboard",
         label: "Dashboard",
         icon: LayoutDashboard,
-        roles: ALL_ROLES,
+        roles: ["owner", "business_manager"],
       },
       {
         href: "/bookings",
@@ -77,6 +78,7 @@ const SECTIONS: NavSection[] = [
         icon: CalendarPlus,
         roles: ALL_ROLES,
         matchPrefix: "/schedule",
+        needsCreateBookings: true,
       },
       {
         href: "/availability",
@@ -152,9 +154,11 @@ const SECTIONS: NavSection[] = [
 
 export function AppSidebar({
   role,
+  canCreateBookings,
   onNavigate,
 }: {
   role: StaffRole;
+  canCreateBookings: boolean;
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
@@ -162,7 +166,11 @@ export function AppSidebar({
   return (
     <nav aria-label="Primary" className="flex flex-col gap-5 text-sm">
       {SECTIONS.map((section, i) => {
-        const visible = section.items.filter((it) => it.roles.includes(role));
+        const visible = section.items.filter(
+          (it) =>
+            it.roles.includes(role) &&
+            (!it.needsCreateBookings || canCreateBookings),
+        );
         if (visible.length === 0) return null;
         return (
           <div key={i} className="flex flex-col gap-1">

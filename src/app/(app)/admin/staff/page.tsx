@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -93,12 +94,6 @@ export default async function StaffListPage() {
               </h2>
               <ul className="space-y-2">
                 {group.members.map((s) => {
-                  const initials = s.full_name
-                    .split(/\s+/)
-                    .filter(Boolean)
-                    .slice(0, 2)
-                    .map((w) => w[0]?.toUpperCase() ?? "")
-                    .join("");
                   return (
                     <li key={s.id}>
                       <Link
@@ -107,9 +102,7 @@ export default async function StaffListPage() {
                       >
                         <Card>
                           <CardContent className="flex items-center gap-4 py-4">
-                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">
-                              {initials || "?"}
-                            </div>
+                            <Avatar seed={s.email} />
                             <div className="min-w-0 flex-1">
                               <p className="truncate font-medium">
                                 {s.full_name}

@@ -31,6 +31,10 @@ export async function createStaffAction(
   const roleRaw = String(formData.get("role") ?? "").trim();
   const business_id_raw = String(formData.get("business_id") ?? "").trim();
   const passwordRaw = String(formData.get("password") ?? "");
+  const can_create_bookings = formData.get("can_create_bookings") === "1";
+  const can_edit_bookings = formData.get("can_edit_bookings") === "1";
+  const can_check_in = formData.get("can_check_in") === "1";
+  const can_delete_bookings = formData.get("can_delete_bookings") === "1";
   const tour_ids = formData
     .getAll("tour_ids")
     .map((v) => String(v))
@@ -61,7 +65,16 @@ export async function createStaffAction(
 
   const { data: inserted, error: insErr } = await supabase
     .from("staff")
-    .insert({ full_name, email, role, business_id })
+    .insert({
+      full_name,
+      email,
+      role,
+      business_id,
+      can_create_bookings,
+      can_edit_bookings,
+      can_check_in,
+      can_delete_bookings,
+    })
     .select("id")
     .single();
   if (insErr) {
@@ -106,14 +119,14 @@ export async function createStaffAction(
     } else {
       const { error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email);
       if (inviteErr) {
-        warning = `Saved, but the invite email couldn't be sent: ${inviteErr.message}. You can invite them manually from the Supabase dashboard.`;
+        warning = `Saved, but the invite email couldn't be sent: ${inviteErr.message}. Open the team member and set a password instead.`;
       }
     }
   } else {
     warning =
       passwordRaw
-        ? "Saved. Login NOT created because SUPABASE_SERVICE_ROLE_KEY isn't set. Create the auth user manually from the Supabase dashboard, or set the key and retry."
-        : "Saved. Invite email NOT sent because SUPABASE_SERVICE_ROLE_KEY isn't set. Invite them manually from the Supabase dashboard.";
+        ? "Saved, but the login couldn't be created. Open the team member and set the password again to finish."
+        : "Saved, but the invite email couldn't be sent. Open the team member and set a password instead.";
   }
 
   revalidatePath("/admin/staff");

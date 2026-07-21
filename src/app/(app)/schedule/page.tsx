@@ -17,7 +17,9 @@ export default async function SchedulePage() {
 
   const { data: staff } = await supabase
     .from("staff")
-    .select("id, full_name, role, business_id, is_active")
+    .select(
+      "id, full_name, role, business_id, is_active, can_create_bookings",
+    )
     .eq("user_id", user.id)
     .maybeSingle();
 
@@ -27,6 +29,21 @@ export default async function SchedulePage() {
 
   const role = staff.role;
   const businessId = staff.business_id;
+
+  // Owner-editable capability (Team page). RLS enforces it on insert too.
+  if (role !== "owner" && !staff.can_create_bookings) {
+    redirect("/dashboard");
+  }
+
+  // Check-in staff only create bookings for tours assigned to them.
+  let assignedTourIds: Set<string> | null = null;
+  if (role === "check_in") {
+    const { data: assigned } = await supabase
+      .from("staff_tours")
+      .select("tour_id")
+      .eq("staff_id", staff.id);
+    assignedTourIds = new Set((assigned ?? []).map((r) => r.tour_id));
+  }
 
   let query = supabase
     .from("business_tours")
@@ -118,6 +135,7 @@ export default async function SchedulePage() {
       };
     })
     .filter((t) => t.masterIsActive && t.variantIsActive)
+    .filter((t) => assignedTourIds === null || assignedTourIds.has(t.masterTourId))
     .sort((a, b) => {
       const byBiz = a.businessName.localeCompare(b.businessName);
       if (byBiz !== 0) return byBiz;
@@ -127,7 +145,9 @@ export default async function SchedulePage() {
   const emptyCopy =
     role === "owner"
       ? "No tours yet. Add one in Tours."
-      : "No tours available yet. Ask Prime to assign a tour to your business.";
+      : role === "check_in"
+        ? "No tours are assigned to you yet. Ask Prime to assign your tours on the Team page."
+        : "No tours available yet. Ask Prime to assign a tour to your business.";
 
   return (
     <div>

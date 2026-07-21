@@ -43,9 +43,18 @@ booking page (`/booking/<token>`).
 
 ### staff
 `id uuid pk, user_id? (-> auth.users), business_id? (-> businesses), role enum,
-full_name, email, phone?, is_active, created_at, updated_at`
+full_name, email, phone?, is_active, can_create_bookings, can_edit_bookings,
+can_check_in, can_delete_bookings, created_at, updated_at`
 Role enum (`staff_role`): `owner`, `business_manager`, `check_in`. `owner` has no
 `business_id`. A trigger links a new `auth.users` row to its `staff` row by email.
+
+The four `can_*` booleans are per-staff booking permissions, editable by the owner
+on `/admin/staff/[id]` ("Permissions"). Owners ignore them (always allowed); they
+gate managers and check-in staff via the bookings RLS policies plus the
+`bookings_enforce_update_capabilities` trigger (an account with `can_check_in` but
+not `can_edit_bookings` may only change `checked_in_at` / `checked_in_by_staff_id`;
+RLS alone cannot express column-level rules). Defaults: create/edit/check-in on,
+delete off (new managers get delete on from the New team member form).
 
 ### tours (master, Prime-owned)
 `id uuid pk, name, kind, capacity, notes?, instructions?, meeting_point_address?,
@@ -306,9 +315,10 @@ General shape:
 - **owner**: full access to everything.
 - **business_manager**: read + write rows belonging to their `business_id`
   (`bookings`, `customers`, `business_tours`, `tour_pax_tiers` via the parent business).
-- **check_in**: read `business_tours` / `tour_pax_tiers` for their business; read +
-  update `bookings` only for tours they are assigned to via `staff_tours`. Can insert
-  `customers` for their business. Cannot delete bookings.
+- **check_in**: read `business_tours` / `tour_pax_tiers` for their business; read,
+  insert and update `bookings` only for tours they are assigned to via `staff_tours`
+  (each write also gated by the `staff.can_*` capability columns). Can insert
+  `customers` for their business. Delete only when `can_delete_bookings` is on.
 
 Table-specific notes:
 
@@ -319,8 +329,16 @@ Table-specific notes:
   sharing the departure, which mirrors reality: the boat itself is not going out.
 - `customers`: owner + manager + check-in of the business can insert and read; update is
   owner + manager; delete is owner only.
-- `bookings`: insert/delete is owner + manager (by business); check-in can read + update
-  (check guests in) for assigned tours only.
+- `bookings`: all non-owner writes are capability-gated by the `staff.can_*` columns.
+  Insert: owner; manager (own business); check-in (own business + assigned tour), each
+  needing `can_create_bookings`. Update: same row scopes, needing `can_edit_bookings`
+  or `can_check_in` (the trigger limits check-in-only accounts to the check-in stamp).
+  Delete: owner, or manager / check-in with `can_delete_bookings`.
+- `bookings_checkin_manifest(p_start, p_end)` — SECURITY INVOKER RPC: per-`starts_at`
+  remaining-to-check-in pax + total pax for a day window, cancelled excluded, aggregated
+  in the DB. RLS scopes it (check-in staff count only their assigned tours). Backs the
+  sidebar Manifest that check-in accounts see (`components/app/sidebar-manifest.tsx`),
+  which live-refreshes off a bookings Realtime subscription.
 - `business_tours` / `tour_pax_tiers`: owner full; manager read + write for their
   business; check-in read only.
 
