@@ -58,9 +58,13 @@ type CashSale = {
   business: { name: string } | null;
 };
 
-export type FeedItem =
+export type FeedItem = (
   | ({ kind: "card" } & Txn)
-  | ({ kind: "cash" } & CashSale);
+  | ({ kind: "cash" } & CashSale)
+) & {
+  /** Deep link into /bookings (date + highlight) when the sale has a booking. */
+  booking_href: string | null;
+};
 
 type Summary = {
   card_gross: number;
@@ -160,6 +164,27 @@ function formatDateTime(iso: string | null): string {
 
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** The customer line; a dashed underline marks it as a link to the booking. */
+function CustomerName({
+  label,
+  href,
+}: {
+  label: string;
+  href: string | null;
+}) {
+  if (!href) return <p className="truncate font-medium">{label}</p>;
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="block truncate font-medium underline decoration-dashed underline-offset-4 hover:decoration-solid"
+    >
+      {label}
+    </a>
+  );
 }
 
 /** "Visa ···· 4242", "···· 8215", or "Card" when Stripe sent no card details. */
@@ -437,12 +462,15 @@ export function PaymentsView({
                         {formatDateTime(item.created_at)}
                       </td>
                       <td className="max-w-[16rem] px-3 py-2">
-                        <p className="truncate font-medium">
-                          {item.customer_name ??
+                        <CustomerName
+                          label={
+                            item.customer_name ??
                             (item.booking_ref
                               ? `Sale ${item.booking_ref}`
-                              : "Cash sale")}
-                        </p>
+                              : "Cash sale")
+                          }
+                          href={item.booking_href}
+                        />
                         {secondary && (
                           <p className="truncate text-xs text-muted-foreground">
                             {secondary}
@@ -479,7 +507,10 @@ export function PaymentsView({
                       {formatDateTime(txn.stripe_created)}
                     </td>
                     <td className="max-w-[16rem] px-3 py-2">
-                      <p className="truncate font-medium">{customer.primary}</p>
+                      <CustomerName
+                        label={customer.primary}
+                        href={txn.booking_href}
+                      />
                       {customer.secondary && (
                         <p className="truncate text-xs text-muted-foreground">
                           {customer.secondary}

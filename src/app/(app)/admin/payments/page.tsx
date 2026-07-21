@@ -62,7 +62,7 @@ export default async function PaymentsPage({
   let cardQuery = supabase
     .from("stripe_transactions")
     .select(
-      "id, stripe_id, business_id, amount, amount_refunded, currency, status, source, card_brand, card_last4, booking_id, booking_ref, customer_email, customer_name, receipt_url, stripe_created, object_type, business:businesses(name)",
+      "id, stripe_id, business_id, amount, amount_refunded, currency, status, source, card_brand, card_last4, booking_id, booking_ref, customer_email, customer_name, receipt_url, stripe_created, object_type, business:businesses(name), booking:bookings(starts_at)",
     )
     .eq("object_type", "charge")
     .gte("stripe_created", startIso)
@@ -121,32 +121,58 @@ export default async function PaymentsPage({
   ]);
 
   // Cash rows carry the sale's KS code in booking_ref (newer app builds); it
-  // matches bookings.legacy_id, which is how the customer's name is found.
-  // Older rows hold Xano's numeric id and simply find no match.
+  // matches bookings.legacy_id, which is how the customer's name and the
+  // booking link are found. Older rows hold Xano's numeric id and simply
+  // find no match.
   const cashRefs = (cashRows ?? []).flatMap((c) =>
     c.booking_ref ? [c.booking_ref] : [],
   );
-  const cashNames = new Map<string, string>();
+  const cashBookingByRef = new Map<
+    string,
+    { id: string; starts_at: string; name: string | null }
+  >();
   if (cashRefs.length > 0) {
     const { data: cashBookings } = await supabase
       .from("bookings")
-      .select("legacy_id, customer:customers(full_name)")
+      .select("legacy_id, id, starts_at, customer:customers(full_name)")
       .in("legacy_id", cashRefs);
     for (const b of cashBookings ?? []) {
-      const name = b.customer?.full_name?.trim();
-      if (b.legacy_id && name) cashNames.set(b.legacy_id, name);
+      if (!b.legacy_id) continue;
+      cashBookingByRef.set(b.legacy_id, {
+        id: b.id,
+        starts_at: b.starts_at,
+        name: b.customer?.full_name?.trim() || null,
+      });
     }
   }
 
+  // Deep link into the bookings list: it shows one NY day at a time and
+  // highlights ?booking=<id>.
+  const bookingHref = (id: string | null, startsAt: string | null) =>
+    id && startsAt
+      ? `/bookings?date=${nyDateISO(new Date(startsAt))}&booking=${id}`
+      : null;
+
   const items: FeedItem[] = [
-    ...(cardRows ?? []).map((t) => ({ kind: "card" as const, ...t })),
-    ...(cashRows ?? []).map((c) => ({
-      kind: "cash" as const,
-      ...c,
-      customer_name: c.booking_ref
-        ? (cashNames.get(c.booking_ref) ?? null)
-        : null,
+    ...(cardRows ?? []).map((t) => ({
+      kind: "card" as const,
+      ...t,
+      booking_href: bookingHref(t.booking_id, t.booking?.starts_at ?? null),
     })),
+    ...(cashRows ?? []).map((c) => {
+      const linked = c.booking_ref
+        ? cashBookingByRef.get(c.booking_ref)
+        : undefined;
+      return {
+        kind: "cash" as const,
+        ...c,
+        customer_name: linked?.name ?? null,
+        booking_href: bookingHref(
+          linked?.id ?? null,
+          linked?.starts_at ?? null,
+        ),
+      };
+    }),
   ]
     .sort((a, b) => {
       const ta = a.kind === "card" ? (a.stripe_created ?? "") : a.created_at;
