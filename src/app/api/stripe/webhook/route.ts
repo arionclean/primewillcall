@@ -217,6 +217,24 @@ async function upsertChargeToLedger(
     ? await businessIdForAccount(admin, connectedAccountId)
     : null;
 
+  // Kiosk sales reference their Xano booking (KS-...), which syncs into
+  // bookings.legacy_id. Card-present charges carry no cardholder name, so take
+  // the booked customer's name (and the booking link) from the synced booking.
+  let bookingId = bookingRef && UUID_RE.test(bookingRef) ? bookingRef : null;
+  let customerName = charge.billing_details?.name ?? null;
+  if (bookingRef && !bookingId) {
+    const { data: legacyBooking } = await admin
+      .from("bookings")
+      .select("id, customer:customers(full_name)")
+      .eq("legacy_id", bookingRef)
+      .maybeSingle();
+    if (legacyBooking) {
+      bookingId = legacyBooking.id;
+      customerName =
+        customerName ?? legacyBooking.customer?.full_name?.trim() ?? null;
+    }
+  }
+
   const row: TxnInsert = {
     stripe_id: charge.id,
     object_type: "charge",
@@ -257,10 +275,10 @@ async function upsertChargeToLedger(
       charge.metadata?.kiosk ??
       charge.metadata?.[STRIPE_META.source] ??
       "online",
-    booking_id: bookingRef && UUID_RE.test(bookingRef) ? bookingRef : null,
+    booking_id: bookingId,
     booking_ref: bookingRef,
     customer_email: charge.billing_details?.email ?? null,
-    customer_name: charge.billing_details?.name ?? null,
+    customer_name: customerName,
     descriptor: charge.calculated_statement_descriptor ?? null,
     receipt_url: charge.receipt_url ?? null,
     livemode: charge.livemode,

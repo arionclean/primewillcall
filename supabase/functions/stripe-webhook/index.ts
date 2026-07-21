@@ -189,6 +189,25 @@ async function upsertChargeToLedger(event: Stripe.Event, charge: Stripe.Charge):
   const businessId = connectedAccountId ? await businessIdForAccount(connectedAccountId) : null;
   const pm = charge.payment_method_details;
 
+  // Kiosk sales reference their Xano booking (KS-...), which syncs into
+  // bookings.legacy_id. Card-present charges carry no cardholder name, so take
+  // the booked customer's name (and the booking link) from the synced booking.
+  let bookingId = bookingRef && UUID_RE.test(bookingRef) ? bookingRef : null;
+  let customerName = charge.billing_details?.name ?? null;
+  if (bookingRef && !bookingId) {
+    const { data: legacyBooking } = await sb
+      .from("bookings")
+      .select("id, customer:customers(full_name)")
+      .eq("legacy_id", bookingRef)
+      .maybeSingle();
+    if (legacyBooking) {
+      bookingId = legacyBooking.id as string;
+      const fullName = (legacyBooking as { customer?: { full_name?: string | null } | null })
+        .customer?.full_name;
+      customerName = customerName ?? (fullName ? fullName.trim() : null);
+    }
+  }
+
   const row = {
     stripe_id: charge.id,
     object_type: "charge",
@@ -209,10 +228,10 @@ async function upsertChargeToLedger(event: Stripe.Event, charge: Stripe.Charge):
     // Source priority: the kiosk tag the POS stamps (kiosk1..kiosk4) is the most
     // specific, then our own metadata (groupon/schedule), else the online widget.
     source: charge.metadata?.kiosk ?? charge.metadata?.[META.source] ?? "online",
-    booking_id: bookingRef && UUID_RE.test(bookingRef) ? bookingRef : null,
+    booking_id: bookingId,
     booking_ref: bookingRef,
     customer_email: charge.billing_details?.email ?? null,
-    customer_name: charge.billing_details?.name ?? null,
+    customer_name: customerName,
     descriptor: charge.calculated_statement_descriptor ?? null,
     receipt_url: charge.receipt_url ?? null,
     livemode: charge.livemode,
