@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { formatCents } from "@/lib/dashboard/queries";
+import { formatCents, formatCentsExact } from "@/lib/dashboard/queries";
 import type { Database } from "@/lib/supabase/database.types";
 
 import { refundTransaction } from "./actions";
@@ -20,16 +20,16 @@ type Txn = {
   stripe_id: string;
   business_id: string | null;
   amount: number;
-  net: number;
-  stripe_fee: number;
-  application_fee: number;
   amount_refunded: number;
   currency: string;
   status: string | null;
   source: string | null;
   card_brand: string | null;
+  card_last4: string | null;
   booking_id: string | null;
+  booking_ref: string | null;
   customer_email: string | null;
+  customer_name: string | null;
   receipt_url: string | null;
   stripe_created: string | null;
   object_type: string | null;
@@ -38,9 +38,6 @@ type Txn = {
 
 type Summary = {
   gross: number;
-  net: number;
-  stripe_fees: number;
-  application_fees: number;
   refunded: number;
   txn_count: number;
 } | null;
@@ -67,6 +64,31 @@ function formatDateTime(iso: string | null): string {
   }).format(new Date(iso));
 }
 
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** "Visa ···· 4242", "···· 8215", or null when Stripe sent no card details. */
+function cardLabel(txn: Txn): string | null {
+  if (!txn.card_last4) return txn.card_brand ? capitalize(txn.card_brand) : null;
+  const brand = txn.card_brand ? `${capitalize(txn.card_brand)} ` : "";
+  return `${brand}···· ${txn.card_last4}`;
+}
+
+/**
+ * Who the charge belongs to. Online charges carry the cardholder name; kiosk
+ * card-present charges have no name on the charge, so fall back to the sale
+ * reference the POS stamped in metadata (KS-...).
+ */
+function customerLabel(txn: Txn): { primary: string; secondary: string } {
+  const primary =
+    txn.customer_name ??
+    txn.customer_email ??
+    (txn.booking_ref ? `Sale ${txn.booking_ref}` : "Card customer");
+  const secondary = [txn.source, txn.business?.name].filter(Boolean).join(" · ");
+  return { primary, secondary };
+}
+
 function statusBadge(txn: Txn): { label: string; tone: "success" | "warning" | "danger" | "neutral" | "info" } {
   if (txn.status === "disputed") return { label: "Disputed", tone: "danger" };
   const refunded = txn.amount_refunded ?? 0;
@@ -89,8 +111,12 @@ export function PaymentsView({
   const [to, setTo] = useState(filters.to);
   const [business, setBusiness] = useState(filters.business ?? "");
   const [isPending, startTransition] = useTransition();
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+
+  // Refund dialog state. `refundFor` doubles as the open/closed flag.
+  const [refundFor, setRefundFor] = useState<Txn | null>(null);
+  const [refundAmount, setRefundAmount] = useState("");
+  const [refundPin, setRefundPin] = useState("");
+  const [refundError, setRefundError] = useState<string | null>(null);
 
   function applyFilters() {
     const params = new URLSearchParams();
@@ -100,21 +126,40 @@ export function PaymentsView({
     router.push(`/admin/payments?${params.toString()}`);
   }
 
-  function onRefund(txn: Txn) {
+  function openRefund(txn: Txn) {
     const remaining = txn.amount - (txn.amount_refunded ?? 0);
-    const ok = window.confirm(
-      `Refund ${formatCents(remaining, txn.currency)} to the customer? This cannot be undone.`,
-    );
-    if (!ok) return;
-    setError(null);
-    setBusyId(txn.id);
+    setRefundFor(txn);
+    setRefundAmount((remaining / 100).toFixed(2));
+    setRefundPin("");
+    setRefundError(null);
+  }
+
+  function submitRefund() {
+    if (!refundFor) return;
+    const remaining = refundFor.amount - (refundFor.amount_refunded ?? 0);
+    const cents = Math.round(Number.parseFloat(refundAmount) * 100);
+    if (!Number.isFinite(cents) || cents <= 0) {
+      setRefundError("Enter a refund amount.");
+      return;
+    }
+    if (cents > remaining) {
+      setRefundError(
+        `The most you can refund is ${formatCentsExact(remaining, refundFor.currency)}.`,
+      );
+      return;
+    }
+    if (!refundPin.trim()) {
+      setRefundError("Enter the refund passcode.");
+      return;
+    }
+    setRefundError(null);
     startTransition(async () => {
-      const res = await refundTransaction(txn.id);
-      setBusyId(null);
+      const res = await refundTransaction(refundFor.id, cents, refundPin.trim());
       if (res.error) {
-        setError(res.error);
+        setRefundError(res.error);
         return;
       }
+      setRefundFor(null);
       router.refresh();
     });
   }
@@ -123,17 +168,7 @@ export function PaymentsView({
     <div>
       <header className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight">Payments</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Card charges settled through Stripe. Totals are for the selected range.
-        </p>
       </header>
-
-      {!paymentsConfigured && (
-        <p className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          Payments are not configured yet. Set STRIPE_SECRET_KEY (and the webhook
-          secrets) to record charges and enable refunds.
-        </p>
-      )}
 
       <SummaryCards summary={summary} />
 
@@ -178,12 +213,6 @@ export function PaymentsView({
         </Button>
       </div>
 
-      {error && (
-        <p className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {error}
-        </p>
-      )}
-
       {transactions.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
@@ -196,20 +225,18 @@ export function PaymentsView({
             <thead>
               <tr className="border-b bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <th className="px-3 py-2 font-medium">Date</th>
-                {role === "owner" && <th className="px-3 py-2 font-medium">Business</th>}
                 <th className="px-3 py-2 font-medium">Customer</th>
+                <th className="px-3 py-2 font-medium">Card</th>
                 <th className="px-3 py-2 text-right font-medium">Amount</th>
-                <th className="px-3 py-2 text-right font-medium">Fees</th>
-                <th className="px-3 py-2 text-right font-medium">Net</th>
                 <th className="px-3 py-2 font-medium">Status</th>
-                <th className="px-3 py-2 font-medium">Source</th>
                 <th className="px-3 py-2 text-right font-medium">Action</th>
               </tr>
             </thead>
             <tbody>
               {transactions.map((txn) => {
                 const badge = statusBadge(txn);
-                const fees = (txn.stripe_fee ?? 0) + (txn.application_fee ?? 0);
+                const card = cardLabel(txn);
+                const customer = customerLabel(txn);
                 const refundable =
                   paymentsConfigured &&
                   txn.object_type === "charge" &&
@@ -220,55 +247,54 @@ export function PaymentsView({
                     <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
                       {formatDateTime(txn.stripe_created)}
                     </td>
-                    {role === "owner" && (
-                      <td className="px-3 py-2">{txn.business?.name ?? "—"}</td>
-                    )}
-                    <td className="max-w-[12rem] truncate px-3 py-2">
-                      {txn.customer_email ?? "—"}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right font-medium">
-                      {formatCents(txn.amount, txn.currency)}
-                      {txn.amount_refunded > 0 && (
-                        <span className="block text-xs font-normal text-muted-foreground">
-                          −{formatCents(txn.amount_refunded, txn.currency)}
-                        </span>
+                    <td className="max-w-[16rem] px-3 py-2">
+                      <p className="truncate font-medium">{customer.primary}</p>
+                      {customer.secondary && (
+                        <p className="truncate text-xs text-muted-foreground">
+                          {customer.secondary}
+                        </p>
                       )}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right text-muted-foreground">
-                      {formatCents(fees, txn.currency)}
+                    <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
+                      {card ?? "—"}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right">
-                      {formatCents(txn.net, txn.currency)}
+                    <td className="whitespace-nowrap px-3 py-2 text-right font-medium">
+                      {formatCentsExact(txn.amount, txn.currency)}
+                      {txn.amount_refunded > 0 && (
+                        <span className="block text-xs font-normal text-muted-foreground">
+                          −{formatCentsExact(txn.amount_refunded, txn.currency)}
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-2">
                       <Badge tone={badge.tone}>{badge.label}</Badge>
                     </td>
-                    <td className="px-3 py-2 capitalize text-muted-foreground">
-                      {txn.source ?? "—"}
-                    </td>
                     <td className="whitespace-nowrap px-3 py-2 text-right">
-                      {refundable ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="destructive"
-                          disabled={isPending && busyId === txn.id}
-                          onClick={() => onRefund(txn)}
-                        >
-                          {isPending && busyId === txn.id ? "Refunding…" : "Refund"}
-                        </Button>
-                      ) : txn.receipt_url ? (
-                        <a
-                          href={txn.receipt_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-xs text-primary underline-offset-4 hover:underline"
-                        >
-                          Receipt
-                        </a>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
+                      <div className="flex items-center justify-end gap-3">
+                        {txn.receipt_url && (
+                          <a
+                            href={txn.receipt_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-xs text-primary underline-offset-4 hover:underline"
+                          >
+                            Receipt
+                          </a>
+                        )}
+                        {refundable && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => openRefund(txn)}
+                          >
+                            Refund
+                          </Button>
+                        )}
+                        {!txn.receipt_url && !refundable && (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -284,26 +310,93 @@ export function PaymentsView({
           see older ones. (Totals above cover the full range.)
         </p>
       )}
+
+      {refundFor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <Card className="w-full max-w-sm">
+            <CardContent className="py-5">
+              <h2 className="text-base font-semibold">
+                Refund {customerLabel(refundFor).primary}
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Up to{" "}
+                {formatCentsExact(
+                  refundFor.amount - (refundFor.amount_refunded ?? 0),
+                  refundFor.currency,
+                )}{" "}
+                goes back to the card. This cannot be undone.
+              </p>
+
+              <div className="mt-4 flex flex-col gap-3">
+                <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+                  Amount
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    min="0.01"
+                    step="0.01"
+                    value={refundAmount}
+                    onChange={(e) => setRefundAmount(e.target.value)}
+                    className="h-9"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+                  Refund passcode
+                  <Input
+                    type="password"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    value={refundPin}
+                    onChange={(e) => setRefundPin(e.target.value)}
+                    className="h-9"
+                  />
+                </label>
+              </div>
+
+              {refundError && (
+                <p className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {refundError}
+                </p>
+              )}
+
+              <div className="mt-4 flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={isPending}
+                  onClick={() => setRefundFor(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  disabled={isPending}
+                  onClick={submitRefund}
+                >
+                  {isPending ? "Refunding…" : "Refund"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
 
 function SummaryCards({ summary }: { summary: Summary }) {
   const gross = summary?.gross ?? 0;
-  const net = summary?.net ?? 0;
-  const fees = (summary?.stripe_fees ?? 0) + (summary?.application_fees ?? 0);
   const refunded = summary?.refunded ?? 0;
   const count = summary?.txn_count ?? 0;
 
   const cards: { label: string; value: string; hint?: string }[] = [
     { label: "Gross", value: formatCents(gross), hint: `${count} charge${count === 1 ? "" : "s"}` },
-    { label: "Net", value: formatCents(net), hint: "after fees" },
-    { label: "Fees", value: formatCents(fees), hint: "Stripe + platform" },
     { label: "Refunded", value: formatCents(refunded) },
   ];
 
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div className="grid grid-cols-2 gap-3">
       {cards.map((c) => (
         <Card key={c.label}>
           <CardContent className="py-4">

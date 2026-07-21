@@ -47,7 +47,7 @@ export default async function PaymentsPage({
   let query = supabase
     .from("stripe_transactions")
     .select(
-      "id, stripe_id, business_id, amount, net, stripe_fee, application_fee, amount_refunded, currency, status, source, card_brand, booking_id, customer_email, receipt_url, stripe_created, object_type, business:businesses(name)",
+      "id, stripe_id, business_id, amount, amount_refunded, currency, status, source, card_brand, card_last4, booking_id, booking_ref, customer_email, customer_name, receipt_url, stripe_created, object_type, business:businesses(name)",
     )
     .eq("object_type", "charge")
     .gte("stripe_created", startIso)

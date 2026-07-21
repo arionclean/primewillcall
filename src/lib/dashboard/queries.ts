@@ -412,6 +412,18 @@ export function formatCents(cents: number, currency = "usd"): string {
   }
 }
 
+/** Like formatCents but keeps the cents ($10.70), for per-charge ledger rows. */
+export function formatCentsExact(cents: number, currency = "usd"): string {
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: currency.toUpperCase(),
+    }).format(cents / 100);
+  } catch {
+    return `$${(cents / 100).toFixed(2)}`;
+  }
+}
+
 export function formatTimeRange(
   startsAt: string,
   endsAt: string,

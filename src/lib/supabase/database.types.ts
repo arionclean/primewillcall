@@ -265,6 +265,7 @@ export type Database = {
           address: string | null
           contact_email: string | null
           created_at: string
+          google_review_url: string | null
           id: string
           legacy_company_id: string | null
           logo_url: string | null
@@ -285,6 +286,7 @@ export type Database = {
           address?: string | null
           contact_email?: string | null
           created_at?: string
+          google_review_url?: string | null
           id?: string
           legacy_company_id?: string | null
           logo_url?: string | null
@@ -305,6 +307,7 @@ export type Database = {
           address?: string | null
           contact_email?: string | null
           created_at?: string
+          google_review_url?: string | null
           id?: string
           legacy_company_id?: string | null
           logo_url?: string | null
@@ -330,6 +333,7 @@ export type Database = {
           booking_ref: string | null
           business_id: string
           created_at: string
+          dedup_key: string | null
           id: string
           kiosk_id: string | null
           kiosk_slug: string | null
@@ -344,6 +348,7 @@ export type Database = {
           booking_ref?: string | null
           business_id: string
           created_at?: string
+          dedup_key?: string | null
           id?: string
           kiosk_id?: string | null
           kiosk_slug?: string | null
@@ -358,6 +363,7 @@ export type Database = {
           booking_ref?: string | null
           business_id?: string
           created_at?: string
+          dedup_key?: string | null
           id?: string
           kiosk_id?: string | null
           kiosk_slug?: string | null
@@ -394,6 +400,7 @@ export type Database = {
         Row: {
           business_id: string
           created_at: string
+          dedup_key: string | null
           email: string | null
           full_name: string
           id: string
@@ -406,6 +413,7 @@ export type Database = {
         Insert: {
           business_id: string
           created_at?: string
+          dedup_key?: string | null
           email?: string | null
           full_name: string
           id?: string
@@ -418,6 +426,7 @@ export type Database = {
         Update: {
           business_id?: string
           created_at?: string
+          dedup_key?: string | null
           email?: string | null
           full_name?: string
           id?: string
@@ -609,6 +618,36 @@ export type Database = {
           },
         ]
       }
+      messaging_alerts: {
+        Row: {
+          created_at: string
+          detail: Json | null
+          id: string
+          kind: string
+          notified: boolean
+          queued_remaining: number | null
+          sent_last_hour: number | null
+        }
+        Insert: {
+          created_at?: string
+          detail?: Json | null
+          id?: string
+          kind?: string
+          notified?: boolean
+          queued_remaining?: number | null
+          sent_last_hour?: number | null
+        }
+        Update: {
+          created_at?: string
+          detail?: Json | null
+          id?: string
+          kind?: string
+          notified?: boolean
+          queued_remaining?: number | null
+          sent_last_hour?: number | null
+        }
+        Relationships: []
+      }
       messaging_rules: {
         Row: {
           automation_id: string
@@ -664,6 +703,127 @@ export type Database = {
             columns: ["business_tour_id"]
             isOneToOne: false
             referencedRelation: "business_tours"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      messaging_settings: {
+        Row: {
+          alert_email: string | null
+          alert_email_from: string
+          alert_last_sent_at: string | null
+          alert_phone: string | null
+          automations_enabled: boolean
+          booking_link_base: string
+          id: boolean
+          review_ask_lookback_hours: number
+          review_automation_enabled: boolean
+          review_reminder_hours: number
+          sms_hourly_cap: number
+          updated_at: string
+        }
+        Insert: {
+          alert_email?: string | null
+          alert_email_from?: string
+          alert_last_sent_at?: string | null
+          alert_phone?: string | null
+          automations_enabled?: boolean
+          booking_link_base?: string
+          id?: boolean
+          review_ask_lookback_hours?: number
+          review_automation_enabled?: boolean
+          review_reminder_hours?: number
+          sms_hourly_cap?: number
+          updated_at?: string
+        }
+        Update: {
+          alert_email?: string | null
+          alert_email_from?: string
+          alert_last_sent_at?: string | null
+          alert_phone?: string | null
+          automations_enabled?: boolean
+          booking_link_base?: string
+          id?: boolean
+          review_ask_lookback_hours?: number
+          review_automation_enabled?: boolean
+          review_reminder_hours?: number
+          sms_hourly_cap?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      reviews: {
+        Row: {
+          asked_at: string | null
+          booking_id: string | null
+          business_id: string
+          comment: string | null
+          created_at: string
+          customer_id: string | null
+          id: string
+          link_clicked_at: string | null
+          link_sent_at: string | null
+          rating: number | null
+          reminder_sent_at: string | null
+          responded_at: string | null
+          source: string
+          token: string
+          updated_at: string
+        }
+        Insert: {
+          asked_at?: string | null
+          booking_id?: string | null
+          business_id: string
+          comment?: string | null
+          created_at?: string
+          customer_id?: string | null
+          id?: string
+          link_clicked_at?: string | null
+          link_sent_at?: string | null
+          rating?: number | null
+          reminder_sent_at?: string | null
+          responded_at?: string | null
+          source?: string
+          token?: string
+          updated_at?: string
+        }
+        Update: {
+          asked_at?: string | null
+          booking_id?: string | null
+          business_id?: string
+          comment?: string | null
+          created_at?: string
+          customer_id?: string | null
+          id?: string
+          link_clicked_at?: string | null
+          link_sent_at?: string | null
+          rating?: number | null
+          reminder_sent_at?: string | null
+          responded_at?: string | null
+          source?: string
+          token?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reviews_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reviews_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reviews_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
             referencedColumns: ["id"]
           },
         ]
@@ -849,6 +1009,10 @@ export type Database = {
       staff: {
         Row: {
           business_id: string | null
+          can_check_in: boolean
+          can_create_bookings: boolean
+          can_delete_bookings: boolean
+          can_edit_bookings: boolean
           created_at: string
           email: string
           full_name: string
@@ -861,6 +1025,10 @@ export type Database = {
         }
         Insert: {
           business_id?: string | null
+          can_check_in?: boolean
+          can_create_bookings?: boolean
+          can_delete_bookings?: boolean
+          can_edit_bookings?: boolean
           created_at?: string
           email: string
           full_name: string
@@ -873,6 +1041,10 @@ export type Database = {
         }
         Update: {
           business_id?: string | null
+          can_check_in?: boolean
+          can_create_bookings?: boolean
+          can_delete_bookings?: boolean
+          can_edit_bookings?: boolean
           created_at?: string
           email?: string
           full_name?: string
@@ -1043,11 +1215,13 @@ export type Database = {
           business_id: string | null
           card_brand: string | null
           card_country: string | null
+          card_last4: string | null
           charge_type: string | null
           connected_account_id: string | null
           created_at: string
           currency: string
           customer_email: string | null
+          customer_name: string | null
           descriptor: string | null
           dispute_status: string | null
           id: string
@@ -1073,11 +1247,13 @@ export type Database = {
           business_id?: string | null
           card_brand?: string | null
           card_country?: string | null
+          card_last4?: string | null
           charge_type?: string | null
           connected_account_id?: string | null
           created_at?: string
           currency?: string
           customer_email?: string | null
+          customer_name?: string | null
           descriptor?: string | null
           dispute_status?: string | null
           id?: string
@@ -1103,11 +1279,13 @@ export type Database = {
           business_id?: string | null
           card_brand?: string | null
           card_country?: string | null
+          card_last4?: string | null
           charge_type?: string | null
           connected_account_id?: string | null
           created_at?: string
           currency?: string
           customer_email?: string | null
+          customer_name?: string | null
           descriptor?: string | null
           dispute_status?: string | null
           id?: string

@@ -234,15 +234,26 @@ async function upsertChargeToLedger(
     amount_refunded: charge.amount_refunded ?? 0,
     card_country: charge.payment_method_details?.card?.country ?? null,
     card_brand: charge.payment_method_details?.card?.brand ?? null,
+    card_last4:
+      charge.payment_method_details?.card?.last4 ??
+      charge.payment_method_details?.card_present?.last4 ??
+      charge.payment_method_details?.interac_present?.last4 ??
+      null,
     status: charge.refunded ? "refunded" : (charge.status ?? null),
     on_behalf_of:
       typeof charge.on_behalf_of === "string"
         ? charge.on_behalf_of
         : (charge.on_behalf_of?.id ?? null),
-    source: charge.metadata?.[STRIPE_META.source] ?? null,
+    // Source priority: our own metadata (groupon/schedule), then the kiosk tag
+    // Xano's POS sets (kiosk1..kiosk4), else it came from the online widget.
+    source:
+      charge.metadata?.[STRIPE_META.source] ??
+      charge.metadata?.kiosk ??
+      "online",
     booking_id: bookingRef && UUID_RE.test(bookingRef) ? bookingRef : null,
     booking_ref: bookingRef,
     customer_email: charge.billing_details?.email ?? null,
+    customer_name: charge.billing_details?.name ?? null,
     descriptor: charge.calculated_statement_descriptor ?? null,
     receipt_url: charge.receipt_url ?? null,
     livemode: charge.livemode,

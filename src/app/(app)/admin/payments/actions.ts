@@ -1,5 +1,7 @@
 "use server";
 
+import { timingSafeEqual } from "node:crypto";
+
 import { revalidatePath } from "next/cache";
 
 import { getCurrentStaff } from "@/lib/auth";
@@ -8,27 +10,46 @@ import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { Database } from "@/lib/supabase/database.types";
 
 /**
- * Refund a recorded Stripe charge. Supabase-native replacement for the Xano
- * refund endpoints (account/transaction/refund, stripe/transactions/refund).
+ * Refund a recorded Stripe charge (full or partial). Supabase-native
+ * replacement for the Xano refund endpoints (account/transaction/refund,
+ * stripe/transactions/refund).
  *
  * Layered auth: the /admin shell already requires an active staff row; this
  * action re-checks that the caller is the owner or the manager of the charge's
- * business, then does the Stripe call + ledger write with the service role
- * (the ledger tables have no client-facing write policies on purpose). The
- * webhook (charge.refunded) reconciles the transaction totals afterwards; we
- * also update them optimistically so the UI reflects the refund immediately.
+ * business AND that they typed the refund passcode (env REFUND_PIN), then does
+ * the Stripe call + ledger write with the service role (the ledger tables have
+ * no client-facing write policies on purpose). The webhook (charge.refunded)
+ * reconciles the transaction totals afterwards; we also update them
+ * optimistically so the UI reflects the refund immediately.
  */
 
 type RefundInsert = Database["public"]["Tables"]["stripe_refunds"]["Insert"];
 
 export type RefundResult = { error?: string; ok?: true };
 
+function pinMatches(input: string, expected: string): boolean {
+  const a = Buffer.from(input);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 export async function refundTransaction(
   transactionId: string,
-  amountCents?: number,
+  amountCents: number,
+  pin: string,
 ): Promise<RefundResult> {
   const { staff } = await getCurrentStaff();
   if (!staff || !staff.is_active) return { error: "Not authorized." };
+
+  const expectedPin = process.env.REFUND_PIN;
+  if (!expectedPin) {
+    return { error: "Refunds are locked: REFUND_PIN is not set in the app environment." };
+  }
+  if (!pin || !pinMatches(pin, expectedPin)) return { error: "Wrong passcode." };
+
+  if (!Number.isFinite(amountCents) || amountCents <= 0) {
+    return { error: "Enter a refund amount." };
+  }
 
   const stripe = getStripeClient();
   const admin = getSupabaseAdminClient();
@@ -57,10 +78,7 @@ export async function refundTransaction(
   const remaining = (txn.amount ?? 0) - (txn.amount_refunded ?? 0);
   if (remaining <= 0) return { error: "This charge is already fully refunded." };
 
-  const amount =
-    amountCents && amountCents > 0
-      ? Math.min(Math.floor(amountCents), remaining)
-      : remaining;
+  const amount = Math.min(Math.floor(amountCents), remaining);
 
   try {
     // Direct charges live on the connected account, so the refund must be
