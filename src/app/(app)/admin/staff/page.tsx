@@ -27,18 +27,20 @@ type StaffRow = {
   role: keyof typeof ROLE_LABEL;
   is_active: boolean;
   user_id: string | null;
-  business: { id: string; name: string } | null;
+  business: { id: string; name: string; logo_url: string | null } | null;
 };
 
 function groupByBusiness(staff: StaffRow[]) {
   const groups = new Map<
     string,
-    { id: string; name: string; members: StaffRow[] }
+    { id: string; name: string; logoUrl: string | null; members: StaffRow[] }
   >();
   for (const s of staff) {
     const id = s.business?.id ?? "prime";
     const name = s.business?.name ?? "Prime";
-    const group = groups.get(id) ?? { id, name, members: [] };
+    // Prime itself is not a business row, so it simply has no logo.
+    const logoUrl = s.business?.logo_url ?? null;
+    const group = groups.get(id) ?? { id, name, logoUrl, members: [] };
     group.members.push(s);
     groups.set(id, group);
   }
@@ -55,7 +57,7 @@ export default async function StaffListPage() {
     .from("staff")
     .select(
       `id, full_name, email, phone, role, is_active, user_id,
-       business:businesses!staff_business_id_fkey(id, name)`,
+       business:businesses!staff_business_id_fkey(id, name, logo_url)`,
     )
     .order("created_at", { ascending: true });
 
@@ -89,7 +91,16 @@ export default async function StaffListPage() {
         <div className="space-y-8">
           {groupByBusiness(staff).map((group) => (
             <section key={group.id}>
-              <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <h2 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {group.logoUrl ? (
+                  // Decorative: the business name sits right next to it.
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={group.logoUrl}
+                    alt=""
+                    className="h-6 w-6 shrink-0 rounded border bg-background object-cover"
+                  />
+                ) : null}
                 {group.name}
               </h2>
               <ul className="space-y-2">

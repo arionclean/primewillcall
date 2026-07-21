@@ -449,6 +449,7 @@ export type Database = {
       email_match_queue: {
         Row: {
           ai_confidence: string | null
+          ai_confidence_score: number | null
           booking_channel: string | null
           business_id: string | null
           created_at: string
@@ -466,6 +467,7 @@ export type Database = {
         }
         Insert: {
           ai_confidence?: string | null
+          ai_confidence_score?: number | null
           booking_channel?: string | null
           business_id?: string | null
           created_at?: string
@@ -483,6 +485,7 @@ export type Database = {
         }
         Update: {
           ai_confidence?: string | null
+          ai_confidence_score?: number | null
           booking_channel?: string | null
           business_id?: string | null
           created_at?: string

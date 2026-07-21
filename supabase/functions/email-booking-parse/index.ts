@@ -29,6 +29,10 @@ const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY") ?? "";
 // misses; the smarter model matches that name to an internal tour.
 const AI_EXTRACT_MODEL = "gpt-5.4-mini-2026-03-17";
 const AI_CLASSIFY_MODEL = "gpt-5.5-2026-04-23";
+// At or above this the match is trusted: the booking is created with the AI's
+// tour and the row goes to the "needs confirming" lane. Below it nothing is
+// assumed and the row goes to "urgent" for a human to decide.
+const AI_CONFIDENCE_THRESHOLD = 0.85;
 
 const sb = createClient(SUPABASE_URL, SERVICE_KEY, {
   auth: { persistSession: false },
@@ -80,7 +84,8 @@ async function candidateTours(
   return { businessId, tours };
 }
 
-type AiResult = { tour: Tour | null; confidence: "high" | "low" };
+/** `confidence` is the model's own 0..1 score for this match. */
+type AiResult = { tour: Tour | null; confidence: number };
 
 /** Single cheap classify call. Returns a tour from the candidate list or null. */
 async function aiClassify(
@@ -101,7 +106,7 @@ async function aiClassify(
         {
           role: "system",
           content:
-            "You match an OTA booking's product name to one internal tour. Respond strictly as JSON {\"tour\": <exact name from the list or null>, \"confidence\": \"high\"|\"low\"}. Use \"high\" only when you are confident; never invent a name outside the list.",
+            "You match an OTA booking's product name to one internal tour. Respond strictly as JSON {\"tour\": <exact name from the list or null>, \"confidence\": <number between 0 and 1>}. confidence is your probability that this is the correct tour: use 0.9+ only when the names clearly refer to the same product, and below 0.85 whenever the product is ambiguous, could plausibly be more than one tour in the list, or is not in the list at all. Never invent a name outside the list.",
         },
         {
           role: "user",
@@ -119,13 +124,16 @@ async function aiClassify(
   } catch {
     return null;
   }
-  let parsed: { tour?: string | null; confidence?: string };
+  let parsed: { tour?: string | null; confidence?: unknown };
   try {
     parsed = JSON.parse(content);
   } catch {
     return null;
   }
-  const confidence = parsed.confidence === "high" ? "high" : "low";
+  // Clamp to 0..1. Anything unparseable counts as no confidence, so the row
+  // falls through to the urgent lane rather than being trusted by accident.
+  const raw = Number(parsed.confidence);
+  const confidence = Number.isFinite(raw) ? Math.min(1, Math.max(0, raw)) : 0;
   if (!parsed.tour) return { tour: null, confidence };
   const match =
     tours.find((t) => t.name === parsed.tour) ??
@@ -315,7 +323,7 @@ Deno.serve(async (req) => {
     const { businessId, tours } = await candidateTours(company);
     const ai = await aiClassify(productText || booking.rate || "", tours).catch(() => null);
 
-    if (ai?.tour && ai.confidence === "high") {
+    if (ai?.tour && ai.confidence >= AI_CONFIDENCE_THRESHOLD) {
       const { data: bt } = await sb
         .from("business_tours")
         .select("id")
@@ -343,7 +351,8 @@ Deno.serve(async (req) => {
           legacy_company_id: company,
           business_id: businessId,
           suggested_tour_id: ai.tour.id,
-          ai_confidence: ai.confidence,
+          ai_confidence: "high",
+          ai_confidence_score: ai.confidence,
           parsed: booking,
         })
         .select("id")
@@ -361,7 +370,8 @@ Deno.serve(async (req) => {
           legacy_company_id: company,
           business_id: businessId,
           suggested_tour_id: ai?.tour?.id ?? null,
-          ai_confidence: ai?.confidence ?? null,
+          ai_confidence: ai ? "low" : null,
+          ai_confidence_score: ai?.confidence ?? null,
           parsed: booking,
         })
         .select("id")
