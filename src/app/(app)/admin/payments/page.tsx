@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { getCurrentStaff } from "@/lib/auth";
-import { nyDateISO, shiftDayISO } from "@/lib/dashboard/queries";
+import { nyDateISO, nyLocalToUtcIso, shiftDayISO } from "@/lib/dashboard/queries";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 import { PaymentsView } from "./payments-view";
@@ -41,8 +41,12 @@ export default async function PaymentsPage({
   // Strip PostgREST or() delimiters so the term cannot break the filter string.
   const q = (sp.q ?? "").replace(/[,()]/g, "").trim();
 
-  const startIso = `${from}T00:00:00.000Z`;
-  const endIso = `${to}T23:59:59.999Z`;
+  // Day bounds in business time: "today" means the New York day, matching how
+  // the rows are displayed. End bound is the last ms before the next NY day.
+  const startIso = nyLocalToUtcIso(from, "00:00");
+  const endIso = new Date(
+    new Date(nyLocalToUtcIso(shiftDayISO(to, 1), "00:00")).getTime() - 1,
+  ).toISOString();
 
   const supabase = await getSupabaseServerClient();
 

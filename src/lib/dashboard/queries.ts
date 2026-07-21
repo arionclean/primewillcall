@@ -422,6 +422,32 @@ export function nyDateISO(d: Date = new Date()): string {
   }).format(d);
 }
 
+/**
+ * Convert a New York local date + time to a UTC ISO instant, handling DST.
+ * (Also duplicated locally in schedule/actions.ts, bookings/list.tsx, and
+ * api/gp/book; new call sites should import this shared copy.)
+ */
+export function nyLocalToUtcIso(yyyyMmDd: string, hhmm: string): string {
+  const [y, m, d] = yyyyMmDd.split("-").map(Number);
+  const parts = hhmm.split(":").map(Number);
+  const hh = parts[0] ?? 0;
+  const mm = parts[1] ?? 0;
+  const candidate = new Date(Date.UTC(y, m - 1, d, hh, mm, 0));
+  const tzLabel =
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      timeZoneName: "shortOffset",
+      hour: "2-digit",
+      hour12: false,
+    })
+      .formatToParts(candidate)
+      .find((p) => p.type === "timeZoneName")?.value ?? "GMT+0";
+  const m2 = tzLabel.match(/GMT([+-])(\d{1,2})(?::?(\d{2}))?/);
+  const sign = m2?.[1] === "-" ? -1 : 1;
+  const offMin = sign * (Number(m2?.[2] ?? 0) * 60 + Number(m2?.[3] ?? 0));
+  return new Date(candidate.getTime() - offMin * 60_000).toISOString();
+}
+
 /** Shift a YYYY-MM-DD date string by whole calendar days (no timezone math). */
 export function shiftDayISO(iso: string, days: number): string {
   const [y, m, d] = iso.split("-").map(Number);
