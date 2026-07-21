@@ -48,7 +48,7 @@ type PaymentsViewProps = {
   transactions: Txn[];
   summary: Summary;
   businesses: { id: string; name: string }[];
-  filters: { from: string; to: string; business: string | null };
+  filters: { from: string; to: string; business: string | null; q: string };
 };
 
 const NY_TZ = "America/New_York";
@@ -110,6 +110,7 @@ export function PaymentsView({
   const [from, setFrom] = useState(filters.from);
   const [to, setTo] = useState(filters.to);
   const [business, setBusiness] = useState(filters.business ?? "");
+  const [q, setQ] = useState(filters.q);
   const [isPending, startTransition] = useTransition();
 
   // Refund dialog state. `refundFor` doubles as the open/closed flag.
@@ -123,6 +124,7 @@ export function PaymentsView({
     if (from) params.set("from", from);
     if (to) params.set("to", to);
     if (business) params.set("business", business);
+    if (q.trim()) params.set("q", q.trim());
     router.push(`/admin/payments?${params.toString()}`);
   }
 
@@ -172,6 +174,19 @@ export function PaymentsView({
       <SummaryCards summary={summary} />
 
       <div className="mt-6 mb-4 flex flex-wrap items-end gap-3">
+        <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+          Search
+          <Input
+            type="search"
+            placeholder="Name, email, last4, or sale ref"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") applyFilters();
+            }}
+            className="h-9 w-[16rem]"
+          />
+        </label>
         <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
           From
           <Input

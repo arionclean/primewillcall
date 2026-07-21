@@ -25,7 +25,12 @@ function isoDate(d: Date): string {
 export default async function PaymentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string; to?: string; business?: string }>;
+  searchParams: Promise<{
+    from?: string;
+    to?: string;
+    business?: string;
+    q?: string;
+  }>;
 }) {
   const { staff } = await getCurrentStaff();
   if (!staff || !staff.is_active) redirect("/login?next=/admin/payments");
@@ -38,6 +43,8 @@ export default async function PaymentsPage({
     sp.from ??
     isoDate(new Date(now.getTime() - (DEFAULT_RANGE_DAYS - 1) * 86_400_000));
   const businessFilter = sp.business && sp.business !== "" ? sp.business : null;
+  // Strip PostgREST or() delimiters so the term cannot break the filter string.
+  const q = (sp.q ?? "").replace(/[,()]/g, "").trim();
 
   const startIso = `${from}T00:00:00.000Z`;
   const endIso = `${to}T23:59:59.999Z`;
@@ -55,6 +62,11 @@ export default async function PaymentsPage({
     .order("stripe_created", { ascending: false })
     .limit(200);
   if (businessFilter) query = query.eq("business_id", businessFilter);
+  if (q) {
+    query = query.or(
+      `customer_name.ilike.*${q}*,customer_email.ilike.*${q}*,card_last4.ilike.*${q}*,booking_ref.ilike.*${q}*`,
+    );
+  }
 
   const [{ data: transactions }, { data: summaryRows }, businessesResult] =
     await Promise.all([
@@ -75,7 +87,7 @@ export default async function PaymentsPage({
       transactions={transactions ?? []}
       summary={summaryRows?.[0] ?? null}
       businesses={businessesResult.data ?? []}
-      filters={{ from, to, business: businessFilter }}
+      filters={{ from, to, business: businessFilter, q }}
     />
   );
 }
