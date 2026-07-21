@@ -232,8 +232,14 @@ async function upsertChargeToLedger(
         : 0,
     net,
     amount_refunded: charge.amount_refunded ?? 0,
-    card_country: charge.payment_method_details?.card?.country ?? null,
-    card_brand: charge.payment_method_details?.card?.brand ?? null,
+    card_country:
+      charge.payment_method_details?.card?.country ??
+      charge.payment_method_details?.card_present?.country ??
+      null,
+    card_brand:
+      charge.payment_method_details?.card?.brand ??
+      charge.payment_method_details?.card_present?.brand ??
+      null,
     card_last4:
       charge.payment_method_details?.card?.last4 ??
       charge.payment_method_details?.card_present?.last4 ??
@@ -244,11 +250,12 @@ async function upsertChargeToLedger(
       typeof charge.on_behalf_of === "string"
         ? charge.on_behalf_of
         : (charge.on_behalf_of?.id ?? null),
-    // Source priority: our own metadata (groupon/schedule), then the kiosk tag
-    // Xano's POS sets (kiosk1..kiosk4), else it came from the online widget.
+    // Source priority: the kiosk tag the POS stamps (kiosk1..kiosk4) is the
+    // most specific, then our own metadata (groupon/schedule), else the
+    // online widget.
     source:
-      charge.metadata?.[STRIPE_META.source] ??
       charge.metadata?.kiosk ??
+      charge.metadata?.[STRIPE_META.source] ??
       "online",
     booking_id: bookingRef && UUID_RE.test(bookingRef) ? bookingRef : null,
     booking_ref: bookingRef,
