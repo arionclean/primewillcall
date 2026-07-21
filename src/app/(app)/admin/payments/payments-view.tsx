@@ -63,20 +63,25 @@ type Summary = {
   cash_count: number;
 } | null;
 
-const SOURCE_OPTIONS = [
-  { value: "kiosk1", label: "Kiosk 1" },
-  { value: "kiosk2", label: "Kiosk 2" },
-  { value: "kiosk3", label: "Kiosk 3" },
-  { value: "kiosk4", label: "Kiosk 4" },
+// Non-kiosk channels; kiosk options come from the kiosks table (selling
+// kiosks only) via props.
+const CHANNEL_OPTIONS = [
   { value: "online", label: "Online" },
   { value: "groupon", label: "Groupon" },
 ];
+
+/** "kiosk1" reads as "Kiosk 1"; any other slug is shown as-is. */
+function kioskLabel(slug: string): string {
+  const m = slug.match(/^kiosk(\d+)$/i);
+  return m ? `Kiosk ${m[1]}` : slug;
+}
 
 type PaymentsViewProps = {
   role: StaffRole;
   paymentsConfigured: boolean;
   items: FeedItem[];
   summary: Summary;
+  kiosks: string[];
   businesses: { id: string; name: string }[];
   filters: {
     from: string;
@@ -185,6 +190,7 @@ export function PaymentsView({
   paymentsConfigured,
   items,
   summary,
+  kiosks,
   businesses,
   filters,
 }: PaymentsViewProps) {
@@ -332,7 +338,12 @@ export function PaymentsView({
             className="h-9 w-[9rem]"
           >
             <option value="">All sources</option>
-            {SOURCE_OPTIONS.map((s) => (
+            {kiosks.map((slug) => (
+              <option key={slug} value={slug}>
+                {kioskLabel(slug)}
+              </option>
+            ))}
+            {CHANNEL_OPTIONS.map((s) => (
               <option key={s.value} value={s.value}>
                 {s.label}
               </option>

@@ -22,16 +22,9 @@ import { PaymentsView, type FeedItem } from "./payments-view";
 // server default matches the client's range presets.
 const DEFAULT_RANGE_DAYS = 30;
 
-// Values the source filter accepts (stripe_transactions.source; kiosk tags
-// also match cash_sales.kiosk_slug).
-const SOURCE_FILTERS = new Set([
-  "kiosk1",
-  "kiosk2",
-  "kiosk3",
-  "kiosk4",
-  "online",
-  "groupon",
-]);
+// Source filter values are kiosk slugs (from the kiosks table) plus the
+// static channels; accept anything slug-shaped, the queries are parameterized.
+const SOURCE_RE = /^[a-z0-9_-]{1,32}$/i;
 
 export default async function PaymentsPage({
   searchParams,
@@ -53,7 +46,7 @@ export default async function PaymentsPage({
   const from = sp.from ?? shiftDayISO(to, -(DEFAULT_RANGE_DAYS - 1));
   const businessFilter = sp.business && sp.business !== "" ? sp.business : null;
   const sourceFilter =
-    sp.source && SOURCE_FILTERS.has(sp.source) ? sp.source : null;
+    sp.source && SOURCE_RE.test(sp.source) ? sp.source : null;
   // Strip PostgREST or() delimiters so the term cannot break the filter string.
   const q = (sp.q ?? "").replace(/[,()]/g, "").trim();
 
@@ -102,6 +95,7 @@ export default async function PaymentsPage({
     { data: cardRows },
     { data: cashRows },
     { data: summaryRows },
+    { data: kioskRows },
     businessesResult,
   ] = await Promise.all([
     cardQuery,
@@ -112,6 +106,15 @@ export default async function PaymentsPage({
       ...(businessFilter ? { p_business: businessFilter } : {}),
       ...(sourceFilter ? { p_source: sourceFilter } : {}),
     }),
+    // Only selling kiosks appear in the Source filter: reader tablets
+    // (can_create_bookings=false) never produce sales.
+    supabase
+      .from("kiosks")
+      .select("slug")
+      .eq("status", "active")
+      .eq("can_create_bookings", true)
+      .not("slug", "is", null)
+      .order("slug"),
     staff.role === "owner"
       ? supabase.from("businesses").select("id, name").order("name")
       : Promise.resolve({ data: null }),
@@ -134,6 +137,7 @@ export default async function PaymentsPage({
       paymentsConfigured={Boolean(process.env.STRIPE_SECRET_KEY)}
       items={items}
       summary={summaryRows?.[0] ?? null}
+      kiosks={(kioskRows ?? []).flatMap((k) => (k.slug ? [k.slug] : []))}
       businesses={businessesResult.data ?? []}
       filters={{
         from,

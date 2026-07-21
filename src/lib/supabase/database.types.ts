@@ -565,6 +565,7 @@ export type Database = {
       kiosks: {
         Row: {
           business_id: string | null
+          can_create_bookings: boolean
           created_at: string
           id: string
           last_seen_at: string | null
@@ -580,6 +581,7 @@ export type Database = {
         }
         Insert: {
           business_id?: string | null
+          can_create_bookings?: boolean
           created_at?: string
           id?: string
           last_seen_at?: string | null
@@ -595,6 +597,7 @@ export type Database = {
         }
         Update: {
           business_id?: string | null
+          can_create_bookings?: boolean
           created_at?: string
           id?: string
           last_seen_at?: string | null
