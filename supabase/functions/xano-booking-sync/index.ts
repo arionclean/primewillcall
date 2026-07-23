@@ -224,7 +224,13 @@ async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
   // ref with new statuses; keying on it means a resend UPDATES the one row instead
   // of creating a duplicate. Fallbacks for non-OTA rows: Xano unique_id, then row
   // id. (Native in-app bookings never hit this function, so they need no key.)
-  const ref = clean(row.booking_reference);
+  //
+  // EXCEPTION: kiosk bookings reuse booking_reference for the CHANNEL constant
+  // ('kiosk-sale-card' / 'kiosk-sale-cash'), which is not an identity. Keying on
+  // it collapsed every kiosk booking into one endlessly-overwritten row, so a
+  // kiosk channel value never keys; those rows key on unique_id (the KS code).
+  const refRaw = clean(row.booking_reference);
+  const ref = refRaw && !refRaw.toLowerCase().startsWith("kiosk-sale") ? refRaw : null;
   const legacyId =
     (ref ? `ota-${ref}` : null) ??
     clean(row.unique_id) ??
