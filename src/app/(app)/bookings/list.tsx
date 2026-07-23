@@ -21,7 +21,6 @@ import {
   EyeOff,
   Filter,
   Ghost,
-  Image as ImageIcon,
   PencilLine,
   StickyNote,
   Ticket,
@@ -72,10 +71,8 @@ const BOOKING_SELECT = `
   business_tour_id,
   customer_id,
   checked_in_at,
-  peek,
   source_channel,
   groupon_redeemed_at,
-  groupon_voucher_urls,
   pax_adult,
   pax_child,
   pax_infant,
@@ -151,8 +148,6 @@ export type BookingRow = {
   business_tour_id: string;
   customer_id: string | null;
   checked_in_at: string | null;
-  peek: boolean;
-  groupon_voucher_urls: string[];
   source_channel: string | null;
   groupon_redeemed_at: string | null;
   pax_adult: number;
@@ -178,7 +173,6 @@ export type BookingCaps = {
   canEditBookings: boolean;
   canCheckIn: boolean;
   canDeleteBookings: boolean;
-  canAddToPeek: boolean;
 };
 
 type BookingsListProps = {
@@ -618,9 +612,6 @@ export function BookingsList({
   // Edit modal target booking (null when closed).
   const [editBooking, setEditBooking] = useState<BookingRow | null>(null);
 
-  // Photo gallery target booking (null when closed).
-  const [photosBooking, setPhotosBooking] = useState<BookingRow | null>(null);
-
   // Note popover.
   const [openNoteBookingId, setOpenNoteBookingId] = useState<string | null>(null);
   const [openNoteLayout, setOpenNoteLayout] = useState<NotePopoverLayout | null>(
@@ -841,39 +832,6 @@ export function BookingsList({
     [],
   );
 
-  // ── "Add to Peek" toggle (optimistic) ──────────────────────────────────────
-
-  const handleTogglePeek = useCallback(
-    async (booking: BookingRow) => {
-      // Records that this booking has been entered into Peek (the boat's
-      // reservation system). A manual desk workflow flag, like check-in.
-      const nextPeek = !booking.peek;
-
-      setBusyId(booking.id);
-      setErrorMsg(null);
-      setBookings((current) =>
-        current.map((b) => (b.id === booking.id ? { ...b, peek: nextPeek } : b)),
-      );
-
-      const supabase = getSupabaseBrowserClient();
-      const { error } = await supabase
-        .from("bookings")
-        .update({ peek: nextPeek })
-        .eq("id", booking.id);
-
-      if (error) {
-        setBookings((current) =>
-          current.map((b) =>
-            b.id === booking.id ? { ...b, peek: booking.peek } : b,
-          ),
-        );
-        setErrorMsg(`Unable to update Peek status: ${error.message}`);
-      }
-      setBusyId(null);
-    },
-    [],
-  );
-
   // ── Groupon "redeemed" toggle (owner only, optimistic) ─────────────────────
 
   const handleToggleRedeem = useCallback(
@@ -1065,9 +1023,7 @@ export function BookingsList({
             {groups.map((group) => (
               <div
                 key={group.slotKey}
-                // Anchor for the sidebar Manifest's time links.
-                id={`slot-${group.slotKey.replace(":", "")}`}
-                className="scroll-mt-2 border-t pb-4 first:border-t-0 last:pb-0"
+                className="border-t pb-4 first:border-t-0 last:pb-0"
               >
                 <header className="sticky top-0 z-20 grid grid-cols-[1fr_auto] items-center gap-2 bg-card/95 px-3 py-2.5 backdrop-blur">
                   <p className="text-2xl font-semibold tracking-tight">
@@ -1095,8 +1051,6 @@ export function BookingsList({
                       onCopyField={handleCopyField}
                       onToggleCheckIn={() => void handleToggleCheckIn(booking)}
                       onToggleRedeem={() => void handleToggleRedeem(booking)}
-                      onTogglePeek={() => void handleTogglePeek(booking)}
-                      onShowPhotos={() => setPhotosBooking(booking)}
                       onEdit={() => setEditBooking(booking)}
                       noteOpen={openNoteBookingId === booking.id}
                       noteLayout={
@@ -1215,14 +1169,6 @@ export function BookingsList({
         </div>
       ) : null}
 
-      {/* Photo gallery */}
-      {photosBooking ? (
-        <BookingPhotosModal
-          booking={photosBooking}
-          onClose={() => setPhotosBooking(null)}
-        />
-      ) : null}
-
       {/* Edit modal */}
       {editBooking ? (
         <EditBookingModal
@@ -1264,8 +1210,6 @@ function BookingRowItem({
   onCopyField,
   onToggleCheckIn,
   onToggleRedeem,
-  onTogglePeek,
-  onShowPhotos,
   onEdit,
   businessName,
   color,
@@ -1285,8 +1229,6 @@ function BookingRowItem({
   onCopyField: (key: string, value: string, errorMessage: string) => void;
   onToggleCheckIn: () => void;
   onToggleRedeem: () => void;
-  onTogglePeek: () => void;
-  onShowPhotos: () => void;
   onEdit: () => void;
   businessName: string;
   color: string | null;
@@ -1376,19 +1318,6 @@ function BookingRowItem({
               busy={busy}
               onToggle={onToggleRedeem}
             />
-          ) : null}
-          {caps.canAddToPeek ? (
-            <PeekButton inPeek={booking.peek} busy={busy} onToggle={onTogglePeek} />
-          ) : null}
-          {booking.groupon_voucher_urls.length > 0 ? (
-            <button
-              type="button"
-              onClick={onShowPhotos}
-              className={rowActionButtonClass}
-            >
-              <span className="sr-only">Show booking photos</span>
-              <ImageIcon className="size-4" />
-            </button>
           ) : null}
           <input
             type="checkbox"
@@ -1531,9 +1460,6 @@ function BookingRowItem({
             onToggle={onToggleRedeem}
           />
         ) : null}
-        {caps.canAddToPeek ? (
-          <PeekButton inPeek={booking.peek} busy={busy} onToggle={onTogglePeek} />
-        ) : null}
         {note ? (
           <div
             ref={openNoteContainerRef}
@@ -1593,16 +1519,6 @@ function BookingRowItem({
         ) : (
           <span className="size-8" aria-hidden="true" />
         )}
-        {booking.groupon_voucher_urls.length > 0 ? (
-          <button
-            type="button"
-            onClick={onShowPhotos}
-            className={rowActionButtonClass}
-          >
-            <span className="sr-only">Show booking photos</span>
-            <ImageIcon className="size-4" />
-          </button>
-        ) : null}
         {caps.canEditBookings ? (
           <button type="button" onClick={onEdit} className={rowActionButtonClass}>
             <span className="sr-only">Edit booking</span>
@@ -1636,86 +1552,6 @@ function CopiedBubble() {
  * the owner has redeemed the voucher on Groupon, then a green "Redeemed" that can
  * be clicked to undo. Toggles `bookings.groupon_redeemed_at`.
  */
-function BookingPhotosModal({
-  booking,
-  onClose,
-}: {
-  booking: BookingRow;
-  onClose: () => void;
-}) {
-  return (
-    <div
-      className="fixed inset-0 z-[95] flex items-center justify-center bg-black/70 p-4"
-      role="presentation"
-      onClick={onClose}
-    >
-      <div
-        role="dialog"
-        aria-label="Booking photos"
-        onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-xl bg-card shadow-2xl"
-      >
-        <div className="flex items-center justify-between border-b px-5 py-3">
-          <p className="text-sm font-semibold">
-            Photos &middot; {booking.customer?.full_name ?? "Booking"}
-          </p>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close photos"
-            className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
-          >
-            <X className="size-4" />
-          </button>
-        </div>
-        <div className="space-y-3 overflow-y-auto p-4">
-          {booking.groupon_voucher_urls.map((url) => (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              key={url}
-              src={url}
-              alt="Booking photo"
-              className="w-full rounded-lg border object-contain"
-            />
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PeekButton({
-  inPeek,
-  busy,
-  onToggle,
-}: {
-  inPeek: boolean;
-  busy: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      disabled={busy}
-      aria-pressed={inPeek}
-      title={
-        inPeek
-          ? "This booking is in Peek. Click to undo."
-          : "Mark this booking as added to Peek."
-      }
-      className={cn(
-        "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50",
-        inPeek
-          ? "border-yellow-300 bg-yellow-200 text-yellow-950 hover:bg-yellow-300"
-          : "border-input bg-background text-muted-foreground hover:bg-muted hover:text-foreground",
-      )}
-    >
-      {inPeek ? "In Peek" : "Add to Peek"}
-    </button>
-  );
-}
-
 function GrouponRedeemButton({
   redeemed,
   busy,
