@@ -180,7 +180,7 @@ function CustomerName({
       href={href}
       target="_blank"
       rel="noreferrer"
-      className="block truncate font-medium underline decoration-dashed underline-offset-4 hover:decoration-solid"
+      className="block truncate font-medium underline decoration-dashed decoration-muted-foreground/50 underline-offset-4 hover:decoration-solid hover:decoration-muted-foreground"
     >
       {label}
     </a>
