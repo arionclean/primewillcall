@@ -1,3 +1,5 @@
+import { Suspense } from "react";
+
 import type { Database } from "@/lib/supabase/database.types";
 
 import { AppSidebar, type SidebarBadges } from "./app-sidebar";
@@ -38,7 +40,12 @@ export function AppShell({
             canCreateBookings={canCreateBookings}
             badges={badges}
           />
-          {role === "check_in" && <SidebarManifest />}
+          {role === "check_in" && (
+            // Suspense: SidebarManifest reads the URL via useSearchParams.
+            <Suspense fallback={null}>
+              <SidebarManifest />
+            </Suspense>
+          )}
         </aside>
         <main className="min-w-0">{children}</main>
       </div>

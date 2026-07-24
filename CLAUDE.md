@@ -43,11 +43,12 @@ Realtime). Supabase project id: `qbnizuhozzwkiitfkjee`.
   `/schedule`. Lands on `/bookings` (no dashboard; the sidebar Manifest shows
   today's remaining check-ins per departure).
 
-Non-owner staff also carry four per-person booking permissions
-(`staff.can_create_bookings / can_edit_bookings / can_check_in / can_delete_bookings`),
-owner-editable in the "Permissions" section of `/admin/staff/[id]`. Owners always have
-all four. Enforcement is layered (UI, server action, RLS, plus a bookings trigger that
-limits check-in-only accounts to the check-in stamp); see `docs/DATABASE.md`.
+Non-owner staff also carry per-person booking permissions
+(`staff.can_create_bookings / can_edit_bookings / can_check_in / can_delete_bookings /
+can_add_to_peek`), owner-editable in the "Permissions" section of `/admin/staff/[id]`.
+Owners always have all of them. Enforcement is layered (UI, server action, RLS, plus a
+bookings trigger that limits check-in-only accounts to the check-in + peek stamps);
+see `docs/DATABASE.md`.
 
 A Postgres trigger links `auth.users` to a `staff` row by email on sign-up. The
 `current_staff()` SECURITY DEFINER function returns `(staff_id, role, business_id)` and

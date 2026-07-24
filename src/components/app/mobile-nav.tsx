@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { createPortal } from "react-dom";
 import { Menu, X } from "lucide-react";
@@ -85,7 +85,11 @@ export function MobileNav({
                   badges={badges}
                   onNavigate={() => setOpen(false)}
                 />
-                {role === "check_in" && <SidebarManifest />}
+                {role === "check_in" && (
+                  <Suspense fallback={null}>
+                    <SidebarManifest />
+                  </Suspense>
+                )}
               </div>
             </div>,
             document.body,

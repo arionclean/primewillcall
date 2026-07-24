@@ -1024,6 +1024,7 @@ export type Database = {
       staff: {
         Row: {
           business_id: string | null
+          can_add_to_peek: boolean
           can_check_in: boolean
           can_create_bookings: boolean
           can_delete_bookings: boolean
@@ -1033,6 +1034,7 @@ export type Database = {
           full_name: string
           id: string
           is_active: boolean
+          kiosk_slug: string | null
           phone: string | null
           role: Database["public"]["Enums"]["staff_role"]
           updated_at: string
@@ -1040,6 +1042,7 @@ export type Database = {
         }
         Insert: {
           business_id?: string | null
+          can_add_to_peek?: boolean
           can_check_in?: boolean
           can_create_bookings?: boolean
           can_delete_bookings?: boolean
@@ -1049,6 +1052,7 @@ export type Database = {
           full_name: string
           id?: string
           is_active?: boolean
+          kiosk_slug?: string | null
           phone?: string | null
           role: Database["public"]["Enums"]["staff_role"]
           updated_at?: string
@@ -1056,6 +1060,7 @@ export type Database = {
         }
         Update: {
           business_id?: string | null
+          can_add_to_peek?: boolean
           can_check_in?: boolean
           can_create_bookings?: boolean
           can_delete_bookings?: boolean
@@ -1065,6 +1070,7 @@ export type Database = {
           full_name?: string
           id?: string
           is_active?: boolean
+          kiosk_slug?: string | null
           phone?: string | null
           role?: Database["public"]["Enums"]["staff_role"]
           updated_at?: string
@@ -1724,10 +1730,15 @@ export type Database = {
           tour_name: string
         }[]
       }
+      heal_ledger_booking_links: {
+        Args: { p_refs?: string[] }
+        Returns: number
+      }
       ignore_email_match: {
         Args: { p_queue_id: string }
         Returns: {
           ai_confidence: string | null
+          ai_confidence_score: number | null
           booking_channel: string | null
           business_id: string | null
           created_at: string
@@ -1765,10 +1776,26 @@ export type Database = {
           tour_name: string
         }[]
       }
+      payments_summary: {
+        Args: {
+          p_business?: string
+          p_end: string
+          p_source?: string
+          p_start: string
+        }
+        Returns: {
+          card_count: number
+          card_gross: number
+          cash_count: number
+          cash_total: number
+          refunded: number
+        }[]
+      }
       resolve_email_match: {
         Args: { p_queue_id: string; p_tour_id: string }
         Returns: {
           ai_confidence: string | null
+          ai_confidence_score: number | null
           booking_channel: string | null
           business_id: string | null
           created_at: string
@@ -1799,21 +1826,6 @@ export type Database = {
           last_body: string
           last_direction: Database["public"]["Enums"]["sms_direction"]
           message_count: number
-        }[]
-      }
-      payments_summary: {
-        Args: {
-          p_business?: string
-          p_end: string
-          p_source?: string
-          p_start: string
-        }
-        Returns: {
-          card_count: number
-          card_gross: number
-          cash_count: number
-          cash_total: number
-          refunded: number
         }[]
       }
       stripe_payments_summary: {

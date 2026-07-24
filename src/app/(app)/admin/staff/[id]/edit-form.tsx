@@ -67,6 +67,7 @@ type Props = {
     can_edit_bookings: boolean;
     can_check_in: boolean;
     can_delete_bookings: boolean;
+    can_add_to_peek: boolean;
   };
   businesses: { id: string; name: string }[];
   tours: { id: string; name: string }[];
@@ -74,7 +75,12 @@ type Props = {
 };
 
 const CAPABILITY_OPTIONS: {
-  name: "can_create_bookings" | "can_edit_bookings" | "can_check_in" | "can_delete_bookings";
+  name:
+    | "can_create_bookings"
+    | "can_edit_bookings"
+    | "can_check_in"
+    | "can_delete_bookings"
+    | "can_add_to_peek";
   label: string;
   hint: string;
 }[] = [
@@ -97,6 +103,11 @@ const CAPABILITY_OPTIONS: {
     name: "can_delete_bookings",
     label: "Delete bookings",
     hint: "Remove bookings entirely. Leave off unless they really need it.",
+  },
+  {
+    name: "can_add_to_peek",
+    label: "Add to Peek",
+    hint: "Mark bookings as entered in Peek from the Bookings page.",
   },
 ];
 

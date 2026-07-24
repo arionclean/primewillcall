@@ -44,17 +44,21 @@ booking page (`/booking/<token>`).
 ### staff
 `id uuid pk, user_id? (-> auth.users), business_id? (-> businesses), role enum,
 full_name, email, phone?, is_active, can_create_bookings, can_edit_bookings,
-can_check_in, can_delete_bookings, created_at, updated_at`
+can_check_in, can_delete_bookings, can_add_to_peek, created_at, updated_at`
 Role enum (`staff_role`): `owner`, `business_manager`, `check_in`. `owner` has no
 `business_id`. A trigger links a new `auth.users` row to its `staff` row by email.
 
-The four `can_*` booleans are per-staff booking permissions, editable by the owner
+The `can_*` booleans are per-staff booking permissions, editable by the owner
 on `/admin/staff/[id]` ("Permissions"). Owners ignore them (always allowed); they
 gate managers and check-in staff via the bookings RLS policies plus the
 `bookings_enforce_update_capabilities` trigger (an account with `can_check_in` but
-not `can_edit_bookings` may only change `checked_in_at` / `checked_in_by_staff_id`;
-RLS alone cannot express column-level rules). Defaults: create/edit/check-in on,
+not `can_edit_bookings` may only change `checked_in_at` / `checked_in_by_staff_id`
+and `peek`; without `can_add_to_peek` the trigger blocks `peek` flips entirely; RLS
+alone cannot express column-level rules). Defaults: create/edit/check-in/peek on,
 delete off (new managers get delete on from the New team member form).
+`bookings.peek` marks a booking as manually entered into Peek (the boat's
+reservation system); it is the same field the Xano sync carries, so both stacks
+agree during the migration.
 
 ### tours (master, Prime-owned)
 `id uuid pk, name, kind, capacity, notes?, instructions?, meeting_point_address?,
