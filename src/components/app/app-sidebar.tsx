@@ -15,6 +15,7 @@ import {
   Inbox,
   MessageSquare,
   Tag,
+  TestTube2,
   UserCog,
   Wallet,
   Zap,
@@ -153,6 +154,13 @@ const SECTIONS: NavSection[] = [
         icon: Tag,
         roles: ["owner"],
         matchPrefix: "/admin/groupon",
+      },
+      {
+        href: "/admin/gp-shadow",
+        label: "Groupon vs Xano",
+        icon: TestTube2,
+        roles: ["owner"],
+        matchPrefix: "/admin/gp-shadow",
       },
       {
         href: "/admin/messaging",

@@ -236,7 +236,12 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   (owner-only "Redeem" / "Redeemed" toggle on Groupon rows in the bookings list,
   `bookings.groupon_redeemed_at`) after redeeming it on Groupon's own platform. See the
   Stripe entry below and [`docs/DATABASE.md`](docs/DATABASE.md) "Groupon convenience fee" +
-  "Payments (Stripe)".
+  "Payments (Stripe)". The matcher is graded against live Xano by the **shadow test**
+  (`gp_shadow_runs` + the `gp-shadow-compare` edge function + owner-only
+  `/admin/gp-shadow`); it is read-only with respect to Xano and creates no bookings.
+  Feeding it needs one additive hook in Xano's `vision_v4` post_process, which is a
+  live-Xano write and is **not applied yet**. See
+  [`docs/gp-shadow-test.md`](docs/gp-shadow-test.md).
 - `/availability` (owner + business manager) opens/closes booking times per day via
   `tour_slot_closures`; `/api/gp/slots` and `/api/gp/book` respect closures. The
   internal `/schedule` booking form does NOT block closed times (staff can override);
