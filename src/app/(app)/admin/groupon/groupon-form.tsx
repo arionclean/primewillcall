@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 
-import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { Field } from "@/components/ui/field";
 import { FormSection } from "@/components/ui/form-section";
 import { Input } from "@/components/ui/input";
@@ -30,7 +30,7 @@ function centsToDollars(c: number): string {
 type RowState = { enabled: boolean; fee: string };
 
 export function GrouponFeesForm({ rows }: { rows: GrouponProductRow[] }) {
-  const [state, formAction, isPending] = useActionState(
+  const [state, formAction] = useActionState(
     updateGrouponFeesAction,
     INITIAL,
   );
@@ -136,9 +136,7 @@ export function GrouponFeesForm({ rows }: { rows: GrouponProductRow[] }) {
         </p>
       )}
 
-      <Button type="submit" disabled={isPending}>
-        {isPending ? "Saving..." : "Save Groupon fees"}
-      </Button>
+      <SubmitButton>Save Groupon fees</SubmitButton>
     </form>
   );
 }

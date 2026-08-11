@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useActionState, useState } from "react";
 
-import { Button, buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { Field } from "@/components/ui/field";
 import { FormSection } from "@/components/ui/form-section";
 import { Input } from "@/components/ui/input";
@@ -66,7 +67,7 @@ export function ManagerEditTourForm({
   tiers,
 }: ManagerEditTourFormProps) {
   const action = updateManagerTourAction.bind(null, businessTour.id, tourId);
-  const [state, formAction, isPending] = useActionState(action, INITIAL);
+  const [state, formAction] = useActionState(action, INITIAL);
 
   const [isActive, setIsActive] = useState(businessTour.is_active);
 
@@ -213,9 +214,7 @@ export function ManagerEditTourForm({
       )}
 
       <div className="flex items-center gap-2">
-        <Button type="submit" disabled={isPending}>
-          {isPending ? "Saving..." : "Save changes"}
-        </Button>
+        <SubmitButton>Save changes</SubmitButton>
         <Link
           href="/admin/tours"
           className={cn(buttonVariants({ variant: "outline" }))}

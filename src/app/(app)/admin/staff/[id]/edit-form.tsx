@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useActionState, useState } from "react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Field } from "@/components/ui/field";
 import { FormSection } from "@/components/ui/form-section";
@@ -118,7 +119,7 @@ export function EditStaffForm({
   assignedTourIds,
 }: Props) {
   const update = updateStaffAction.bind(null, staff.id);
-  const [state, formAction, isPending] = useActionState(update, INITIAL);
+  const [state, formAction] = useActionState(update, INITIAL);
   const [role, setRole] = useState<StaffRole>(staff.role);
   const [isActive, setIsActive] = useState<boolean>(staff.is_active);
   const [selectedTours, setSelectedTours] = useState<Set<string>>(
@@ -376,9 +377,7 @@ export function EditStaffForm({
         )}
 
         <div className="flex items-center gap-2">
-          <Button type="submit" disabled={isPending}>
-            {isPending ? "Saving..." : "Save changes"}
-          </Button>
+          <SubmitButton>Save changes</SubmitButton>
           <Link
             href="/admin/staff"
             className={cn(buttonVariants({ variant: "outline" }))}

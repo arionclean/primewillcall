@@ -5,6 +5,7 @@ import { useActionState, useState } from "react";
 
 import { MeetingPointPicker } from "@/components/admin/meeting-point-picker";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Field } from "@/components/ui/field";
 import { FormSection } from "@/components/ui/form-section";
@@ -51,7 +52,7 @@ export function EditTourForm({
   assignedBusinessIds,
 }: EditTourFormProps) {
   const update = updateTourAction.bind(null, tour.id);
-  const [state, formAction, isPending] = useActionState(update, INITIAL);
+  const [state, formAction] = useActionState(update, INITIAL);
 
   const [slots, setSlots] = useState<SlotRow[]>(() =>
     timeslots.length > 0
@@ -293,9 +294,7 @@ export function EditTourForm({
         )}
 
         <div className="flex items-center gap-2">
-          <Button type="submit" disabled={isPending}>
-            {isPending ? "Saving..." : "Save changes"}
-          </Button>
+          <SubmitButton>Save changes</SubmitButton>
           <Link
             href="/admin/tours"
             className={cn(buttonVariants({ variant: "outline" }))}

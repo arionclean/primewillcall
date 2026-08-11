@@ -142,6 +142,16 @@ src/app/_archive, src/components/_archive   legacy Bubble pages, kept as referen
   Owner-protection for staff also refuses to render the edit form for an `owner` row.
 - **Forms**: wrap sections in `FormSection` (title outside the card), fields in `Field`
   (label + error + hint). Use `Input`, `Textarea`, `Select`, `PhoneInput`, `DateField`.
+- **Submit CTAs**: every one-shot write (save, confirm, resolve, refund, delete) uses
+  `SubmitButton` (`components/ui/submit-button.tsx`). It reads `useFormStatus()` from its
+  own parent form, so it disables itself and swaps its label for a centered spinner while
+  the action is in flight. That is what stops a double click from sending the write twice.
+  It works for both plain `<form action={serverAction}>` and `useActionState` forms, so
+  the button needs no `isPending` prop drilled into it. Pass extra conditions through
+  `disabled` (they are OR'd with pending). The label stays in the layout while hidden, so
+  the button never resizes. Do NOT use it for **optimistic toggles** (the check-in
+  checkbox, `/availability` slot buttons): those flip local state instantly and a second
+  click is a legitimate opposite action, not a duplicate.
 - **Dates**: `DateField` opens the native calendar and blocks manual typing. Booking
   times come from the tour's configured `tour_timeslots`, never a free time input.
 - **Timezone**: business time is `America/New_York`. Convert local date + slot time to

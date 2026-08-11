@@ -5,6 +5,7 @@ import { useActionState } from "react";
 import { Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -73,7 +74,7 @@ export function MessageEditor({
   onCancel?: () => void;
   onChannelChange?: (channel: Channel) => void;
 }) {
-  const [state, formAction, pending] = useActionState(action, INITIAL);
+  const [state, formAction] = useActionState(action, INITIAL);
   const [channel, setChannelState] = useState<Channel>(draft.channel);
   const [body, setBody] = useState(draft.body);
   const [waSid, setWaSid] = useState(draft.whatsappContentSid);
@@ -238,9 +239,7 @@ export function MessageEditor({
               Cancel
             </Button>
           ) : null}
-          <Button type="submit" size="lg" disabled={pending}>
-            {pending ? "Saving..." : submitLabel}
-          </Button>
+          <SubmitButton size="lg">{submitLabel}</SubmitButton>
         </div>
       </div>
 

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useActionState, useState } from "react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { Field } from "@/components/ui/field";
 import { FormSection } from "@/components/ui/form-section";
 import { Input } from "@/components/ui/input";
@@ -97,7 +98,7 @@ type Props = {
 };
 
 export function NewStaffForm({ businesses, tours }: Props) {
-  const [state, formAction, isPending] = useActionState(
+  const [state, formAction] = useActionState(
     createStaffAction,
     INITIAL,
   );
@@ -346,9 +347,7 @@ export function NewStaffForm({ businesses, tours }: Props) {
       )}
 
       <div className="flex items-center gap-2">
-        <Button type="submit" disabled={isPending}>
-          {isPending ? "Saving..." : "Save team member"}
-        </Button>
+        <SubmitButton>Save team member</SubmitButton>
         <Link
           href="/admin/staff"
           className={cn(buttonVariants({ variant: "outline" }))}
