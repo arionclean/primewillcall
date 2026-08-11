@@ -67,38 +67,58 @@ disagreement would score us down for the cases we handle and Xano does not.
 The Supabase side is built and deployed. It needs vouchers pushed to it, and
 that is the one piece that touches Xano.
 
-**Add to `vision_v4`'s existing `util.post_process` block** (the one that already
-writes the `multimedia` row). `post_process` runs after the response has gone
-back to the customer, so a failure here cannot affect a live redemption:
+Paste the block below into `vision_v4` (API 1930, group `vision`), inside the
+`util.post_process { stack { ... } }` it already has, **immediately after**
+`} as $multimedia1`. Nothing else in the endpoint changes.
+
+`post_process` runs after the response has already gone back to the customer, and
+the `try_catch` swallows failures, so neither a Supabase outage nor a wrong
+secret can affect a live redemption. The worst case is that no shadow row is
+recorded.
 
 ```
-api.request {
-  url    = "https://qbnizuhozzwkiitfkjee.supabase.co/functions/v1/gp-shadow-compare"
-  method = "POST"
-  params = {}
-    |set:"xano_ref":($request.id|to_text)
-    |set:"image_url":("https://xmhi-aj9d-cnsb.n7.xano.io"|concat:$imagen_url.path:"")
-    |set:"xano":({}
-      |set:"product":$x2.product_name
-      |set:"fee":$x2.value
-      |set:"passengers":$groq.passengers
-      |set:"voucher":$groq.voucher
-      |set:"match_score":$x2.match_score
-    )
-  headers = []
-    |push:"Content-Type: application/json"
-    |push:("x-webhook-secret: @"|replace:"@":$env.supabase_webhook_secret)
-  timeout = 20
+// Shadow test: mirror this voucher and Xano's verdict to the Supabase matcher
+// so the two can be compared. Read-only for Xano.
+try_catch {
+  try {
+    api.request {
+      url = "https://qbnizuhozzwkiitfkjee.supabase.co/functions/v1/gp-shadow-compare"
+      method = "POST"
+      params = {}
+        |set:"xano_ref":$multimedia1.id
+        |set:"image_url":("https://xmhi-aj9d-cnsb.n7.xano.io"|concat:$imagen_url.path:"")
+        |set:"xano":({}
+          |set:"product":$x2.product_name
+          |set:"fee":$x2.value
+          |set:"passengers":$groq.passengers
+          |set:"voucher":$groq.voucher
+          |set:"match_score":$x2.match_score
+        )
+      headers = []
+        |push:"Content-Type: application/json"
+        |push:"x-webhook-secret: " ~ $env.XANO_BOOKING_SYNC_SECRET
+      timeout = 20
+    } as $shadow1
+  }
 }
 ```
 
-`x-webhook-secret` is the same `XANO_WEBHOOK_SECRET` that `xano-booking-sync`
-already uses, so no new secret is needed on the Supabase side. Set it as a Xano
-env var.
+Everything it references already exists in that endpoint's stack: `$multimedia1`
+(the row written on the line above), `$imagen_url` (the stored voucher),
+`$x2` (the match lambda's result) and `$groq` (the extraction).
 
-This is a **write to a live Xano endpoint** and needs explicit sign-off before
-anyone applies it. It is additive and inside `post_process`, but the rule is the
-rule.
+**No new secret.** It reuses `$env.XANO_BOOKING_SYNC_SECRET`, the same value the
+`sync booking to supabase_v1` function already sends to `xano-booking-sync`, and
+the same value Supabase checks as `XANO_WEBHOOK_SECRET`. The `~` concatenation is
+copied from that function so the idiom matches.
+
+`xano_ref` is the `multimedia` row id, which makes the push idempotent and lines
+up with a replay over the same table.
+
+This is a **write to a live Xano endpoint**. It has to be pasted by a human: the
+agent's Xano write tools are blocked by Claude Code's permission classifier, and
+a full-script rewrite of a live endpoint through a tool call is riskier than a
+15-line paste anyway.
 
 ### Alternative: pull instead of push
 
