@@ -186,10 +186,16 @@ behavior (booking held, fee collected manually).
   `0` = offered free. Owners edit this on the owner-only `/admin/groupon` page.
 - `gp-vouchers` storage bucket (public read) — the uploaded voucher photos. Writes are
   done server-side with the service role, so there is no anon insert policy.
+- `businesses.groupon_merchant_names` (`text[]`, default `{}`) — extra Groupon storefront
+  names this business sells under, beyond `businesses.name`. Groupon lists one operator
+  under several storefronts, and only some of them are real businesses: Miami Skyline
+  Cruises also sells as "Miami Star Island Cruises" and "Miami Tour Bus". Drives the
+  merchant gate below. No admin UI yet; set it in SQL.
 - `groupon_candidates()` — SECURITY DEFINER RPC returning the Groupon-enabled
   `business_tours` (fee not null, active) joined to business + tour, with each tour's
-  `tour_name_aliases` as a `text[]`. The validator feeds this small candidate set to the
-  vision model; the fee always comes from this row, never from the model.
+  `tour_name_aliases` as a `text[]` and the business's storefront names as
+  `merchant_names`. The validator feeds this small candidate set to the vision model; the
+  fee always comes from this row, never from the model.
 
 ### Request flow (all server-side, service role; no anon DB access)
 - `POST /api/gp/validate` — uploads the photo to `gp-vouchers`, then hands the public URL
@@ -223,8 +229,15 @@ behavior (booking held, fee collected manually).
      it must never outrank a title match, and when the business sells several products the
      tier stays silent rather than coin-flip the product and its fee.
 
-  Anything still unmatched falls to the model, which picks from the same candidate list.
-  The fee always comes from the matched row, never from the model.
+  Anything still unmatched falls to the model, which picks from the same candidate list,
+  **gated on the merchant**: the model's answer is only accepted when the voucher text
+  names one of the `merchant_names`. Asked to choose from a catalog the model returns the
+  closest entry even when nothing fits, and a real voucher for "Skyline & Coast Cruise"
+  sold by *N.Y.C Skyline Tours & Cruises* came back as Miami Skyline Cruises, which would
+  have booked a Miami tour and charged the fee. The deterministic tiers are deliberately
+  exempt from the gate: they already require one of our own product titles in the voucher,
+  and gating them would drop real vouchers whose photo is too poor to read the storefront
+  line. The fee always comes from the matched row, never from the model.
 - `GET /api/gp/slots?business_tour_id&date` — active `tour_timeslots` for the matched
   product's master tour, past times hidden for today (NY), minus any
   `tour_slot_closures` for that date. Replaces Xano `manage_slots`.

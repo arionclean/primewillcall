@@ -266,6 +266,7 @@ export type Database = {
           contact_email: string | null
           created_at: string
           google_review_url: string | null
+          groupon_merchant_names: string[]
           id: string
           legacy_company_id: string | null
           logo_url: string | null
@@ -287,6 +288,7 @@ export type Database = {
           contact_email?: string | null
           created_at?: string
           google_review_url?: string | null
+          groupon_merchant_names?: string[]
           id?: string
           legacy_company_id?: string | null
           logo_url?: string | null
@@ -308,6 +310,7 @@ export type Database = {
           contact_email?: string | null
           created_at?: string
           google_review_url?: string | null
+          groupon_merchant_names?: string[]
           id?: string
           legacy_company_id?: string | null
           logo_url?: string | null
@@ -1774,6 +1777,7 @@ export type Database = {
           method: string
           tour_id: string
           tour_name: string
+          merchant_names: string[]
         }[]
       }
       payments_summary: {

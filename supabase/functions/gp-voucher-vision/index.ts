@@ -14,6 +14,10 @@
 //      the redemption code (the "1 of 1" trap is handled in the prompt, same as
 //      Xano), and doubles as the match fallback when (2) found nothing. OpenAI
 //      gpt-5.4-mini is the fallback provider if Groq errors.
+//   4. Merchant gate: the model's match is only accepted when the voucher names
+//      one of our Groupon storefronts (businesses.name plus
+//      businesses.groupon_merchant_names). Without it the model happily maps a
+//      competitor's voucher onto the nearest catalog entry.
 //
 // The fee always comes from the matched groupon_candidates row, never the model.
 // Secrets (GOOGLE_API_KEY, GROQ_API_KEY, OPENAI_API_KEY) are Supabase function
@@ -54,6 +58,8 @@ type Candidate = {
   business_tour_id: string;
   business_id: string;
   business_name: string;
+  /** Storefront names Groupon sells this business under, including its own. */
+  merchant_names: string[];
   tour_id: string;
   tour_name: string;
   product_name: string;
@@ -392,10 +398,9 @@ function deterministicMatch(ocrText: string, candidates: Candidate[]): Match | n
   // The storefront names a business, not a product, so it is only decisive when
   // that business sells exactly one Groupon-enabled product. Otherwise picking
   // one would be a coin flip between different products AND different fees.
-  const merchant = exactMatch(haystack, candidates, (c) => [c.business_name]);
+  const merchant = exactMatch(haystack, candidates, (c) => c.merchant_names);
   if (merchant) {
-    const merchantNorm = norm(merchant.candidate.business_name);
-    const sold = candidates.filter((c) => norm(c.business_name) === merchantNorm);
+    const sold = candidates.filter((c) => c.business_id === merchant.candidate.business_id);
     if (sold.length === 1) return { ...merchant, method: "merchant" };
   }
 
@@ -459,6 +464,8 @@ Deno.serve(async (req) => {
     );
   }
 
+  const haystack = norm(text);
+
   // 2. Deterministic match (zero AI in the common case).
   const det = deterministicMatch(text, candidates);
 
@@ -471,11 +478,35 @@ Deno.serve(async (req) => {
   }));
   const ex = await extract(text, catalog);
 
-  const aiMatch =
+  // 4. Merchant gate, on the model's answer only. Asked to choose from a catalog,
+  //    the model picks the closest entry even when the voucher belongs to someone
+  //    else: a real "Skyline & Coast Cruise" from N.Y.C Skyline Tours & Cruises
+  //    came back as Miami Skyline Cruises. So its answer counts only when the
+  //    voucher actually names one of our storefronts.
+  //
+  //    The deterministic tiers are deliberately exempt. They already require one
+  //    of our own product titles in the text, which is evidence in itself, and
+  //    gating them would throw away real vouchers whose photo is too poor for the
+  //    storefront line to be read.
+  const merchantSeen = candidates.some((c) =>
+    c.merchant_names.some((n) => {
+      const nn = norm(n);
+      return nn.length >= MIN_ALIAS_NORM_LEN && haystack.includes(nn);
+    })
+  );
+
+  const aiCandidate =
     !det && ex?.matched_business_tour_id
       ? candidates.find((c) => c.business_tour_id === ex.matched_business_tour_id) ?? null
       : null;
+  const aiMatch = merchantSeen ? aiCandidate : null;
   const matched = det?.candidate ?? aiMatch;
+
+  const reason = matched
+    ? `matched ${det ? `"${det.matchedName}" (${det.method})` : "via AI"}`
+    : aiCandidate
+      ? "voucher does not name one of our Groupon storefronts"
+      : "voucher does not match a supported product";
 
   return json(
     {
@@ -484,11 +515,10 @@ Deno.serve(async (req) => {
       matched,
       passengers: ex?.passengers ?? 1,
       voucher_code: ex?.voucher ?? null,
-      reason: matched
-        ? `matched ${det ? `"${det.matchedName}" (${det.method})` : "via AI"}`
-        : "voucher does not match a supported product",
+      reason,
       ocr: ocrMethod,
       match_method: det?.method ?? (aiMatch ? "ai" : null),
+      merchant_seen: merchantSeen,
     },
     200,
   );
