@@ -320,6 +320,13 @@ async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
     legacy_reference: clean(row.booking_reference),
     source_channel: clean(row.booking_channel),
     ...(confirmationToken ? { public_token: confirmationToken } : {}),
+    // Peek + voucher photos travel with the full Xano record. Mapped only when
+    // the payload carries the field, so partial payloads (e.g. from
+    // email-booking-parse) never clobber existing values.
+    ...(typeof row.peek === "boolean" ? { peek: row.peek } : {}),
+    ...(Array.isArray(row.image_url)
+      ? { groupon_voucher_urls: imageUrls(row.image_url) }
+      : {}),
   };
 
   const { error } = await sb
@@ -327,6 +334,21 @@ async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
     .upsert(payload, { onConflict: "legacy_id" });
   if (error) return { legacy_id: legacyId, ok: false, error: error.message };
   return { legacy_id: legacyId, ok: true };
+}
+
+// Xano image fields arrive as an array of URL strings or of file objects with
+// a `url` property; normalize to plain URL strings.
+function imageUrls(arr: unknown[]): string[] {
+  const urls: string[] = [];
+  for (const item of arr) {
+    if (typeof item === "string" && item.trim()) {
+      urls.push(item.trim());
+    } else if (item && typeof item === "object") {
+      const u = clean((item as Record<string, unknown>).url);
+      if (u) urls.push(u);
+    }
+  }
+  return urls;
 }
 
 function json(obj: unknown, status: number): Response {

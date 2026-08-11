@@ -22,7 +22,7 @@ import {
 } from "@/lib/dashboard/queries";
 import type { Database } from "@/lib/supabase/database.types";
 
-import { refundTransaction } from "./actions";
+import { moveSaleSource, refundCashSale, refundTransaction } from "./actions";
 
 type StaffRole = Database["public"]["Enums"]["staff_role"];
 
@@ -45,6 +45,8 @@ type Txn = {
   stripe_created: string | null;
   object_type: string | null;
   business: { name: string } | null;
+  /** Where the sale came from before staff moved it; null means never moved. */
+  source_original: string | null;
 };
 
 type CashSale = {
@@ -52,10 +54,14 @@ type CashSale = {
   business_id: string | null;
   booking_ref: string | null;
   amount_cents: number;
+  /** Cash handed back to the customer. Full refund when it equals amount_cents. */
+  amount_refunded_cents: number;
   kiosk_slug: string | null;
   created_at: string;
   customer_name: string | null;
   business: { name: string } | null;
+  /** Where the sale came from before staff moved it; null means never moved. */
+  source_original: string | null;
 };
 
 export type FeedItem = (
@@ -94,6 +100,12 @@ type PaymentsViewProps = {
   summary: Summary;
   kiosks: string[];
   businesses: { id: string; name: string }[];
+  /** 1-based page of the feed, its size, and the row count for the whole range. */
+  page: number;
+  perPage: number;
+  total: number;
+  /** What the smart search understood ("Cash", "Refunded", "Aug 10, 2026"). */
+  searchLabels: string[];
   filters: {
     from: string;
     to: string;
@@ -187,6 +199,19 @@ function CustomerName({
   );
 }
 
+/**
+ * Marks a sale a staffer re-tagged. Its own line, not appended to the source
+ * line: that line is truncated and would swallow the note on narrow columns.
+ */
+function MovedFrom({ from }: { from: string | null }) {
+  if (!from) return null;
+  return (
+    <p className="truncate text-xs italic text-muted-foreground">
+      moved from {kioskLabel(from)}
+    </p>
+  );
+}
+
 /** "Visa ···· 4242", "···· 8215", or "Card" when Stripe sent no card details. */
 function cardLabel(txn: Txn): string {
   if (!txn.card_last4) return txn.card_brand ? capitalize(txn.card_brand) : "Card";
@@ -208,13 +233,25 @@ function customerLabel(txn: Txn): { primary: string; secondary: string } {
   return { primary, secondary };
 }
 
-function statusBadge(txn: Txn): { label: string; tone: "success" | "warning" | "danger" | "neutral" | "info" } {
-  if (txn.status === "disputed") return { label: "Disputed", tone: "danger" };
-  const refunded = txn.amount_refunded ?? 0;
-  if (refunded > 0 && refunded >= txn.amount) return { label: "Refunded", tone: "neutral" };
+/** Shared by card and cash rows so a refunded cash sale reads like a refunded charge. */
+function statusBadge(sale: {
+  amount: number;
+  amount_refunded: number;
+  status: string | null;
+}): { label: string; tone: "success" | "warning" | "danger" | "neutral" | "info" } {
+  if (sale.status === "disputed") return { label: "Disputed", tone: "danger" };
+  const refunded = sale.amount_refunded ?? 0;
+  if (refunded > 0 && refunded >= sale.amount) return { label: "Refunded", tone: "neutral" };
   if (refunded > 0) return { label: "Partly refunded", tone: "warning" };
-  if (txn.status === "succeeded") return { label: "Succeeded", tone: "success" };
-  return { label: txn.status ?? "—", tone: "info" };
+  if (sale.status === "succeeded") return { label: "Succeeded", tone: "success" };
+  return { label: sale.status ?? "—", tone: "info" };
+}
+
+/** The sale's amount and refunded total, whichever tender it is. */
+function saleAmounts(item: FeedItem): { amount: number; refunded: number } {
+  return item.kind === "cash"
+    ? { amount: item.amount_cents, refunded: item.amount_refunded_cents ?? 0 }
+    : { amount: item.amount, refunded: item.amount_refunded ?? 0 };
 }
 
 export function PaymentsView({
@@ -224,6 +261,10 @@ export function PaymentsView({
   summary,
   kiosks,
   businesses,
+  page,
+  perPage,
+  total,
+  searchLabels,
   filters,
 }: PaymentsViewProps) {
   const router = useRouter();
@@ -237,11 +278,18 @@ export function PaymentsView({
   const [q, setQ] = useState(filters.q);
   const [isPending, startTransition] = useTransition();
 
-  // Refund dialog state. `refundFor` doubles as the open/closed flag.
-  const [refundFor, setRefundFor] = useState<Txn | null>(null);
+  // Refund dialog state. `refundFor` doubles as the open/closed flag; it holds
+  // a card charge or a cash sale, which refund through different actions.
+  const [refundFor, setRefundFor] = useState<FeedItem | null>(null);
   const [refundAmount, setRefundAmount] = useState("");
   const [refundPin, setRefundPin] = useState("");
   const [refundError, setRefundError] = useState<string | null>(null);
+
+  // "Move to kiosk" dialog. `moveFor` doubles as the open/closed flag.
+  const [moveFor, setMoveFor] = useState<FeedItem | null>(null);
+  const [moveTarget, setMoveTarget] = useState("");
+  const [movePin, setMovePin] = useState("");
+  const [moveError, setMoveError] = useState<string | null>(null);
 
   // Filters apply on change (no Apply button). Handlers pass the value they
   // just set as an override because React state updates are async.
@@ -267,6 +315,32 @@ export function PaymentsView({
     [from, to, business, source, q, router],
   );
 
+  // Paging keeps the current filters and only moves the page. Changing a
+  // filter goes through pushFilters, which omits `page` and so returns to 1.
+  const goToPage = useCallback(
+    (next: number) => {
+      const params = new URLSearchParams();
+      if (from) params.set("from", from);
+      if (to) params.set("to", to);
+      if (business) params.set("business", business);
+      if (source) params.set("source", source);
+      if (q.trim()) params.set("q", q.trim());
+      if (next > 1) params.set("page", String(next));
+      startTransition(() => {
+        router.push(`/admin/payments?${params.toString()}`);
+      });
+    },
+    [from, to, business, source, q, router],
+  );
+
+  // Re-tagging a sale moves no money, so it needs no passcode: owner and the
+  // business's own manager may do it. (check_in never reaches this page.)
+  const canMove = role === "owner" || role === "business_manager";
+
+  const pageCount = Math.max(1, Math.ceil(total / perPage));
+  const firstRow = total === 0 ? 0 : (page - 1) * perPage + 1;
+  const lastRow = Math.min(page * perPage, total);
+
   // Search applies as you type, debounced; Enter applies immediately.
   useEffect(() => {
     const term = q.trim();
@@ -284,16 +358,44 @@ export function PaymentsView({
     pushFilters({ from: range.from, to: range.to });
   }
 
-  function openRefund(txn: Txn) {
-    setRefundFor(txn);
+  function openRefund(item: FeedItem) {
+    setRefundFor(item);
     setRefundAmount("");
     setRefundPin("");
     setRefundError(null);
   }
 
+  function openMove(item: FeedItem) {
+    setMoveFor(item);
+    setMoveTarget("");
+    setMovePin("");
+    setMoveError(null);
+  }
+
+  function submitMove() {
+    if (!moveFor || !moveTarget) return;
+    if (!movePin.trim()) {
+      setMoveError("Enter the passcode.");
+      return;
+    }
+    setMoveError(null);
+    const { kind, id } = moveFor;
+    const pin = movePin.trim();
+    startTransition(async () => {
+      const res = await moveSaleSource(kind, id, moveTarget, pin);
+      if (res.error) {
+        setMoveError(res.error);
+        return;
+      }
+      setMoveFor(null);
+      router.refresh();
+    });
+  }
+
   function submitRefund() {
     if (!refundFor) return;
-    const remaining = refundFor.amount - (refundFor.amount_refunded ?? 0);
+    const { amount, refunded } = saleAmounts(refundFor);
+    const remaining = amount - refunded;
     const cents = Math.round(Number.parseFloat(refundAmount) * 100);
     if (!Number.isFinite(cents) || cents <= 0) {
       setRefundError("Enter a refund amount.");
@@ -301,7 +403,7 @@ export function PaymentsView({
     }
     if (cents > remaining) {
       setRefundError(
-        `The most you can refund is ${formatCentsExact(remaining, refundFor.currency)}.`,
+        `The most you can refund is ${formatCentsExact(remaining)}.`,
       );
       return;
     }
@@ -310,8 +412,13 @@ export function PaymentsView({
       return;
     }
     setRefundError(null);
+    const pin = refundPin.trim();
+    const id = refundFor.id;
+    const isCash = refundFor.kind === "cash";
     startTransition(async () => {
-      const res = await refundTransaction(refundFor.id, cents, refundPin.trim());
+      const res = isCash
+        ? await refundCashSale(id, cents, pin)
+        : await refundTransaction(id, cents, pin);
       if (res.error) {
         setRefundError(res.error);
         return;
@@ -334,7 +441,7 @@ export function PaymentsView({
           Search
           <Input
             type="search"
-            placeholder="Name, email, last4, or sale ref"
+            placeholder="Search anything"
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => {
@@ -431,6 +538,20 @@ export function PaymentsView({
         )}
       </div>
 
+      {/* What the search understood. Shown because the box silently turns words
+          into filters: without this, "cash" looking like a name search that
+          found nothing would be indistinguishable from a bug. */}
+      {searchLabels.length > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <span>Reading as</span>
+          {searchLabels.map((label) => (
+            <Badge key={label} tone="info">
+              {label}
+            </Badge>
+          ))}
+        </div>
+      )}
+
       {items.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
@@ -456,6 +577,16 @@ export function PaymentsView({
                   const secondary = [item.kiosk_slug, item.business?.name]
                     .filter(Boolean)
                     .join(" · ");
+                  const cashRefunded = item.amount_refunded_cents ?? 0;
+                  const cashBadge = statusBadge({
+                    amount: item.amount_cents,
+                    amount_refunded: cashRefunded,
+                    status: "succeeded",
+                  });
+                  // Cash needs no Stripe config to refund: the money comes back
+                  // out of the drawer by hand and this records it.
+                  const cashRefundable =
+                    canMove && item.amount_cents - cashRefunded > 0;
                   return (
                     <tr key={`cash-${item.id}`} className="border-b last:border-0">
                       <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
@@ -476,18 +607,48 @@ export function PaymentsView({
                             {secondary}
                           </p>
                         )}
+                        <MovedFrom from={item.source_original} />
                       </td>
                       <td className="whitespace-nowrap px-3 py-2">
                         <Badge tone="success">Cash</Badge>
                       </td>
                       <td className="whitespace-nowrap px-3 py-2 text-right font-medium">
                         {formatCentsExact(item.amount_cents)}
+                        {cashRefunded > 0 && (
+                          <span className="block text-xs font-normal text-muted-foreground">
+                            −{formatCentsExact(cashRefunded)}
+                          </span>
+                        )}
                       </td>
                       <td className="px-3 py-2">
-                        <Badge tone="success">Succeeded</Badge>
+                        <Badge tone={cashBadge.tone}>{cashBadge.label}</Badge>
                       </td>
-                      <td className="whitespace-nowrap px-3 py-2 text-right text-muted-foreground">
-                        —
+                      <td className="whitespace-nowrap px-3 py-2 text-right">
+                        <div className="flex items-center justify-end gap-3">
+                          {cashRefundable && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => openRefund(item)}
+                            >
+                              Refund
+                            </Button>
+                          )}
+                          {canMove && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openMove(item)}
+                            >
+                              Move
+                            </Button>
+                          )}
+                          {!cashRefundable && !canMove && (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -516,6 +677,7 @@ export function PaymentsView({
                           {customer.secondary}
                         </p>
                       )}
+                      <MovedFrom from={txn.source_original} />
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
                       {card}
@@ -553,7 +715,17 @@ export function PaymentsView({
                             Refund
                           </Button>
                         )}
-                        {!txn.receipt_url && !refundable && (
+                        {canMove && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openMove(txn)}
+                          >
+                            Move
+                          </Button>
+                        )}
+                        {!txn.receipt_url && !refundable && !canMove && (
                           <span className="text-muted-foreground">—</span>
                         )}
                       </div>
@@ -566,27 +738,149 @@ export function PaymentsView({
         </div>
       )}
 
-      {items.length >= 200 && (
-        <p className="mt-3 text-xs text-muted-foreground">
-          Showing the 200 most recent sales in this range. Narrow the dates to
-          see older ones. (Totals above cover the full range.)
-        </p>
+      {total > 0 && (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-xs text-muted-foreground">
+            Showing {firstRow.toLocaleString()} to {lastRow.toLocaleString()} of{" "}
+            {total.toLocaleString()} {total === 1 ? "sale" : "sales"}
+          </p>
+          {pageCount > 1 && (
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled={page <= 1 || isPending}
+                onClick={() => goToPage(page - 1)}
+              >
+                Previous
+              </Button>
+              <span className="px-1 text-xs text-muted-foreground">
+                Page {page.toLocaleString()} of {pageCount.toLocaleString()}
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled={page >= pageCount || isPending}
+                onClick={() => goToPage(page + 1)}
+              >
+                Next
+              </Button>
+            </div>
+          )}
+        </div>
       )}
 
-      {refundFor && (
+      {moveFor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <Card className="w-full max-w-sm">
+            <CardContent className="py-5">
+              <h2 className="text-base font-semibold">Move this sale</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                It currently counts toward{" "}
+                <span className="font-medium text-foreground">
+                  {kioskLabel(
+                    (moveFor.kind === "cash"
+                      ? moveFor.kiosk_slug
+                      : moveFor.source) ?? "—",
+                  )}
+                </span>
+                . Moving it only changes which kiosk it counts for. No money
+                moves and the customer is not charged again.
+              </p>
+
+              <label className="mt-4 flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+                Counts toward
+                <Select
+                  className="h-9 w-full"
+                  value={moveTarget}
+                  onChange={(e) => setMoveTarget(e.target.value)}
+                >
+                  <option value="">Pick a kiosk…</option>
+                  {kiosks
+                    .filter(
+                      (slug) =>
+                        slug !==
+                        (moveFor.kind === "cash"
+                          ? moveFor.kiosk_slug
+                          : moveFor.source),
+                    )
+                    .map((slug) => (
+                      <option key={slug} value={slug}>
+                        {kioskLabel(slug)}
+                      </option>
+                    ))}
+                </Select>
+              </label>
+
+              <label className="mt-3 flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+                Passcode
+                {/* Plain text masked via CSS, same as the refund pin: a real
+                    password field makes Safari/1Password offer to save it. */}
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  name="move-code"
+                  data-1p-ignore=""
+                  data-lpignore="true"
+                  style={{ WebkitTextSecurity: "disc" } as CSSProperties}
+                  value={movePin}
+                  onChange={(e) => setMovePin(e.target.value)}
+                  className="h-9"
+                />
+              </label>
+
+              {moveError && (
+                <p className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {moveError}
+                </p>
+              )}
+
+              <div className="mt-4 flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={isPending}
+                  onClick={() => setMoveFor(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  disabled={isPending || !moveTarget || !movePin.trim()}
+                  onClick={submitMove}
+                >
+                  {isPending ? "Moving…" : "Move sale"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {refundFor && (() => {
+        const { amount, refunded } = saleAmounts(refundFor);
+        const refundRemaining = amount - refunded;
+        return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <Card className="w-full max-w-sm">
             <CardContent className="py-5">
               <h2 className="text-base font-semibold">
-                Refund {customerLabel(refundFor).primary}
+                Refund{" "}
+                {refundFor.kind === "cash"
+                  ? (refundFor.customer_name ??
+                    (refundFor.booking_ref
+                      ? `sale ${refundFor.booking_ref}`
+                      : "cash sale"))
+                  : customerLabel(refundFor).primary}
               </h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                Up to{" "}
-                {formatCentsExact(
-                  refundFor.amount - (refundFor.amount_refunded ?? 0),
-                  refundFor.currency,
-                )}{" "}
-                goes back to the card. This cannot be undone.
+                Up to {formatCentsExact(refundRemaining)}{" "}
+                {refundFor.kind === "cash"
+                  ? "comes out of the drawer. Hand the cash back, then record it here. This cannot be undone."
+                  : "goes back to the card. This cannot be undone."}
               </p>
 
               <div className="mt-4 flex flex-col gap-3">
@@ -597,19 +891,10 @@ export function PaymentsView({
                       type="button"
                       className="font-medium text-blue-600 hover:underline"
                       onClick={() =>
-                        setRefundAmount(
-                          (
-                            (refundFor.amount - (refundFor.amount_refunded ?? 0)) /
-                            100
-                          ).toFixed(2),
-                        )
+                        setRefundAmount((refundRemaining / 100).toFixed(2))
                       }
                     >
-                      Max{" "}
-                      {formatCentsExact(
-                        refundFor.amount - (refundFor.amount_refunded ?? 0),
-                        refundFor.currency,
-                      )}
+                      Max {formatCentsExact(refundRemaining)}
                     </button>
                   </span>
                   <Input
@@ -672,7 +957,8 @@ export function PaymentsView({
             </CardContent>
           </Card>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

@@ -266,6 +266,7 @@ export type Database = {
           contact_email: string | null
           created_at: string
           google_review_url: string | null
+          groupon_merchant_names: string[]
           id: string
           legacy_company_id: string | null
           logo_url: string | null
@@ -287,6 +288,7 @@ export type Database = {
           contact_email?: string | null
           created_at?: string
           google_review_url?: string | null
+          groupon_merchant_names?: string[]
           id?: string
           legacy_company_id?: string | null
           logo_url?: string | null
@@ -308,6 +310,7 @@ export type Database = {
           contact_email?: string | null
           created_at?: string
           google_review_url?: string | null
+          groupon_merchant_names?: string[]
           id?: string
           legacy_company_id?: string | null
           logo_url?: string | null
@@ -329,6 +332,7 @@ export type Database = {
       cash_sales: {
         Row: {
           amount_cents: number
+          amount_refunded_cents: number
           booking_id: string | null
           booking_ref: string | null
           business_id: string
@@ -337,13 +341,19 @@ export type Database = {
           id: string
           kiosk_id: string | null
           kiosk_slug: string | null
+          kiosk_slug_original: string | null
           product: string | null
+          refunded_at: string | null
+          refunded_by: string | null
           source: string
+          source_moved_at: string | null
+          source_moved_by: string | null
           status: string
           type: string
         }
         Insert: {
           amount_cents?: number
+          amount_refunded_cents?: number
           booking_id?: string | null
           booking_ref?: string | null
           business_id: string
@@ -352,13 +362,19 @@ export type Database = {
           id?: string
           kiosk_id?: string | null
           kiosk_slug?: string | null
+          kiosk_slug_original?: string | null
           product?: string | null
+          refunded_at?: string | null
+          refunded_by?: string | null
           source?: string
+          source_moved_at?: string | null
+          source_moved_by?: string | null
           status?: string
           type?: string
         }
         Update: {
           amount_cents?: number
+          amount_refunded_cents?: number
           booking_id?: string | null
           booking_ref?: string | null
           business_id?: string
@@ -367,8 +383,13 @@ export type Database = {
           id?: string
           kiosk_id?: string | null
           kiosk_slug?: string | null
+          kiosk_slug_original?: string | null
           product?: string | null
+          refunded_at?: string | null
+          refunded_by?: string | null
           source?: string
+          source_moved_at?: string | null
+          source_moved_by?: string | null
           status?: string
           type?: string
         }
@@ -392,6 +413,20 @@ export type Database = {
             columns: ["kiosk_id"]
             isOneToOne: false
             referencedRelation: "kiosks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cash_sales_refunded_by_fkey"
+            columns: ["refunded_by"]
+            isOneToOne: false
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cash_sales_source_moved_by_fkey"
+            columns: ["source_moved_by"]
+            isOneToOne: false
+            referencedRelation: "staff"
             referencedColumns: ["id"]
           },
         ]
@@ -528,6 +563,101 @@ export type Database = {
             columns: ["resolved_tour_id"]
             isOneToOne: false
             referencedRelation: "tours"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      gp_shadow_runs: {
+        Row: {
+          created_at: string
+          error: string | null
+          fee_matches: boolean | null
+          id: string
+          ours_business_tour_id: string | null
+          ours_fee_cents: number | null
+          ours_match_method: string | null
+          ours_merchant_seen: boolean | null
+          ours_ms: number | null
+          ours_passengers: number | null
+          ours_product: string | null
+          ours_reason: string | null
+          ours_voucher_code: string | null
+          passengers_match: boolean | null
+          review_note: string | null
+          reviewed_at: string | null
+          source: string
+          verdict: string
+          voucher_image_path: string | null
+          xano_fee_cents: number | null
+          xano_image_url: string | null
+          xano_match_score: number | null
+          xano_passengers: number | null
+          xano_product: string | null
+          xano_ref: string | null
+          xano_voucher_code: string | null
+        }
+        Insert: {
+          created_at?: string
+          error?: string | null
+          fee_matches?: boolean | null
+          id?: string
+          ours_business_tour_id?: string | null
+          ours_fee_cents?: number | null
+          ours_match_method?: string | null
+          ours_merchant_seen?: boolean | null
+          ours_ms?: number | null
+          ours_passengers?: number | null
+          ours_product?: string | null
+          ours_reason?: string | null
+          ours_voucher_code?: string | null
+          passengers_match?: boolean | null
+          review_note?: string | null
+          reviewed_at?: string | null
+          source?: string
+          verdict: string
+          voucher_image_path?: string | null
+          xano_fee_cents?: number | null
+          xano_image_url?: string | null
+          xano_match_score?: number | null
+          xano_passengers?: number | null
+          xano_product?: string | null
+          xano_ref?: string | null
+          xano_voucher_code?: string | null
+        }
+        Update: {
+          created_at?: string
+          error?: string | null
+          fee_matches?: boolean | null
+          id?: string
+          ours_business_tour_id?: string | null
+          ours_fee_cents?: number | null
+          ours_match_method?: string | null
+          ours_merchant_seen?: boolean | null
+          ours_ms?: number | null
+          ours_passengers?: number | null
+          ours_product?: string | null
+          ours_reason?: string | null
+          ours_voucher_code?: string | null
+          passengers_match?: boolean | null
+          review_note?: string | null
+          reviewed_at?: string | null
+          source?: string
+          verdict?: string
+          voucher_image_path?: string | null
+          xano_fee_cents?: number | null
+          xano_image_url?: string | null
+          xano_match_score?: number | null
+          xano_passengers?: number | null
+          xano_product?: string | null
+          xano_ref?: string | null
+          xano_voucher_code?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gp_shadow_runs_ours_business_tour_id_fkey"
+            columns: ["ours_business_tour_id"]
+            isOneToOne: false
+            referencedRelation: "business_tours"
             referencedColumns: ["id"]
           },
         ]
@@ -1024,6 +1154,7 @@ export type Database = {
       staff: {
         Row: {
           business_id: string | null
+          can_add_to_peek: boolean
           can_check_in: boolean
           can_create_bookings: boolean
           can_delete_bookings: boolean
@@ -1033,6 +1164,7 @@ export type Database = {
           full_name: string
           id: string
           is_active: boolean
+          kiosk_slug: string | null
           phone: string | null
           role: Database["public"]["Enums"]["staff_role"]
           updated_at: string
@@ -1040,6 +1172,7 @@ export type Database = {
         }
         Insert: {
           business_id?: string | null
+          can_add_to_peek?: boolean
           can_check_in?: boolean
           can_create_bookings?: boolean
           can_delete_bookings?: boolean
@@ -1049,6 +1182,7 @@ export type Database = {
           full_name: string
           id?: string
           is_active?: boolean
+          kiosk_slug?: string | null
           phone?: string | null
           role: Database["public"]["Enums"]["staff_role"]
           updated_at?: string
@@ -1056,6 +1190,7 @@ export type Database = {
         }
         Update: {
           business_id?: string | null
+          can_add_to_peek?: boolean
           can_check_in?: boolean
           can_create_bookings?: boolean
           can_delete_bookings?: boolean
@@ -1065,6 +1200,7 @@ export type Database = {
           full_name?: string
           id?: string
           is_active?: boolean
+          kiosk_slug?: string | null
           phone?: string | null
           role?: Database["public"]["Enums"]["staff_role"]
           updated_at?: string
@@ -1247,6 +1383,9 @@ export type Database = {
           raw: Json
           receipt_url: string | null
           source: string | null
+          source_moved_at: string | null
+          source_moved_by: string | null
+          source_original: string | null
           status: string | null
           stripe_created: string | null
           stripe_fee: number
@@ -1279,6 +1418,9 @@ export type Database = {
           raw: Json
           receipt_url?: string | null
           source?: string | null
+          source_moved_at?: string | null
+          source_moved_by?: string | null
+          source_original?: string | null
           status?: string | null
           stripe_created?: string | null
           stripe_fee?: number
@@ -1311,6 +1453,9 @@ export type Database = {
           raw?: Json
           receipt_url?: string | null
           source?: string | null
+          source_moved_at?: string | null
+          source_moved_by?: string | null
+          source_original?: string | null
           status?: string | null
           stripe_created?: string | null
           stripe_fee?: number
@@ -1330,6 +1475,13 @@ export type Database = {
             columns: ["business_id"]
             isOneToOne: false
             referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stripe_transactions_source_moved_by_fkey"
+            columns: ["source_moved_by"]
+            isOneToOne: false
+            referencedRelation: "staff"
             referencedColumns: ["id"]
           },
         ]
@@ -1694,6 +1846,7 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      current_kiosk_slug: { Args: never; Returns: string }
       current_staff: {
         Args: never
         Returns: {
@@ -1719,15 +1872,41 @@ export type Database = {
           business_name: string
           business_tour_id: string
           groupon_fee_cents: number
+          merchant_names: string[]
           product_name: string
           tour_id: string
           tour_name: string
         }[]
       }
+      gp_shadow_summary: {
+        Args: { p_from?: string; p_to?: string }
+        Returns: {
+          agree: number
+          both_none: number
+          different_product: number
+          errors: number
+          fee_mismatches: number
+          median_ms: number
+          ours_only: number
+          passenger_mismatches: number
+          tier_ai: number
+          tier_fuzzy: number
+          tier_merchant: number
+          tier_none: number
+          tier_title: number
+          total: number
+          xano_only: number
+        }[]
+      }
+      heal_ledger_booking_links: {
+        Args: { p_refs?: string[] }
+        Returns: number
+      }
       ignore_email_match: {
         Args: { p_queue_id: string }
         Returns: {
           ai_confidence: string | null
+          ai_confidence_score: number | null
           booking_channel: string | null
           business_id: string | null
           created_at: string
@@ -1765,10 +1944,99 @@ export type Database = {
           tour_name: string
         }[]
       }
+      payments_feed: {
+        Args: {
+          p_business?: string
+          p_end: string
+          p_limit?: number
+          p_offset?: number
+          p_q?: string
+          p_source?: string
+          p_start: string
+          p_status?: string
+          p_tender?: string
+        }
+        Returns: {
+          amount: number
+          amount_refunded: number
+          booking_id: string
+          booking_ref: string
+          booking_starts_at: string
+          business_id: string
+          business_name: string
+          card_brand: string
+          card_last4: string
+          currency: string
+          customer_email: string
+          customer_name: string
+          id: string
+          kind: string
+          occurred_at: string
+          receipt_url: string
+          source: string
+          source_original: string
+          status: string
+          stripe_id: string
+          total_count: number
+        }[]
+      }
+      payments_scope: {
+        Args: {
+          p_business?: string
+          p_end: string
+          p_q?: string
+          p_source?: string
+          p_start: string
+          p_status?: string
+          p_tender?: string
+        }
+        Returns: {
+          amount: number
+          amount_refunded: number
+          booking_id: string
+          booking_ref: string
+          booking_starts_at: string
+          business_id: string
+          business_name: string
+          card_brand: string
+          card_last4: string
+          currency: string
+          customer_email: string
+          customer_name: string
+          effective_status: string
+          id: string
+          kind: string
+          occurred_at: string
+          receipt_url: string
+          source: string
+          source_original: string
+          status: string
+          stripe_id: string
+        }[]
+      }
+      payments_summary: {
+        Args: {
+          p_business?: string
+          p_end: string
+          p_q?: string
+          p_source?: string
+          p_start: string
+          p_status?: string
+          p_tender?: string
+        }
+        Returns: {
+          card_count: number
+          card_gross: number
+          cash_count: number
+          cash_total: number
+          refunded: number
+        }[]
+      }
       resolve_email_match: {
         Args: { p_queue_id: string; p_tour_id: string }
         Returns: {
           ai_confidence: string | null
+          ai_confidence_score: number | null
           booking_channel: string | null
           business_id: string | null
           created_at: string
@@ -1799,21 +2067,6 @@ export type Database = {
           last_body: string
           last_direction: Database["public"]["Enums"]["sms_direction"]
           message_count: number
-        }[]
-      }
-      payments_summary: {
-        Args: {
-          p_business?: string
-          p_end: string
-          p_source?: string
-          p_start: string
-        }
-        Returns: {
-          card_count: number
-          card_gross: number
-          cash_count: number
-          cash_total: number
-          refunded: number
         }[]
       }
       stripe_payments_summary: {

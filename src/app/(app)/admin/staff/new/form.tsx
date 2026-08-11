@@ -57,7 +57,8 @@ type CapabilityName =
   | "can_create_bookings"
   | "can_edit_bookings"
   | "can_check_in"
-  | "can_delete_bookings";
+  | "can_delete_bookings"
+  | "can_add_to_peek";
 
 const CAPABILITY_OPTIONS: {
   name: CapabilityName;
@@ -84,6 +85,11 @@ const CAPABILITY_OPTIONS: {
     label: "Delete bookings",
     hint: "Remove bookings entirely. Leave off unless they really need it.",
   },
+  {
+    name: "can_add_to_peek",
+    label: "Add to Peek",
+    hint: "Mark bookings as entered in Peek from the Bookings page.",
+  },
 ];
 
 type Props = {
@@ -106,6 +112,7 @@ export function NewStaffForm({ businesses, tours }: Props) {
     can_edit_bookings: true,
     can_check_in: true,
     can_delete_bookings: false,
+    can_add_to_peek: true,
   });
   const [password, setPassword] = useState<string>("");
   const [copied, setCopied] = useState(false);

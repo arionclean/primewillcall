@@ -15,12 +15,15 @@ import {
   Inbox,
   MessageSquare,
   Tag,
+  TestTube2,
   UserCog,
+  Wallet,
   Zap,
   type LucideIcon,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { buttonVariants } from "@/components/ui/button";
 import type { Database } from "@/lib/supabase/database.types";
 
 type StaffRole = Database["public"]["Enums"]["staff_role"];
@@ -64,6 +67,17 @@ const SECTIONS: NavSection[] = [
         matchPrefix: "/bookings",
       },
       {
+        // Selling desk staff's own money for the day (cash + card) plus the
+        // end-of-night caja reconciliation. check_in only; owner/manager use the
+        // fuller /admin/payments ledger. Add needsCreateBookings here to hide it
+        // from reader-only tablets once those are in use.
+        href: "/caja",
+        label: "Caja",
+        icon: Wallet,
+        roles: ["check_in"],
+        matchPrefix: "/caja",
+      },
+      {
         href: "/customers",
         label: "Customers",
         icon: Users,
@@ -78,10 +92,11 @@ const SECTIONS: NavSection[] = [
         matchPrefix: "/messages",
       },
       {
+        // check_in gets the "Add booking" button at the top instead.
         href: "/schedule",
         label: "Schedule",
         icon: CalendarPlus,
-        roles: ALL_ROLES,
+        roles: ["owner", "business_manager"],
         matchPrefix: "/schedule",
         needsCreateBookings: true,
       },
@@ -141,6 +156,13 @@ const SECTIONS: NavSection[] = [
         matchPrefix: "/admin/groupon",
       },
       {
+        href: "/admin/gp-shadow",
+        label: "Groupon vs Xano",
+        icon: TestTube2,
+        roles: ["owner"],
+        matchPrefix: "/admin/gp-shadow",
+      },
+      {
         href: "/admin/messaging",
         label: "Automations",
         icon: Zap,
@@ -173,6 +195,16 @@ export function AppSidebar({
 
   return (
     <nav aria-label="Primary" className="flex flex-col gap-5 text-sm">
+      {role === "check_in" && canCreateBookings && (
+        <Link
+          href="/schedule"
+          onClick={onNavigate}
+          className={cn(buttonVariants({ variant: "default" }), "w-full")}
+        >
+          <CalendarPlus aria-hidden className="h-4 w-4" />
+          Add booking
+        </Link>
+      )}
       {SECTIONS.map((section, i) => {
         const visible = section.items.filter(
           (it) =>

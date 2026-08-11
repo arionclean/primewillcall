@@ -21,7 +21,7 @@ export const getCurrentStaff = cache(async () => {
   const { data: staff } = await supabase
     .from("staff")
     .select(
-      "id, full_name, role, business_id, is_active, can_create_bookings, can_edit_bookings, can_check_in, can_delete_bookings",
+      "id, full_name, role, business_id, is_active, kiosk_slug, can_create_bookings, can_edit_bookings, can_check_in, can_delete_bookings, can_add_to_peek",
     )
     .eq("user_id", user.id)
     .maybeSingle();
@@ -34,6 +34,7 @@ export type StaffCapabilities = {
   canEditBookings: boolean;
   canCheckIn: boolean;
   canDeleteBookings: boolean;
+  canAddToPeek: boolean;
 };
 
 /**
@@ -47,6 +48,7 @@ export function staffCapabilities(staff: {
   can_edit_bookings: boolean;
   can_check_in: boolean;
   can_delete_bookings: boolean;
+  can_add_to_peek: boolean;
 }): StaffCapabilities {
   if (staff.role === "owner") {
     return {
@@ -54,6 +56,7 @@ export function staffCapabilities(staff: {
       canEditBookings: true,
       canCheckIn: true,
       canDeleteBookings: true,
+      canAddToPeek: true,
     };
   }
   return {
@@ -61,5 +64,6 @@ export function staffCapabilities(staff: {
     canEditBookings: staff.can_edit_bookings,
     canCheckIn: staff.can_check_in,
     canDeleteBookings: staff.can_delete_bookings,
+    canAddToPeek: staff.can_add_to_peek,
   };
 }

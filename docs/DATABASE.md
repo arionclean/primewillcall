@@ -44,17 +44,21 @@ booking page (`/booking/<token>`).
 ### staff
 `id uuid pk, user_id? (-> auth.users), business_id? (-> businesses), role enum,
 full_name, email, phone?, is_active, can_create_bookings, can_edit_bookings,
-can_check_in, can_delete_bookings, created_at, updated_at`
+can_check_in, can_delete_bookings, can_add_to_peek, created_at, updated_at`
 Role enum (`staff_role`): `owner`, `business_manager`, `check_in`. `owner` has no
 `business_id`. A trigger links a new `auth.users` row to its `staff` row by email.
 
-The four `can_*` booleans are per-staff booking permissions, editable by the owner
+The `can_*` booleans are per-staff booking permissions, editable by the owner
 on `/admin/staff/[id]` ("Permissions"). Owners ignore them (always allowed); they
 gate managers and check-in staff via the bookings RLS policies plus the
 `bookings_enforce_update_capabilities` trigger (an account with `can_check_in` but
-not `can_edit_bookings` may only change `checked_in_at` / `checked_in_by_staff_id`;
-RLS alone cannot express column-level rules). Defaults: create/edit/check-in on,
+not `can_edit_bookings` may only change `checked_in_at` / `checked_in_by_staff_id`
+and `peek`; without `can_add_to_peek` the trigger blocks `peek` flips entirely; RLS
+alone cannot express column-level rules). Defaults: create/edit/check-in/peek on,
 delete off (new managers get delete on from the New team member form).
+`bookings.peek` marks a booking as manually entered into Peek (the boat's
+reservation system); it is the same field the Xano sync carries, so both stacks
+agree during the migration.
 
 ### tours (master, Prime-owned)
 `id uuid pk, name, kind, capacity, notes?, instructions?, meeting_point_address?,
@@ -182,23 +186,58 @@ behavior (booking held, fee collected manually).
   `0` = offered free. Owners edit this on the owner-only `/admin/groupon` page.
 - `gp-vouchers` storage bucket (public read) — the uploaded voucher photos. Writes are
   done server-side with the service role, so there is no anon insert policy.
+- `businesses.groupon_merchant_names` (`text[]`, default `{}`) — extra Groupon storefront
+  names this business sells under, beyond `businesses.name`. Groupon lists one operator
+  under several storefronts, and only some of them are real businesses: Miami Skyline
+  Cruises also sells as "Miami Star Island Cruises" and "Miami Tour Bus". Drives the
+  merchant gate below. No admin UI yet; set it in SQL.
 - `groupon_candidates()` — SECURITY DEFINER RPC returning the Groupon-enabled
   `business_tours` (fee not null, active) joined to business + tour, with each tour's
-  `tour_name_aliases` as a `text[]`. The validator feeds this small candidate set to the
-  vision model; the fee always comes from this row, never from the model.
+  `tour_name_aliases` as a `text[]` and the business's storefront names as
+  `merchant_names`. The validator feeds this small candidate set to the vision model; the
+  fee always comes from this row, never from the model.
 
 ### Request flow (all server-side, service role; no anon DB access)
 - `POST /api/gp/validate` — uploads the photo to `gp-vouchers`, then hands the public URL
   to the `gp-voucher-vision` edge function and returns
   `{ valid, businessTourId, productName, feeCents, passengers, voucherCode, imageUrl }`.
-  The edge function ports the Xano vision_v3 chain (~1.5s avg there): Google Cloud Vision
-  TEXT_DETECTION OCR (`GOOGLE_API_KEY`), Groq llama-4-scout vision as OCR fallback, a
-  deterministic alias/product-name substring match (zero AI in the common case), and Groq
-  `openai/gpt-oss-120b` for passenger + redemption-code extraction (the "1 of 1 = one
-  voucher, not one passenger" trap is handled in the prompt; OpenAI is the extraction
-  fallback). AI keys live as **Supabase function secrets**, not app env. Deployed with
-  verify_jwt on; the route calls it with the service role key. If the function is
-  unreachable the route degrades to a graceful "couldn't read the voucher".
+  The edge function ports the Xano vision chain (~1.5s avg there): Google Cloud Vision
+  TEXT_DETECTION OCR (`GOOGLE_API_KEY`), Groq llama-4-scout vision as OCR fallback, the
+  product match below (zero AI in the common case), and Groq `openai/gpt-oss-120b` for
+  passenger + redemption-code extraction (the "1 of 1 = one voucher, not one passenger"
+  trap is handled in the prompt; OpenAI is the extraction fallback). AI keys live as
+  **Supabase function secrets**, not app env. Deployed with verify_jwt on; the route calls
+  it with the service role key. If the function is unreachable the route degrades to a
+  graceful "couldn't read the voucher".
+
+  **Product match** runs three deterministic tiers over `groupon_candidates()`, most
+  precise first, before the model is asked to decide:
+  1. **title** — a product name or `tour_name_aliases` entry appears verbatim in the OCR
+     text (compared with punctuation and case stripped). Longest hit wins, since a longer
+     title is a more specific one.
+  2. **fuzzy** — the title's words appear together inside a short window of the OCR text,
+     so one dropped, inserted, or misread word no longer loses the match. This is the tier
+     Xano bought with its scoring lambda and the one the first port was missing. Two
+     guards keep it honest: a title whose *distinguishing* word (boat, combo, sunset,
+     island, …) is absent from the voucher is rejected outright, and a window carrying a
+     *splitter* the title does not claim is skipped, so a "City Tour and Boat Combo"
+     voucher cannot land on the plain city tour. If two products score within 0.1 of each
+     other the match is treated as ambiguous and handed to the model.
+  3. **merchant** — the storefront name alone, and only when that business has exactly one
+     Groupon-enabled product. The storefront says who sold the voucher, not what it is
+     for: "Miami Skyline Cruises" is printed on that business's city-tour vouchers too, so
+     it must never outrank a title match, and when the business sells several products the
+     tier stays silent rather than coin-flip the product and its fee.
+
+  Anything still unmatched falls to the model, which picks from the same candidate list,
+  **gated on the merchant**: the model's answer is only accepted when the voucher text
+  names one of the `merchant_names`. Asked to choose from a catalog the model returns the
+  closest entry even when nothing fits, and a real voucher for "Skyline & Coast Cruise"
+  sold by *N.Y.C Skyline Tours & Cruises* came back as Miami Skyline Cruises, which would
+  have booked a Miami tour and charged the fee. The deterministic tiers are deliberately
+  exempt from the gate: they already require one of our own product titles in the voucher,
+  and gating them would drop real vouchers whose photo is too poor to read the storefront
+  line. The fee always comes from the matched row, never from the model.
 - `GET /api/gp/slots?business_tour_id&date` — active `tour_timeslots` for the matched
   product's master tour, past times hidden for today (NY), minus any
   `tour_slot_closures` for that date. Replaces Xano `manage_slots`.
@@ -243,8 +282,19 @@ whose connected accounts back each business.
 ### RPC
 - `stripe_payments_summary(p_start, p_end)` — gross / net / stripe_fees / application_fees /
   refunded / count for a date range, `SUM`'d in the DB. `SECURITY INVOKER`, so
-  `stripe_transactions` RLS still scopes the totals by business. Backs the `/admin/payments`
-  summary cards (never sum the ledger in JS: the 1000-row read cap would truncate).
+  `stripe_transactions` RLS still scopes the totals by business. Superseded for
+  `/admin/payments` by `payments_summary` (card + cash), kept until the deploy that stops
+  calling it.
+- `payments_summary(p_start, p_end, p_business, p_source)` — the same totals plus kiosk cash
+  (`cash_sales` where `type='cash'` only; its `card` rows mirror Stripe charges and would
+  double count). Backs the `/admin/payments` summary cards (never sum the ledger in JS: the
+  1000-row read cap would truncate).
+- `payments_feed(p_start, p_end, p_business, p_source, p_q, p_limit, p_offset)` — one page of
+  the merged card + cash feed, newest first, with the whole-range row count in `total_count`
+  (a `count(*) over ()` computed before the LIMIT). The union, sort, paging and count all
+  happen in the DB: merging two tables in JS cannot be paged, because an offset applied to
+  each source separately does not offset the merged list. `SECURITY INVOKER`. Backs the
+  `/admin/payments` table and its pagination (50 rows per page).
 
 ### RLS
 `stripe_transactions` / `stripe_refunds`: SELECT for `owner` (all) and `business_manager`
@@ -272,8 +322,23 @@ role. `stripe_events`: RLS on, no policies (service-role only).
   `booking_id` and `business_id` (via `connected_account_id`) into the ledger row. `bookings`
   gains `paid_at`; the existing `stripe_payment_intent_id` is set on payment.
 - **Payments dashboard** (`/admin/payments`, owner + `business_manager`; `check_in` is
-  redirected out since it has no ledger read): a charges table (date range + owner business
-  filter, most-recent 200 in range) plus summary cards from `stripe_payments_summary`.
+  redirected out since it has no ledger read): a merged card + cash table (date range,
+  source and owner business filters, search, paged 50 at a time via `payments_feed`) plus
+  summary cards from `payments_summary`. The range defaults to the current month to date.
+- **Move a sale to another kiosk** (`moveSaleSource` in `admin/payments/actions.ts`): a
+  tablet sometimes rings up a sale that belongs to another kiosk, so owner and the
+  business's own manager can re-tag it. No money moves, so there is no passcode. It writes
+  the new kiosk into the SAME column the totals already read (`stripe_transactions.source`,
+  `cash_sales.kiosk_slug`), so every reader stays correct with no change: the feed, the
+  totals, the Source filter, and that kiosk's `/caja` (whose RLS is `source =
+  current_kiosk_slug()`). The pre-move value is kept in `source_original` /
+  `kiosk_slug_original`, with `source_moved_at` + `source_moved_by` for the trail, and the
+  row shows "moved from Kiosk N".
+  **The trigger is the point**: the webhook re-upserts a charge on every later Stripe event
+  for it and recomputes `source` from the tablet's metadata, so a plain edit would silently
+  revert. `pin_moved_transaction_source` / `pin_moved_cash_source` (BEFORE UPDATE) pin the
+  kiosk once a sale has been moved, refusing every writer including the webhook. Only a
+  write that also changes `source_moved_at` (the move action itself) may set it.
 - **Refund** (`admin/payments/actions.ts`): owner or the charge's `business_manager`; creates
   the refund on the connected account (direct charge), records `stripe_refunds` with the
   acting staff, and optimistically updates the transaction (the `charge.refunded` webhook

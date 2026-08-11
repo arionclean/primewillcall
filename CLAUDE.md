@@ -43,11 +43,12 @@ Realtime). Supabase project id: `qbnizuhozzwkiitfkjee`.
   `/schedule`. Lands on `/bookings` (no dashboard; the sidebar Manifest shows
   today's remaining check-ins per departure).
 
-Non-owner staff also carry four per-person booking permissions
-(`staff.can_create_bookings / can_edit_bookings / can_check_in / can_delete_bookings`),
-owner-editable in the "Permissions" section of `/admin/staff/[id]`. Owners always have
-all four. Enforcement is layered (UI, server action, RLS, plus a bookings trigger that
-limits check-in-only accounts to the check-in stamp); see `docs/DATABASE.md`.
+Non-owner staff also carry per-person booking permissions
+(`staff.can_create_bookings / can_edit_bookings / can_check_in / can_delete_bookings /
+can_add_to_peek`), owner-editable in the "Permissions" section of `/admin/staff/[id]`.
+Owners always have all of them. Enforcement is layered (UI, server action, RLS, plus a
+bookings trigger that limits check-in-only accounts to the check-in + peek stamps);
+see `docs/DATABASE.md`.
 
 A Postgres trigger links `auth.users` to a `staff` row by email on sign-up. The
 `current_staff()` SECURITY DEFINER function returns `(staff_id, role, business_id)` and
@@ -245,7 +246,12 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   (owner-only "Redeem" / "Redeemed" toggle on Groupon rows in the bookings list,
   `bookings.groupon_redeemed_at`) after redeeming it on Groupon's own platform. See the
   Stripe entry below and [`docs/DATABASE.md`](docs/DATABASE.md) "Groupon convenience fee" +
-  "Payments (Stripe)".
+  "Payments (Stripe)". The matcher is graded against live Xano by the **shadow test**
+  (`gp_shadow_runs` + the `gp-shadow-compare` edge function + owner-only
+  `/admin/gp-shadow`); it is read-only with respect to Xano and creates no bookings.
+  Feeding it needs one additive hook in Xano's `vision_v4` post_process, which is a
+  live-Xano write and is **not applied yet**. See
+  [`docs/gp-shadow-test.md`](docs/gp-shadow-test.md).
 - `/availability` (owner + business manager) opens/closes booking times per day via
   `tour_slot_closures`; `/api/gp/slots` and `/api/gp/book` respect closures. The
   internal `/schedule` booking form does NOT block closed times (staff can override);

@@ -35,7 +35,7 @@ export default async function BookingsPage({
   const { data: staff } = await supabase
     .from("staff")
     .select(
-      "id, role, business_id, is_active, can_create_bookings, can_edit_bookings, can_check_in, can_delete_bookings",
+      "id, role, business_id, is_active, can_create_bookings, can_edit_bookings, can_check_in, can_delete_bookings, can_add_to_peek",
     )
     .eq("user_id", user.id)
     .maybeSingle();
@@ -62,8 +62,10 @@ export default async function BookingsPage({
       business_tour_id,
       customer_id,
       checked_in_at,
+      peek,
       source_channel,
       groupon_redeemed_at,
+      groupon_voucher_urls,
       pax_adult,
       pax_child,
       pax_infant,
