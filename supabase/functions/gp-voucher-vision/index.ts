@@ -411,12 +411,16 @@ function deterministicMatch(ocrText: string, candidates: Candidate[]): Match | n
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
 
-  let body: { image_url?: string };
+  let body: { image_url?: string; debug?: boolean };
   try {
     body = await req.json();
   } catch {
     return json({ error: "invalid json body" }, 400);
   }
+  // Opt-in echo of the OCR text. Every match decision is made from that string,
+  // so without it a wrong match can only be guessed at from the voucher photo.
+  // Off by default because it is the whole voucher, customer name included.
+  const debug = body.debug === true;
   const imageUrl = String(body.image_url ?? "").trim();
   // Only fetch from our own public voucher bucket (SSRF guard).
   const allowedPrefix = `${SUPABASE_URL}/storage/v1/object/public/gp-vouchers/`;
@@ -519,6 +523,7 @@ Deno.serve(async (req) => {
       ocr: ocrMethod,
       match_method: det?.method ?? (aiMatch ? "ai" : null),
       merchant_seen: merchantSeen,
+      ...(debug ? { ocr_text: text } : {}),
     },
     200,
   );
