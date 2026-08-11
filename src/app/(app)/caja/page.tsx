@@ -74,7 +74,9 @@ export default async function CajaPage({
   const [{ data: cashRows }, { data: cardRows }] = await Promise.all([
     supabase
       .from("cash_sales")
-      .select("id, booking_ref, amount_cents, status, created_at")
+      .select(
+        "id, booking_ref, amount_cents, amount_refunded_cents, status, created_at",
+      )
       .eq("business_id", businessId)
       .eq("kiosk_slug", kioskSlug)
       .eq("type", "cash")
@@ -147,11 +149,15 @@ export default async function CajaPage({
     })),
   ].sort((a, b) => (b.at ?? "").localeCompare(a.at ?? ""));
 
-  // Totals. Cash received (successful) is what the drawer should hold. Card is
+  // Totals. Cash received (successful) is what the drawer should hold, less any
+  // cash handed back as a refund: that money physically left the drawer. Card is
   // informational for "how much did I make" and never touches the drawer.
   const cashReceivedCents = (cashRows ?? [])
     .filter((c) => c.status === "success")
-    .reduce((s, c) => s + (c.amount_cents ?? 0), 0);
+    .reduce(
+      (s, c) => s + (c.amount_cents ?? 0) - (c.amount_refunded_cents ?? 0),
+      0,
+    );
   const cardGrossCents = (cardRows ?? [])
     .filter((t) => t.status === "succeeded")
     .reduce((s, t) => s + (t.amount ?? 0), 0);
