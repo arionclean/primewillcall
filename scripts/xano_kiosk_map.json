@@ -1,0 +1,60 @@
+{
+  "_what": "Maps the kiosk identifier Xano stores to this app's kiosk slug. Xano's cash_sales.kiosk holds Bubble record ids (the old stack's kiosk accounts); Supabase keys everything off kiosks.slug. Any Xano -> Supabase backfill MUST translate through this table, or the money imports with no kiosk attached and every per-kiosk total stays empty.",
+  "_verified_on": "2026-08-11",
+  "_how_verified": "Not guessed. Each Xano id was matched to sales that exist in BOTH systems during the overlap period (Aug 10 2026), comparing amount + time order, then reading the kiosk this app had already assigned. Row counts below sum to 15425, which is exactly Xano cash_sales, so the list of ids is complete.",
+  "_source_table": "Xano workspace 6 (PWC), table 170 cash_sales",
+
+  "map": {
+    "1760408777575x901503164165246200": "kiosk1",
+    "1767110154468x572695862995220600": "kiosk2",
+    "1711112568137x325014630279620800": "kiosk3",
+    "1711112568137x325014630279620900": "kiosk4"
+  },
+
+  "detail": [
+    {
+      "xano_kiosk": "1760408777575x901503164165246200",
+      "slug": "kiosk1",
+      "business": "Key West Sightseeing Tours",
+      "xano_rows": 3630,
+      "evidence": "$53.50 at 2026-08-10 ~21:57Z is Colin Martin, kiosk1 here."
+    },
+    {
+      "xano_kiosk": "1767110154468x572695862995220600",
+      "slug": "kiosk2",
+      "business": "Miami Skyline Cruises",
+      "xano_rows": 5636,
+      "evidence": "Three $46.01 charges on 2026-08-10 evening are all kiosk2 here."
+    },
+    {
+      "xano_kiosk": "1711112568137x325014630279620800",
+      "slug": "kiosk3",
+      "business": "Miami Skyline Cruises",
+      "xano_rows": 6127,
+      "evidence": "$64.20 (Arca) and $90.95 (Felix) at 2026-08-10 ~22:00Z are kiosk3 here."
+    },
+    {
+      "xano_kiosk": "1711112568137x325014630279620900",
+      "slug": "kiosk4",
+      "business": "Miami Jet Ski Tours",
+      "xano_rows": 31,
+      "evidence": "$321.00 on 2026-08-03 is customer 'Jetski', kiosk4 here.",
+      "note": "Differs from the kiosk3 id only in the last three digits (900 vs 800). Easy to mistype; compare the whole string, never a prefix."
+    }
+  ],
+
+  "unmapped": [
+    {
+      "xano_kiosk": "1",
+      "xano_rows": 1,
+      "row": "id 7162, ~Apr 2026, $40 card, product 'Reschedule fee', no booking_id",
+      "decision_needed": "One row, not a real kiosk sale. Suggest skipping it rather than inventing a kiosk."
+    }
+  ],
+
+  "open_questions": [
+    "The mapping was proven against the recent overlap. There is no independent record of which tablet was which back in Oct 2025, because Xano's stripe_transactions ledger only starts ~Apr 30 2026. If a tablet was ever reassigned to a different kiosk or business, older rows would be attributed to today's kiosk. Key West does date back to 2024, so kiosk1 is at least plausible for the whole period. Worth one spot-check per kiosk against an old booking before importing history.",
+    "Xano cash_sales.type is inconsistent: null, 'cash', 'Cash', 'card'. This app filters on type = 'cash' exactly, so 'Cash' and null rows would import and then count toward nothing. Normalize on import.",
+    "Xano cash_sales.amount is text dollars, sometimes with decimals ('40', '64.20'). This app stores integer cents. Convert, do not cast."
+  ]
+}

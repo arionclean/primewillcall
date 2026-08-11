@@ -5,26 +5,32 @@ import { nyDateISO, nyLocalToUtcIso, shiftDayISO } from "@/lib/dashboard/queries
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 import { PaymentsView, type FeedItem } from "./payments-view";
+import { parsePaymentsSearch } from "./search";
 
 /**
  * Payments ledger for owner + business manager. Supabase-native replacement for
  * the Xano transactions screens (stripe/transactions/list, account/transactions).
  *
  * The feed merges two RLS-scoped sources: card charges from stripe_transactions
- * (webhook-fed) and kiosk cash sales from cash_sales (type='cash' only; its
- * 'card' rows mirror Stripe charges and would double count). Owner sees every
- * business, a manager only their own; check_in is redirected out. Totals come
- * from the payments_summary RPC (card + cash aggregated in the DB) rather than
- * summing rows in JS, which the 1000-row read cap would truncate.
+ * (webhook-fed) and kiosk cash sales from cash_sales. Both the merge and the
+ * paging happen in the database, in the payments_feed RPC: merging two tables
+ * in JS cannot be paged (an offset applied to each source separately does not
+ * offset the merged list), and the 1000-row read cap would truncate it anyway.
+ * Owner sees every business, a manager only their own; check_in is redirected
+ * out. Totals come from the payments_summary RPC, also aggregated in the DB.
  */
 
-// Default window: the last 30 days, in business time (America/New_York) so the
-// server default matches the client's range presets.
-const DEFAULT_RANGE_DAYS = 30;
+// Default window: the current month to date, in business time
+// (America/New_York) so the server default matches the client's "This month"
+// range preset.
 
 // Source filter values are kiosk slugs (from the kiosks table) plus the
 // static channels; accept anything slug-shaped, the queries are parameterized.
 const SOURCE_RE = /^[a-z0-9_-]{1,32}$/i;
+
+// One screen of sales. The RPC pages in the database, so this is exactly how
+// many rows each request reads.
+const PER_PAGE = 50;
 
 export default async function PaymentsPage({
   searchParams,
@@ -35,6 +41,7 @@ export default async function PaymentsPage({
     business?: string;
     q?: string;
     source?: string;
+    page?: string;
   }>;
 }) {
   const { staff } = await getCurrentStaff();
@@ -43,68 +50,58 @@ export default async function PaymentsPage({
 
   const sp = await searchParams;
   const to = sp.to ?? nyDateISO();
-  const from = sp.from ?? shiftDayISO(to, -(DEFAULT_RANGE_DAYS - 1));
+  const from = sp.from ?? `${to.slice(0, 8)}01`;
   const businessFilter = sp.business && sp.business !== "" ? sp.business : null;
   const sourceFilter =
     sp.source && SOURCE_RE.test(sp.source) ? sp.source : null;
-  // Strip PostgREST or() delimiters so the term cannot break the filter string.
-  const q = (sp.q ?? "").replace(/[,()]/g, "").trim();
+  const q = (sp.q ?? "").trim();
+  const page = Math.max(1, Number.parseInt(sp.page ?? "1", 10) || 1);
+
+  // Smart search: words like "cash", "refunded" or "aug 10" become real
+  // filters, the rest stays a name / email / last4 / sale-ref match.
+  const search = parsePaymentsSearch(q, nyDateISO());
+
+  // Naming a day overrides the range picker. Otherwise searching a date
+  // outside the current range would return nothing and look broken.
+  const rangeFrom = search.onDate ?? from;
+  const rangeTo = search.onDate ?? to;
 
   // Day bounds in business time: "today" means the New York day, matching how
   // the rows are displayed. End bound is the last ms before the next NY day.
-  const startIso = nyLocalToUtcIso(from, "00:00");
+  const startIso = nyLocalToUtcIso(rangeFrom, "00:00");
   const endIso = new Date(
-    new Date(nyLocalToUtcIso(shiftDayISO(to, 1), "00:00")).getTime() - 1,
+    new Date(nyLocalToUtcIso(shiftDayISO(rangeTo, 1), "00:00")).getTime() - 1,
   ).toISOString();
 
   const supabase = await getSupabaseServerClient();
 
-  let cardQuery = supabase
-    .from("stripe_transactions")
-    .select(
-      "id, stripe_id, business_id, amount, amount_refunded, currency, status, source, card_brand, card_last4, booking_id, booking_ref, customer_email, customer_name, receipt_url, stripe_created, object_type, business:businesses(name), booking:bookings(starts_at)",
-    )
-    .eq("object_type", "charge")
-    .gte("stripe_created", startIso)
-    .lte("stripe_created", endIso)
-    .order("stripe_created", { ascending: false })
-    .limit(200);
-  if (businessFilter) cardQuery = cardQuery.eq("business_id", businessFilter);
-  if (sourceFilter) cardQuery = cardQuery.eq("source", sourceFilter);
-  if (q) {
-    cardQuery = cardQuery.or(
-      `customer_name.ilike.*${q}*,customer_email.ilike.*${q}*,card_last4.ilike.*${q}*,booking_ref.ilike.*${q}*`,
-    );
-  }
-
-  let cashQuery = supabase
-    .from("cash_sales")
-    .select(
-      "id, business_id, booking_ref, amount_cents, kiosk_slug, created_at, business:businesses(name)",
-    )
-    .eq("type", "cash")
-    .gte("created_at", startIso)
-    .lte("created_at", endIso)
-    .order("created_at", { ascending: false })
-    .limit(200);
-  if (businessFilter) cashQuery = cashQuery.eq("business_id", businessFilter);
-  if (sourceFilter) cashQuery = cashQuery.eq("kiosk_slug", sourceFilter);
-  if (q) cashQuery = cashQuery.ilike("booking_ref", `%${q}%`);
-
   const [
-    { data: cardRows },
-    { data: cashRows },
+    { data: feedRows },
     { data: summaryRows },
     { data: kioskRows },
     businessesResult,
   ] = await Promise.all([
-    cardQuery,
-    cashQuery,
+    supabase.rpc("payments_feed", {
+      p_start: startIso,
+      p_end: endIso,
+      p_business: businessFilter ?? undefined,
+      p_source: sourceFilter ?? undefined,
+      p_q: search.text || undefined,
+      p_tender: search.tender ?? undefined,
+      p_status: search.status ?? undefined,
+      p_limit: PER_PAGE,
+      p_offset: (page - 1) * PER_PAGE,
+    }),
+    // Same filters as the feed (they share payments_scope in the DB), so the
+    // totals always describe exactly the rows listed below them.
     supabase.rpc("payments_summary", {
       p_start: startIso,
       p_end: endIso,
-      ...(businessFilter ? { p_business: businessFilter } : {}),
-      ...(sourceFilter ? { p_source: sourceFilter } : {}),
+      p_business: businessFilter ?? undefined,
+      p_source: sourceFilter ?? undefined,
+      p_q: search.text || undefined,
+      p_tender: search.tender ?? undefined,
+      p_status: search.status ?? undefined,
     }),
     // Only selling kiosks appear in the Source filter: reader tablets
     // (can_create_bookings=false) never produce sales.
@@ -120,30 +117,18 @@ export default async function PaymentsPage({
       : Promise.resolve({ data: null }),
   ]);
 
-  // Cash rows carry the sale's KS code in booking_ref (newer app builds); it
-  // matches bookings.legacy_id, which is how the customer's name and the
-  // booking link are found. Older rows hold Xano's numeric id and simply
-  // find no match.
-  const cashRefs = (cashRows ?? []).flatMap((c) =>
-    c.booking_ref ? [c.booking_ref] : [],
-  );
-  const cashBookingByRef = new Map<
-    string,
-    { id: string; starts_at: string; name: string | null }
-  >();
-  if (cashRefs.length > 0) {
-    const { data: cashBookings } = await supabase
-      .from("bookings")
-      .select("legacy_id, id, starts_at, customer:customers(full_name)")
-      .in("legacy_id", cashRefs);
-    for (const b of cashBookings ?? []) {
-      if (!b.legacy_id) continue;
-      cashBookingByRef.set(b.legacy_id, {
-        id: b.id,
-        starts_at: b.starts_at,
-        name: b.customer?.full_name?.trim() || null,
-      });
-    }
+  const rows = feedRows ?? [];
+
+  // Past the last page (a stale link, or the range narrowed while paging):
+  // send them back to the first page rather than to an empty dead end.
+  if (rows.length === 0 && page > 1) {
+    const params = new URLSearchParams();
+    if (sp.from) params.set("from", from);
+    if (sp.to) params.set("to", to);
+    if (businessFilter) params.set("business", businessFilter);
+    if (sourceFilter) params.set("source", sourceFilter);
+    if (q) params.set("q", q);
+    redirect(`/admin/payments?${params.toString()}`);
   }
 
   // Deep link into the bookings list: it shows one NY day at a time and
@@ -153,33 +138,48 @@ export default async function PaymentsPage({
       ? `/bookings?date=${nyDateISO(new Date(startsAt))}&booking=${id}`
       : null;
 
-  const items: FeedItem[] = [
-    ...(cardRows ?? []).map((t) => ({
-      kind: "card" as const,
-      ...t,
-      booking_href: bookingHref(t.booking_id, t.booking?.starts_at ?? null),
-    })),
-    ...(cashRows ?? []).map((c) => {
-      const linked = c.booking_ref
-        ? cashBookingByRef.get(c.booking_ref)
-        : undefined;
-      return {
-        kind: "cash" as const,
-        ...c,
-        customer_name: linked?.name ?? null,
-        booking_href: bookingHref(
-          linked?.id ?? null,
-          linked?.starts_at ?? null,
-        ),
-      };
-    }),
-  ]
-    .sort((a, b) => {
-      const ta = a.kind === "card" ? (a.stripe_created ?? "") : a.created_at;
-      const tb = b.kind === "card" ? (b.stripe_created ?? "") : b.created_at;
-      return tb.localeCompare(ta);
-    })
-    .slice(0, 200);
+  const items: FeedItem[] = rows.map((r) => {
+    const booking_href = bookingHref(r.booking_id, r.booking_starts_at);
+    const business = r.business_name ? { name: r.business_name } : null;
+    return r.kind === "cash"
+      ? {
+          kind: "cash" as const,
+          id: r.id,
+          business_id: r.business_id,
+          booking_ref: r.booking_ref,
+          amount_cents: r.amount,
+          amount_refunded_cents: r.amount_refunded,
+          kiosk_slug: r.source,
+          created_at: r.occurred_at,
+          customer_name: r.customer_name,
+          source_original: r.source_original,
+          business,
+          booking_href,
+        }
+      : {
+          kind: "card" as const,
+          id: r.id,
+          stripe_id: r.stripe_id ?? "",
+          business_id: r.business_id,
+          amount: r.amount,
+          amount_refunded: r.amount_refunded,
+          currency: r.currency,
+          status: r.status,
+          source: r.source,
+          card_brand: r.card_brand,
+          card_last4: r.card_last4,
+          booking_id: r.booking_id,
+          booking_ref: r.booking_ref,
+          customer_email: r.customer_email,
+          customer_name: r.customer_name,
+          receipt_url: r.receipt_url,
+          stripe_created: r.occurred_at,
+          object_type: "charge",
+          source_original: r.source_original,
+          business,
+          booking_href,
+        };
+  });
 
   return (
     <PaymentsView
@@ -189,6 +189,10 @@ export default async function PaymentsPage({
       summary={summaryRows?.[0] ?? null}
       kiosks={(kioskRows ?? []).flatMap((k) => (k.slug ? [k.slug] : []))}
       businesses={businessesResult.data ?? []}
+      page={page}
+      perPage={PER_PAGE}
+      total={rows[0]?.total_count ?? 0}
+      searchLabels={search.labels}
       filters={{
         from,
         to,

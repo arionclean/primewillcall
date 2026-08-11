@@ -41,3 +41,8 @@ yarn-error.log*
 next-env.d.ts
 dbo-bookings-*.csv
 /tmp/pwc_import*.log
+
+# backfill working files: __pycache__, plus _data, which holds raw exported
+# sales rows. Customer data, never commit it.
+scripts/__pycache__/
+scripts/_data/
