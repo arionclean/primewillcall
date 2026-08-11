@@ -3,6 +3,7 @@
 import { useActionState, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Field } from "@/components/ui/field";
 import { FormSection } from "@/components/ui/form-section";
@@ -72,7 +73,7 @@ export function ScheduleForm({
   role: StaffRole;
   tours: ScheduleFormTour[];
 }) {
-  const [state, formAction, isPending] = useActionState(
+  const [state, formAction] = useActionState(
     createBookingAction,
     INITIAL,
   );
@@ -395,12 +396,7 @@ export function ScheduleForm({
       )}
 
       <div className="flex items-center gap-2">
-        <Button
-          type="submit"
-          disabled={isPending || noSlots || !anyQty}
-        >
-          {isPending ? "Saving..." : "Save booking"}
-        </Button>
+        <SubmitButton disabled={noSlots || !anyQty}>Save booking</SubmitButton>
       </div>
     </form>
   );

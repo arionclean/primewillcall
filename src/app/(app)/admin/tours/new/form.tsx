@@ -5,6 +5,7 @@ import { useActionState, useState } from "react";
 
 import { MeetingPointPicker } from "@/components/admin/meeting-point-picker";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { Field } from "@/components/ui/field";
 import { FormSection } from "@/components/ui/form-section";
 import { Input } from "@/components/ui/input";
@@ -28,7 +29,7 @@ export function NewTourForm({
 }: {
   businesses: BusinessOption[];
 }) {
-  const [state, formAction, isPending] = useActionState(
+  const [state, formAction] = useActionState(
     createTourAction,
     INITIAL,
   );
@@ -214,9 +215,7 @@ export function NewTourForm({
       )}
 
       <div className="flex items-center gap-2">
-        <Button type="submit" disabled={isPending}>
-          {isPending ? "Saving..." : "Save tour"}
-        </Button>
+        <SubmitButton>Save tour</SubmitButton>
         <Link
           href="/admin/tours"
           className={cn(buttonVariants({ variant: "outline" }))}

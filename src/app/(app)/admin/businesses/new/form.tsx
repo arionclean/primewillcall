@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useActionState, useRef, useState } from "react";
 
-import { Button, buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -23,7 +24,7 @@ const ALLOWED_LOGO_TYPES = [
 const MAX_LOGO_BYTES = 2 * 1024 * 1024;
 
 export function NewBusinessForm() {
-  const [state, formAction, isPending] = useActionState(
+  const [state, formAction] = useActionState(
     createBusinessAction,
     INITIAL,
   );
@@ -155,9 +156,7 @@ export function NewBusinessForm() {
           )}
 
           <div className="flex items-center gap-2">
-            <Button type="submit" disabled={isPending}>
-              {isPending ? "Saving..." : "Save business"}
-            </Button>
+            <SubmitButton>Save business</SubmitButton>
             <Link
               href="/admin/businesses"
               className={cn(buttonVariants({ variant: "outline" }))}

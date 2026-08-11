@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useActionState, useRef, useState } from "react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -41,7 +42,7 @@ type EditBusinessFormProps = {
 
 export function EditBusinessForm({ business }: EditBusinessFormProps) {
   const update = updateBusinessAction.bind(null, business.id);
-  const [state, formAction, isPending] = useActionState(update, INITIAL);
+  const [state, formAction] = useActionState(update, INITIAL);
 
   const [newLogoPreview, setNewLogoPreview] = useState<string | null>(null);
   const [removeLogo, setRemoveLogo] = useState(false);
@@ -237,9 +238,7 @@ export function EditBusinessForm({ business }: EditBusinessFormProps) {
           )}
 
           <div className="flex items-center gap-2">
-            <Button type="submit" disabled={isPending}>
-              {isPending ? "Saving..." : "Save changes"}
-            </Button>
+            <SubmitButton>Save changes</SubmitButton>
             <Link
               href="/admin/businesses"
               className={cn(buttonVariants({ variant: "outline" }))}

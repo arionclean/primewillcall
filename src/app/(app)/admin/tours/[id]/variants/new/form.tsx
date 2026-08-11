@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useActionState } from "react";
 
-import { Button, buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { Field } from "@/components/ui/field";
 import { FormSection } from "@/components/ui/form-section";
 import { Input } from "@/components/ui/input";
@@ -34,7 +35,7 @@ export function NewVariantForm({
   businesses,
 }: NewVariantFormProps) {
   const create = createVariantAction.bind(null, tourId);
-  const [state, formAction, isPending] = useActionState(create, INITIAL);
+  const [state, formAction] = useActionState(create, INITIAL);
 
   return (
     <form action={formAction} className="space-y-6">
@@ -133,9 +134,7 @@ export function NewVariantForm({
       )}
 
       <div className="flex items-center gap-2">
-        <Button type="submit" disabled={isPending}>
-          {isPending ? "Saving..." : "Save variant"}
-        </Button>
+        <SubmitButton>Save variant</SubmitButton>
         <Link
           href={`/admin/tours/${tourId}`}
           className={cn(buttonVariants({ variant: "outline" }))}

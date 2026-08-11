@@ -6,6 +6,7 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { cn } from "@/lib/utils";
 
 import { resolveUnmatched, ignoreUnmatched } from "./actions";
@@ -254,21 +255,15 @@ export default async function UnmatchedPage({
                         ))}
                       </select>
                     </label>
-                    <button
-                      type="submit"
-                      className={cn(buttonVariants({ variant: "default" }), "h-9")}
-                    >
+                    <SubmitButton className="h-9">
                       {laneKey === "soft" ? "Confirm" : "Resolve"}
-                    </button>
+                    </SubmitButton>
                   </form>
                   <form action={ignoreUnmatched}>
                     <input type="hidden" name="queueId" value={row.id} />
-                    <button
-                      type="submit"
-                      className={cn(buttonVariants({ variant: "outline" }), "h-9")}
-                    >
+                    <SubmitButton variant="outline" className="h-9">
                       Ignore
-                    </button>
+                    </SubmitButton>
                   </form>
                 </div>
               </Card>

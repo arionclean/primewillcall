@@ -6,6 +6,7 @@ import { ChevronDown, Clock, Plus, Repeat, Trash2, Zap } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -849,7 +850,7 @@ export function WhatsappTemplateList({ templates }: { templates: WaTemplateOptio
 
 export function AddWhatsappTemplateForm() {
   const [open, setOpen] = useState(false);
-  const [state, formAction, pending] = useActionState(createWhatsappTemplateAction, INITIAL);
+  const [state, formAction] = useActionState(createWhatsappTemplateAction, INITIAL);
 
   if (!open) {
     return (
@@ -918,9 +919,7 @@ export function AddWhatsappTemplateForm() {
       ) : null}
 
       <div className="mt-3 flex items-center gap-2">
-        <Button type="submit" size="lg" disabled={pending}>
-          {pending ? "Submitting..." : "Create and submit for approval"}
-        </Button>
+        <SubmitButton size="lg">Create and submit for approval</SubmitButton>
         <Button type="button" variant="ghost" size="lg" onClick={() => setOpen(false)}>
           Cancel
         </Button>
