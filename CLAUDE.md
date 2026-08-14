@@ -295,9 +295,10 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
 - **Payments (Stripe)** are largely built (Supabase-native replication of the live Xano
   Connect model; Xano is never written to). Model: Stripe Connect **direct charges** on each
   business's connected account with a platform `application_fee` (Prime's cut). Built:
-  per-business Connect onboarding on `/admin/businesses/[id]` (create account,
-  onboarding link, Express dashboard login, refresh status, owner-only "link existing
-  `acct_...`"); a single global platform fee (`STRIPE_PLATFORM_FEE_BPS`, default 25 bps =
+  per-business Connect onboarding on `/admin/businesses/[id]` (a single "Set up payments
+  with Stripe" CTA that creates the account and hands off to Stripe's hosted onboarding,
+  then a plain-language status line plus Express dashboard login and refresh; buttons
+  only, no account-id input anywhere); a single global platform fee (`STRIPE_PLATFORM_FEE_BPS`, default 25 bps =
   0.25%, the Connect fee passed through); a single webhook at `/api/stripe/webhook` (official
   signature verify, `stripe_events` idempotency, handles checkout/payment_intent/charge/
   dispute/`account.updated`); the ledger tables `stripe_transactions` / `stripe_refunds` /

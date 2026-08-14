@@ -61,8 +61,12 @@ All of it lives on `/admin/businesses/[id]` under **Payments**, owner-only.
    `stripe_account_id`. From the next request, every charge path uses it.
 5. **Leave the old account open** until its remaining balance pays out. Do not delete it.
 
-Reversing step 4 is a matter of linking the old id back with "Link an existing Stripe
-account", which is why the old id is kept rather than dropped.
+Step 4 is reversible: each retired account is listed with a **Send payments back here**
+button that points the business at it again, which is why the old id is kept rather than
+dropped. That button is also the only way an account id is ever chosen by hand, and it
+can only pick one of this business's own previous accounts. There is deliberately no
+free-text "paste an `acct_...`" field anywhere: every account the app writes comes from
+Stripe itself or from `stripe_account_id_legacy`.
 
 ## Why the cutover is safe
 
@@ -112,8 +116,9 @@ Added by `supabase/migrations/20260814090000_stripe_fee_free_accounts.sql`:
 
 - `connectControllerParams()` in `src/lib/stripe/server.ts` is the single definition of
   the account shape. Do not reintroduce `type: "express"`.
-- `startFeeFreeMigration` / `switchToPendingAccount` / `cancelFeeFreeMigration` in
-  `src/app/(app)/admin/businesses/[id]/payments-actions.ts` are owner-only and re-check
-  the role before writing.
+- `startFeeFreeMigration` / `switchToPendingAccount` / `cancelFeeFreeMigration` /
+  `switchToLegacyAccount` in `src/app/(app)/admin/businesses/[id]/payments-actions.ts`
+  are owner-only and re-check the role before writing. `switchToLegacyAccount` accepts
+  only an id already in this business's `stripe_account_id_legacy`.
 - New businesses created through "Set up payments" already use the fee-free shape, so
   only the existing fleet needs the migration.

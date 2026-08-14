@@ -28,8 +28,12 @@ import { getSupabaseAdminClient } from "@/lib/supabase/admin";
  * fees to the business instead of to Prime. Businesses still on an old
  * `type: "express"` account (the Xano-era fleet) migrate with
  * startFeeFreeMigration -> onboard -> switchToPendingAccount, which runs both
- * accounts side by side so there is no window where charges fail. Already-onboarded
- * accounts can also be attached as-is with linkExistingAccount.
+ * accounts side by side so there is no window where charges fail;
+ * switchToLegacyAccount is its undo.
+ *
+ * Every account id these actions write comes from Stripe itself or from this
+ * business's own `stripe_account_id_legacy`. Nothing accepts a free-typed account
+ * id, so the UI is buttons only and a stray id can never be pointed at a business.
  */
 
 export type PaymentsActionResult = {
@@ -229,8 +233,17 @@ export async function refreshAccountStatus(
   }
 }
 
-/** Owner-only: attach an existing connected account (e.g. from the Xano era). */
-export async function linkExistingAccount(
+/**
+ * Owner-only: send payments back to one of this business's previous accounts.
+ *
+ * The undo for switchToPendingAccount. It accepts ONLY an id already recorded in
+ * `stripe_account_id_legacy`, so nothing coming from the browser can point a
+ * business at an arbitrary connected account (which is why there is no free-text
+ * "paste an acct_ id" control anywhere in the UI). The account being replaced takes
+ * the other one's place in the legacy list, so the two can be swapped back and forth
+ * without the list drifting.
+ */
+export async function switchToLegacyAccount(
   businessId: string,
   rawAccountId: string,
 ): Promise<PaymentsActionResult> {
@@ -242,26 +255,33 @@ export async function linkExistingAccount(
   if (!stripe || !admin) return { error: "Payments are not configured yet." };
 
   const accountId = rawAccountId.trim();
-  if (!/^acct_[A-Za-z0-9]+$/.test(accountId)) {
-    return { error: "Enter a valid Stripe account id (starts with acct_)." };
-  }
-
-  const { data: clash } = await admin
+  const { data: biz } = await admin
     .from("businesses")
-    .select("id")
-    .eq("stripe_account_id", accountId)
-    .neq("id", businessId)
+    .select("stripe_account_id, stripe_account_id_legacy")
+    .eq("id", businessId)
     .maybeSingle();
-  if (clash) {
-    return { error: "That Stripe account is already linked to another business." };
+  if (!biz?.stripe_account_id_legacy?.includes(accountId)) {
+    return { error: "That is not one of this business's previous accounts." };
   }
 
   try {
     const account = await stripe.accounts.retrieve(accountId);
+    if (!account.charges_enabled) {
+      return {
+        error: "Stripe is not allowing charges on that account, so payments cannot go back to it.",
+      };
+    }
+
+    const legacy = biz.stripe_account_id_legacy.filter((id) => id !== accountId);
+    if (biz.stripe_account_id && !legacy.includes(biz.stripe_account_id)) {
+      legacy.push(biz.stripe_account_id);
+    }
+
     await admin
       .from("businesses")
       .update({
         stripe_account_id: account.id,
+        stripe_account_id_legacy: legacy,
         stripe_charges_enabled: Boolean(account.charges_enabled),
         stripe_payouts_enabled: Boolean(account.payouts_enabled),
         stripe_details_submitted: Boolean(account.details_submitted),
