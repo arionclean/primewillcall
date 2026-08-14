@@ -60,6 +60,16 @@ const sameCode = (a: unknown, b: unknown): boolean =>
   String(a ?? "").replace(/[^a-z0-9]/gi, "").toUpperCase() ===
   String(b ?? "").replace(/[^a-z0-9]/gi, "").toUpperCase();
 
+/**
+ * Product names must compare on content, not bytes. Some Xano product names hold
+ * non-breaking spaces (U+00A0) where ours hold plain ones, so "Miami 5 in 1 City
+ * Tour" from each side is byte-unequal and a strict compare reported the two
+ * systems as disagreeing on a product they had both matched correctly.
+ */
+const sameProduct = (a: string, b: string): boolean =>
+  a.replace(/\s+/g, " ").trim().toLowerCase() ===
+  b.replace(/\s+/g, " ").trim().toLowerCase();
+
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
   if (!WEBHOOK_SECRET) {
@@ -140,7 +150,7 @@ Deno.serve(async (req) => {
     const oursPassengers: number | null = v.passengers ?? null;
 
     const verdict = xanoProduct && oursProduct
-      ? (xanoProduct === oursProduct ? "agree" : "different_product")
+      ? (sameProduct(xanoProduct, oursProduct) ? "agree" : "different_product")
       : xanoProduct
         ? "xano_only"
         : oursProduct

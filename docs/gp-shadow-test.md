@@ -149,6 +149,22 @@ and "...with a Fre...". An alias written as the full marketing title loses
 coverage as the cut gets earlier and stops matching. Write the shortest form that
 still identifies the deal.
 
+### Passenger mismatches are expected, and we are the correct side
+
+`passengers_match = false` is not a defect to chase. A voucher reading
+
+    1 Person: 90-Minute The Homes of the Rich & Famous Boat Tour
+    3 of 3
+
+is one person, on a voucher the customer holds three of. We return 1. Xano
+returns 3, multiplying the person count by the voucher count, which is the exact
+trap both prompts warn about and which Xano's own model then falls into.
+
+Confirmed with the owner on 2026-08-14: **we bill the voucher that was actually
+uploaded**, so passengers come from the title alone and "N of N" is ignored. A
+customer redeeming three vouchers uploads three vouchers. Do not "fix" this to
+agree with Xano.
+
 ## Seeded data
 
 The table starts with 29 real vouchers replayed from Xano's request history on
