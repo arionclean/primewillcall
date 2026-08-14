@@ -170,7 +170,7 @@ export async function createBookingAction(
     return { error: tiersErr.message };
   }
   if (!tiers || tiers.length === 0) {
-    return { error: "This tour has no pax tiers configured." };
+    return { error: "This tour has no prices set up yet." };
   }
 
   // Build pax breakdown.

@@ -16,6 +16,8 @@ export default async function GrouponConfigPage() {
       "id, name, is_active, groupon_fee_cents, business:businesses!business_tours_business_id_fkey(id, name), tour:tours!business_tours_tour_id_fkey(name)",
     );
 
+  if (error) console.error("[groupon] products fetch error:", error);
+
   type Joined = {
     id: string;
     name: string;
@@ -52,7 +54,7 @@ export default async function GrouponConfigPage() {
 
       {error ? (
         <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          Could not load products: {error.message}
+          Could not load products. Refresh the page and try again.
         </p>
       ) : rows.length === 0 ? (
         <p className="rounded-md border border-dashed bg-muted/30 px-3 py-3 text-sm text-muted-foreground">

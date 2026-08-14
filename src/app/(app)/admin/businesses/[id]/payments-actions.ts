@@ -108,7 +108,7 @@ export async function createOnboardingLink(
 
   const base = appBaseUrl();
   if (!base) {
-    return { error: "Set NEXT_PUBLIC_APP_URL to enable Stripe onboarding links." };
+    return { error: "Payment setup is not available right now." };
   }
 
   const { data: biz } = await admin
@@ -215,7 +215,7 @@ export async function linkExistingAccount(
 
   const accountId = rawAccountId.trim();
   if (!/^acct_[A-Za-z0-9]+$/.test(accountId)) {
-    return { error: "Enter a valid Stripe account id (starts with acct_)." };
+    return { error: "That is not a valid Stripe account ID." };
   }
 
   const { data: clash } = await admin

@@ -31,22 +31,22 @@ const LANES = {
     status: "urgent" as const,
     label: "Urgent",
     blurb:
-      "Nothing matched, or the AI was not confident. These bookings are not on the right tour until you pick one.",
+      "We could not tell which tour these are for. They stay on the wrong tour until you pick one.",
   },
   soft: {
     status: "verify" as const,
     label: "Needs confirming",
     blurb:
-      "The AI matched these and the booking already uses that product. Confirming just makes it a permanent rule for future emails.",
+      "We picked a tour for these and it is already in use. Confirming just tells us to keep doing it.",
   },
 };
 
 type LaneKey = keyof typeof LANES;
 
 const REASON_META: Record<string, { label: string; tone: "warning" | "info" | "danger" }> = {
-  needs_assignment: { label: "Needs assignment", tone: "warning" },
-  ai_classified: { label: "AI suggested", tone: "info" },
-  no_match: { label: "No match", tone: "danger" },
+  needs_assignment: { label: "Needs a tour", tone: "warning" },
+  ai_classified: { label: "Our best guess", tone: "info" },
+  no_match: { label: "Not recognized", tone: "danger" },
 };
 
 function fmtDate(iso: string | null): string {
@@ -128,8 +128,8 @@ export default async function UnmatchedPage({
       <header className="mb-5">
         <h1 className="text-2xl font-semibold tracking-tight">Unrecognized bookings</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          OTA emails the matcher could not place. Your choice is remembered, so the same
-          product matches automatically next time.
+          Bookings that arrived by email without a tour we recognize. Pick the right one
+          once and we will use it for that product from then on.
         </p>
       </header>
 
@@ -174,7 +174,7 @@ export default async function UnmatchedPage({
         <Card className="p-10 text-center">
           <p className="text-sm text-muted-foreground">
             {laneKey === "urgent"
-              ? "Nothing urgent. Every booking found its tour."
+              ? "Nothing urgent. Every booking is on a tour."
               : "Nothing to confirm right now."}
           </p>
         </Card>
@@ -207,7 +207,7 @@ export default async function UnmatchedPage({
                       <Badge tone={meta.tone}>{meta.label}</Badge>
                       {score != null ? (
                         <Badge tone={score >= 0.85 ? "success" : "warning"}>
-                          {Math.round(score * 100)}% confident
+                          {Math.round(score * 100)}% sure
                         </Badge>
                       ) : null}
                       {suggested ? (
@@ -231,7 +231,7 @@ export default async function UnmatchedPage({
                   <Field label="Source" value={row.booking_channel ?? row.supplier} />
                   <Field label="Guest" value={guest} />
                   <Field label="Date" value={fmtDate(startsAt)} />
-                  <Field label="Pax" value={pax != null ? String(pax) : "—"} />
+                  <Field label="Pax" value={pax != null ? String(pax) : "-"} />
                 </dl>
 
                 <div className="mt-4 flex flex-wrap items-end gap-2 border-t pt-4">
@@ -286,8 +286,8 @@ export default async function UnmatchedPage({
                 Show {Math.min(PAGE_SIZE, totalCount - rows.length)} more
               </Link>
               <p className="mt-2 text-xs text-muted-foreground">
-                {(totalCount - rows.length).toLocaleString()} still hidden. Resolving or
-                ignoring one removes it from the queue.
+                {(totalCount - rows.length).toLocaleString()} still hidden. Once you
+                resolve or ignore one, it leaves this list.
               </p>
             </div>
           ) : null}
@@ -301,7 +301,7 @@ function Field({ label, value }: { label: string; value: string | null }) {
   return (
     <div className="min-w-0">
       <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="truncate">{value || "—"}</dd>
+      <dd className="truncate">{value || "-"}</dd>
     </div>
   );
 }

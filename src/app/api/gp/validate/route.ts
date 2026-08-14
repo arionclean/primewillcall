@@ -19,7 +19,7 @@ export async function POST(req: Request) {
   const admin = getSupabaseAdminClient();
   if (!admin) {
     return NextResponse.json(
-      { valid: false, error: "not_configured", message: "Voucher upload is not configured." },
+      { valid: false, error: "not_configured", message: "Voucher upload is unavailable right now." },
       { status: 503 },
     );
   }

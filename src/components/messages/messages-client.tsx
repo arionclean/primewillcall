@@ -62,7 +62,8 @@ export function MessagesClient() {
   const loadConversations = useCallback(async () => {
     const { data, error: rpcError } = await getSmsClient().rpc("sms_conversations");
     if (rpcError) {
-      setError(rpcError.message);
+      console.error("[messages] conversations load failed:", rpcError);
+      setError("Could not load conversations. Try again.");
       return;
     }
     setConversations((data as Conversation[]) ?? []);
@@ -77,7 +78,8 @@ export function MessagesClient() {
       .order("created_at", { ascending: true })
       .limit(500);
     if (queryError) {
-      setError(queryError.message);
+      console.error("[messages] thread load failed:", queryError);
+      setError("Could not open this conversation. Try again.");
       return;
     }
     setMessages((data as SmsMessage[]) ?? []);
@@ -88,8 +90,10 @@ export function MessagesClient() {
     try {
       const response = await fetch("/api/sms/sync", { method: "POST" });
       if (!response.ok) {
+        // The API's reason is for the log, not for a manager reading a phone.
         const body = (await response.json().catch(() => null)) as { error?: string } | null;
-        setError(body?.error ?? "Twilio sync failed");
+        console.error("[messages] sync failed:", body?.error ?? response.status);
+        setError("Could not refresh messages. Try again.");
       }
     } finally {
       setSyncing(false);

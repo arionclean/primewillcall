@@ -21,7 +21,7 @@ export default function GpSuccessPage() {
           <h1 className="gp-ok-title">Payment received</h1>
           <p className="gp-ok-body">
             Your reservation is confirmed and your convenience fee has been paid.
-            A receipt was sent by Stripe to the email you entered at checkout.
+            A receipt was emailed to the address you entered at checkout.
           </p>
           <p className="gp-ok-body">
             Questions about your reservation? Call us at {SUPPORT_PHONE_DISPLAY}.

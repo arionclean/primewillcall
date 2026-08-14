@@ -31,7 +31,7 @@ Xano vision_v4  --(voucher image + its verdict)-->  gp-shadow-compare
                                                           |
                                                    gp_shadow_runs
                                                           |
-                                                 /admin/gp-shadow
+                                              read with SQL (no UI)
 ```
 
 - **`gp_shadow_runs`** — one row per voucher: Xano's verdict, ours, and a
@@ -44,8 +44,12 @@ Xano vision_v4  --(voucher image + its verdict)-->  gp-shadow-compare
   into the `gp-vouchers` bucket (the vision function only accepts URLs from
   there), runs our matcher, classifies, inserts. Idempotent on `xano_ref`, so
   Xano may retry and a replay may be re-run without duplicating rows.
-- **`/admin/gp-shadow`** — owner-only. Agreement rate, how the matches were
-  reached, and every non-agreement to review.
+- **`/admin/gp-shadow`** — REMOVED in the production cleanup (Aug 2026). The page
+  showed the agreement rate, how the matches were reached, and every
+  non-agreement. It named Xano on screen, which is migration scaffolding rather
+  than something staff should ever see. `gp_shadow_runs`, `gp_shadow_summary`,
+  and the edge function are all untouched, so read the results with SQL, or
+  rebuild the page from git history if the comparison is needed again.
 
 ### Verdicts
 

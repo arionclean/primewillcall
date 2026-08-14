@@ -92,7 +92,7 @@ export function EditTourForm({
   async function handleDelete() {
     if (
       !confirm(
-        `Delete "${tour.name}"? This will also delete its timeslots. Variants and bookings must be removed first.`,
+        `Delete "${tour.name}"? Its departure times go too. Remove the businesses selling it and their bookings first.`,
       )
     ) {
       return;
@@ -222,9 +222,9 @@ export function EditTourForm({
             />
         </FormSection>
 
-        <FormSection title="Timeslots" contentClassName="space-y-3">
+        <FormSection title="Departure times" contentClassName="space-y-3">
             <p className="text-xs text-muted-foreground">
-              Saving replaces the existing timeslots with whatever is in this list.
+              Saving replaces the current times with whatever is in this list.
             </p>
             {state.fieldErrors?.slot_dup && (
               <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
@@ -278,7 +278,7 @@ export function EditTourForm({
               ))}
             </div>
             <Button type="button" variant="outline" size="sm" onClick={addSlot}>
-              + Add timeslot
+              + Add a time
             </Button>
         </FormSection>
 
@@ -308,8 +308,8 @@ export function EditTourForm({
         <CardContent className="space-y-3 py-6">
           <h2 className="text-sm font-semibold">Danger zone</h2>
           <p className="text-xs text-muted-foreground">
-            Deleting a tour also deletes its timeslots. Variants and bookings
-            must be removed first.
+            Deleting a tour also deletes its departure times. Remove the
+            businesses selling it and their bookings first.
           </p>
           {deleteError && (
             <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">

@@ -49,6 +49,10 @@ export default async function MessagingConfigPage() {
       .not("google_review_url", "is", null),
   ]);
 
+  if (rulesResult.error) {
+    console.error("[messaging] rules fetch error:", rulesResult.error);
+  }
+
   const rules = (rulesResult.data ?? []) as RuleRow[];
   type ProductJoined = { id: string; name: string; business: { name: string } | null };
   const products = ((productsResult.data ?? []) as unknown as ProductJoined[]).map<ProductOption>(
@@ -64,7 +68,10 @@ export default async function MessagingConfigPage() {
   try {
     whatsappTemplates = await listWhatsappTemplates();
   } catch (e) {
-    whatsappError = e instanceof Error ? e.message : "Could not reach Twilio.";
+    // The message provider's own wording is no help here, so log it and show
+    // one plain line instead.
+    console.error("[messaging] WhatsApp template fetch error:", e);
+    whatsappError = "Could not load them right now. Try again in a moment.";
   }
   const waOptions: WaTemplateOption[] = whatsappTemplates.map((template) => ({
     sid: template.sid,
@@ -83,7 +90,7 @@ export default async function MessagingConfigPage() {
         automations={
           rulesResult.error ? (
             <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-              Could not load automations: {rulesResult.error.message}
+              Could not load automations. Refresh the page and try again.
             </p>
           ) : (
             <>

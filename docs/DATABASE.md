@@ -408,7 +408,8 @@ Table-specific notes:
   business; check-in read only.
 
 When something returns no rows or a write silently fails, it is almost always RLS.
-Verify the caller's role/business with `/dashboard/debug` and compare against the policy.
+Verify the caller's role/business by querying `current_staff()` and compare against the
+policy.
 
 ## Conventions
 

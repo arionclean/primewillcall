@@ -60,7 +60,7 @@ export async function POST(req: Request) {
   const admin = getSupabaseAdminClient();
   if (!admin) {
     return NextResponse.json(
-      { ok: false, error: "not_configured", message: "Booking is not configured." },
+      { ok: false, error: "not_configured", message: "Booking is unavailable right now." },
       { status: 503 },
     );
   }
@@ -175,8 +175,14 @@ export async function POST(req: Request) {
     .select("id")
     .single();
   if (custErr || !customer) {
+    // A guest sees this. The database's wording stays in the log.
+    console.error("[gp/book] customer insert failed:", custErr);
     return NextResponse.json(
-      { ok: false, error: "server_error", message: custErr?.message ?? "Could not save customer." },
+      {
+        ok: false,
+        error: "server_error",
+        message: "Could not save your details. Please try again.",
+      },
       { status: 500 },
     );
   }
@@ -213,8 +219,13 @@ export async function POST(req: Request) {
     .select("id, public_token")
     .single();
   if (bookErr || !booking) {
+    console.error("[gp/book] booking insert failed:", bookErr);
     return NextResponse.json(
-      { ok: false, error: "server_error", message: bookErr?.message ?? "Could not save booking." },
+      {
+        ok: false,
+        error: "server_error",
+        message: "Could not save your reservation. Please try again.",
+      },
       { status: 500 },
     );
   }

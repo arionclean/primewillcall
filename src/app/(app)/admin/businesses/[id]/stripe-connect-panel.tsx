@@ -27,8 +27,6 @@ type StripeConnectPanelProps = {
     stripe_requirements_due: number;
   };
   paymentsConfigured: boolean;
-  /** Global platform fee in basis points (0.25% = 25), shown read-only. */
-  feeBps: number;
   /** True when the page loaded from a Stripe onboarding return_url. */
   justReturned?: boolean;
 };
@@ -36,7 +34,6 @@ type StripeConnectPanelProps = {
 export function StripeConnectPanel({
   business,
   paymentsConfigured,
-  feeBps,
   justReturned = false,
 }: StripeConnectPanelProps) {
   const router = useRouter();
@@ -82,38 +79,36 @@ export function StripeConnectPanel({
     <div className="space-y-4">
       {!paymentsConfigured && (
         <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          Payments are not configured yet. Set STRIPE_SECRET_KEY (and the webhook
-          secrets) to enable Stripe onboarding and charges.
+          Card payments are not switched on for the platform yet, so this
+          business cannot be set up right now.
         </p>
       )}
 
       {connected ? (
         <div className="flex flex-wrap items-center gap-2">
           <Badge tone={business.stripe_charges_enabled ? "success" : "neutral"}>
-            {business.stripe_charges_enabled ? "Charges enabled" : "Charges off"}
+            {business.stripe_charges_enabled
+              ? "Taking payments"
+              : "Not taking payments yet"}
           </Badge>
           <Badge tone={business.stripe_payouts_enabled ? "success" : "neutral"}>
-            {business.stripe_payouts_enabled ? "Payouts enabled" : "Payouts off"}
+            {business.stripe_payouts_enabled ? "Payouts on" : "Payouts on hold"}
           </Badge>
           <Badge tone={business.stripe_details_submitted ? "success" : "warning"}>
-            {business.stripe_details_submitted ? "Details submitted" : "Details pending"}
+            {business.stripe_details_submitted
+              ? "Details complete"
+              : "Details needed"}
           </Badge>
           {business.stripe_requirements_due > 0 && (
             <Badge tone="danger">
-              {business.stripe_requirements_due} requirement
-              {business.stripe_requirements_due === 1 ? "" : "s"} due
+              {business.stripe_requirements_due} thing
+              {business.stripe_requirements_due === 1 ? "" : "s"} left to finish
             </Badge>
           )}
         </div>
       ) : (
         <p className="text-sm text-muted-foreground">
-          No Stripe account is connected for this business yet.
-        </p>
-      )}
-
-      {connected && business.stripe_account_id && (
-        <p className="font-mono text-xs text-muted-foreground">
-          {business.stripe_account_id}
+          This business is not set up to take payments yet.
         </p>
       )}
 
@@ -133,7 +128,7 @@ export function StripeConnectPanel({
             disabled={isPending || !paymentsConfigured}
             onClick={() => run(() => createOnboardingLink(business.id))}
           >
-            Continue onboarding
+            Finish setup
           </Button>
         )}
         {connected && business.stripe_details_submitted && (
@@ -171,13 +166,13 @@ export function StripeConnectPanel({
 
       <details className="rounded-md border bg-muted/30 px-3 py-2">
         <summary className="cursor-pointer text-sm font-medium">
-          Link an existing Stripe account
+          Use an account this business already has
         </summary>
         <div className="mt-3 space-y-2">
           <Field
-            label="Stripe account id"
+            label="Stripe account ID"
             htmlFor="stripe-acct"
-            hint="Attach a connected account this business already has (acct_...). No re-onboarding."
+            hint="If this business is already on Stripe, paste its account ID here instead of setting up a new one."
           >
             <Input
               id="stripe-acct"
@@ -197,11 +192,6 @@ export function StripeConnectPanel({
           </Button>
         </div>
       </details>
-
-      <p className="border-t pt-4 text-sm text-muted-foreground">
-        Platform fee: {(feeBps / 100).toFixed(2)}% (global, applied to every charge as
-        Prime&apos;s application fee).
-      </p>
     </div>
   );
 }

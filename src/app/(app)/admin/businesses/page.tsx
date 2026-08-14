@@ -13,13 +13,17 @@ export default async function BusinessesListPage() {
     .select("id, name, logo_url, phone")
     .order("created_at", { ascending: true });
 
+  // The screen shows a plain "could not load" line; the detail belongs in the
+  // server log, not in front of a manager.
+  if (error) console.error("[businesses] fetch error:", error);
+
   return (
     <div>
       <header className="mb-6 flex items-end justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Businesses</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Each Prime business is its own tenant for tours, bookings, and customers.
+            Each business keeps its own tours, bookings, and customers.
           </p>
         </div>
         <Link
@@ -32,7 +36,7 @@ export default async function BusinessesListPage() {
 
       {error && (
         <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-          {error.message}
+          Could not load businesses. Refresh the page and try again.
         </p>
       )}
 

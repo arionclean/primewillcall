@@ -182,8 +182,9 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   do not run `npm run dev` in a terminal and the preview at the same time.
 - Always keep it green: `npx tsc --noEmit` (0 errors) and `npm run lint` (0 warnings)
   before considering a change done.
-- `/dashboard/debug` shows exactly what the server sees for the current session (auth
-  id, linked staff row, role, business). First stop when auth or scoping looks wrong.
+- There is no debug screen in the app: nothing internal (auth ids, roles, raw errors)
+  is ever put in front of staff. To see what the server sees for a session, query
+  `current_staff()` in Supabase, or read the server log.
 - **RLS denial looks like "no rows" or a 42501 error, not a crash.** If a write
   silently does nothing or a list is empty for a role that should see data, check the
   policy in `docs/DATABASE.md` and confirm `current_staff()` returns what you expect.
@@ -246,11 +247,13 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   (owner-only "Redeem" / "Redeemed" toggle on Groupon rows in the bookings list,
   `bookings.groupon_redeemed_at`) after redeeming it on Groupon's own platform. See the
   Stripe entry below and [`docs/DATABASE.md`](docs/DATABASE.md) "Groupon convenience fee" +
-  "Payments (Stripe)". The matcher is graded against live Xano by the **shadow test**
-  (`gp_shadow_runs` + the `gp-shadow-compare` edge function + owner-only
-  `/admin/gp-shadow`); it is read-only with respect to Xano and creates no bookings.
-  Feeding it needs one additive hook in Xano's `vision_v4` post_process, which is a
-  live-Xano write and is **not applied yet**. See
+  "Payments (Stripe)". The matcher can be graded against live Xano by the **shadow test**
+  (`gp_shadow_runs` + the `gp-shadow-compare` edge function); it is read-only with respect
+  to Xano and creates no bookings. Its **`/admin/gp-shadow` page was removed** in the
+  production cleanup, since a screen comparing us to Xano is migration scaffolding, not
+  something the app should show. The table and edge function are untouched, so the
+  results are still readable by SQL. Feeding it also needs one additive hook in Xano's
+  `vision_v4` post_process, which is a live-Xano write and is **not applied yet**. See
   [`docs/gp-shadow-test.md`](docs/gp-shadow-test.md).
 - `/availability` (owner + business manager) opens/closes booking times per day via
   `tour_slot_closures`; `/api/gp/slots` and `/api/gp/book` respect closures. The

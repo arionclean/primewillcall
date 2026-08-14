@@ -97,13 +97,13 @@ export function NewTourForm({
           <Field
             label="Add to businesses"
             htmlFor=""
-            hint="A variant gets created for each. You can edit their names and prices afterwards."
+            hint="Each one gets its own copy of this tour. You can edit their names and prices afterwards."
             className="sm:col-span-2"
           >
             {businesses.length === 0 ? (
               <p className="rounded-md border border-dashed bg-muted/30 px-3 py-3 text-xs text-muted-foreground">
-                No businesses exist yet. Save the tour now and add variants
-                after you create a business.
+                No businesses exist yet. Save the tour now and add businesses
+                to it once you create one.
               </p>
             ) : (
               <div className="grid gap-2 sm:grid-cols-2">
@@ -150,7 +150,7 @@ export function NewTourForm({
           <MeetingPointPicker />
       </FormSection>
 
-      <FormSection title="Timeslots" contentClassName="space-y-3">
+      <FormSection title="Departure times" contentClassName="space-y-3">
           <p className="text-xs text-muted-foreground">
             Recurring departure times. Businesses cannot change these.
           </p>
@@ -204,7 +204,7 @@ export function NewTourForm({
             ))}
           </div>
           <Button type="button" variant="outline" size="sm" onClick={addSlot}>
-            + Add timeslot
+            + Add a time
           </Button>
       </FormSection>
 
