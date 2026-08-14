@@ -7,6 +7,12 @@ import {
   getStripeClient,
 } from "@/lib/stripe/server";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import {
+  gpMirrorEnabled,
+  gpMirrorLegacyId,
+  gpMirrorRef,
+  mirrorGpBookingToXano,
+} from "@/lib/xano/gp-mirror";
 
 /**
  * Public Groupon booking creator for the /gp page. Runs server-side with the
@@ -96,10 +102,13 @@ export async function POST(req: Request) {
     );
   }
 
-  // Authoritative product + fee (never trust the client's fee).
+  // Authoritative product + fee (never trust the client's fee). The legacy ids
+  // and business name ride along for the temporary Xano mirror below.
   const { data: bt } = await admin
     .from("business_tours")
-    .select("id, name, business_id, tour_id, is_active, groupon_fee_cents")
+    .select(
+      "id, name, business_id, tour_id, is_active, groupon_fee_cents, legacy_product_id, business:businesses!business_tours_business_id_fkey(name, legacy_company_id)",
+    )
     .eq("id", businessTourId)
     .maybeSingle();
   if (!bt || !bt.is_active || bt.groupon_fee_cents === null) {
@@ -179,6 +188,9 @@ export async function POST(req: Request) {
   }
   if (imageUrl) noteParts.push(`voucher ${imageUrl}`);
 
+  // Reference shared with the temporary Xano mirror.
+  const mirrorRef = gpMirrorEnabled() ? gpMirrorRef() : null;
+
   const { data: booking, error: bookErr } = await admin
     .from("bookings")
     .insert({
@@ -198,13 +210,53 @@ export async function POST(req: Request) {
       legacy_reference: voucherCodes.join(", ") || null,
       notes: noteParts.join(" · "),
     })
-    .select("id")
+    .select("id, public_token")
     .single();
   if (bookErr || !booking) {
     return NextResponse.json(
       { ok: false, error: "server_error", message: bookErr?.message ?? "Could not save booking." },
       { status: 500 },
     );
+  }
+
+  // Temporary: mirror the booking into Xano with no phone, so staff still have
+  // the booking on the side they work from while /gp is the test bed for the
+  // Supabase automations. Never blocks the guest: a failure is logged and the
+  // Supabase booking stands. Remove with the rest of the mirror when the test
+  // ends (docs/gp-xano-mirror.md).
+  if (mirrorRef) {
+    // `legacy_id` is stamped HERE, never in the insert above. The automations
+    // trigger is `AFTER INSERT ... WHEN (new.legacy_id IS NULL)`, so setting it
+    // inline would mark the booking as Xano-synced and silence the very SMS this
+    // test exists to exercise. Setting it a moment later still beats the round
+    // trip, because Xano cannot push the row back before we have called it.
+    await admin
+      .from("bookings")
+      .update({ legacy_id: gpMirrorLegacyId(mirrorRef) })
+      .eq("id", booking.id);
+
+    const biz = bt.business as unknown as {
+      name: string;
+      legacy_company_id: string | null;
+    } | null;
+    const mirror = await mirrorGpBookingToXano({
+      ref: mirrorRef,
+      publicToken: booking.public_token,
+      legacyCompanyId: biz?.legacy_company_id ?? null,
+      legacyProductId: bt.legacy_product_id,
+      productName: bt.name,
+      supplierName: biz?.name ?? "",
+      customerName,
+      startsAtIso,
+      passengers,
+      voucherImageUrls: imageUrl ? [imageUrl] : [],
+      note: noteParts.join(" · "),
+    });
+    if (!mirror.ok) {
+      console.error(
+        `[gp] Xano mirror failed for booking ${booking.id} (${mirrorRef}): ${mirror.error}`,
+      );
+    }
   }
 
   // Charge the convenience fee via a Stripe Checkout Session created DIRECTLY on
