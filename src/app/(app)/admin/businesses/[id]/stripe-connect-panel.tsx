@@ -9,11 +9,14 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 
 import {
+  cancelFeeFreeMigration,
   createConnectAccount,
   createLoginLink,
   createOnboardingLink,
   linkExistingAccount,
   refreshAccountStatus,
+  startFeeFreeMigration,
+  switchToPendingAccount,
   type PaymentsActionResult,
 } from "./payments-actions";
 
@@ -25,7 +28,17 @@ type StripeConnectPanelProps = {
     stripe_payouts_enabled: boolean;
     stripe_details_submitted: boolean;
     stripe_requirements_due: number;
+    stripe_account_id_pending: string | null;
+    stripe_account_id_legacy: string[];
+    stripe_fees_payer: string | null;
   };
+  /** Live status of the pending fee-free account, when a migration is running. */
+  pending: {
+    id: string;
+    chargesEnabled: boolean;
+    detailsSubmitted: boolean;
+    requirementsDue: number;
+  } | null;
   paymentsConfigured: boolean;
   /** Global platform fee in basis points (0.25% = 25), shown read-only. */
   feeBps: number;
@@ -35,6 +48,7 @@ type StripeConnectPanelProps = {
 
 export function StripeConnectPanel({
   business,
+  pending,
   paymentsConfigured,
   feeBps,
   justReturned = false,
@@ -49,6 +63,14 @@ export function StripeConnectPanel({
   const needsAttention =
     connected &&
     (!business.stripe_charges_enabled || business.stripe_requirements_due > 0);
+
+  // `account` means Stripe bills this business directly and Prime pays nothing.
+  // The `application*` values mean Prime is billed Stripe's fees for the account.
+  const feeFree = business.stripe_fees_payer === "account";
+  const platformBilled =
+    business.stripe_fees_payer !== null &&
+    business.stripe_fees_payer.startsWith("application");
+  const legacyAccounts = business.stripe_account_id_legacy ?? [];
 
   function run(action: () => Promise<PaymentsActionResult>) {
     setError(null);
@@ -68,6 +90,13 @@ export function StripeConnectPanel({
         router.refresh();
       }
     });
+  }
+
+  function confirmSwitch() {
+    const ok = window.confirm(
+      "Switch this business to the new account? Every new payment will settle there from now on. Payments already taken on the old account stay there, and refunds for them keep working.",
+    );
+    if (ok) run(() => switchToPendingAccount(business.id));
   }
 
   // On return from Stripe onboarding, pull the latest status once.
@@ -167,6 +196,122 @@ export function StripeConnectPanel({
         <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
           {notice}
         </p>
+      )}
+
+      {connected && (
+        <div className="space-y-3 rounded-md border bg-muted/30 px-3 py-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-medium">Stripe pricing</span>
+            {feeFree && <Badge tone="success">Prime pays no Stripe fees</Badge>}
+            {platformBilled && (
+              <Badge tone="warning">Prime is billed Stripe&apos;s fees</Badge>
+            )}
+            {!feeFree && !platformBilled && (
+              <Badge tone="neutral">Not checked yet</Badge>
+            )}
+          </div>
+
+          {feeFree && (
+            <p className="text-xs text-muted-foreground">
+              Stripe bills this business directly. Prime pays nothing per payout or per
+              month for it, and still collects the platform fee below.
+            </p>
+          )}
+
+          {platformBilled && (
+            <p className="text-xs text-muted-foreground">
+              This is an older account, so Stripe bills Prime for it: 0.25% of
+              everything paid out plus $2 in any month it pays out. A replacement
+              account removes both charges and looks identical to the business (same
+              Stripe dashboard, same onboarding). The business re-confirms its details
+              once, then you switch it over here.
+            </p>
+          )}
+
+          {!feeFree && !platformBilled && (
+            <p className="text-xs text-muted-foreground">
+              Use Refresh status to check which pricing this account is on.
+            </p>
+          )}
+
+          {pending ? (
+            <div className="space-y-2 rounded-md border bg-background px-3 py-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-medium">Replacement account</span>
+                <Badge tone={pending.chargesEnabled ? "success" : "neutral"}>
+                  {pending.chargesEnabled ? "Ready to switch" : "Onboarding"}
+                </Badge>
+                {pending.requirementsDue > 0 && (
+                  <Badge tone="danger">
+                    {pending.requirementsDue} requirement
+                    {pending.requirementsDue === 1 ? "" : "s"} due
+                  </Badge>
+                )}
+              </div>
+              <p className="font-mono text-xs text-muted-foreground">{pending.id}</p>
+              <p className="text-xs text-muted-foreground">
+                It takes no payments until you switch over. Nothing changes for the
+                business in the meantime.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={isPending || !paymentsConfigured || !pending.chargesEnabled}
+                  onClick={confirmSwitch}
+                >
+                  Switch over
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={isPending || !paymentsConfigured}
+                  onClick={() =>
+                    run(() => createOnboardingLink(business.id, "pending"))
+                  }
+                >
+                  Continue onboarding
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={isPending || !paymentsConfigured}
+                  onClick={() => run(() => cancelFeeFreeMigration(business.id))}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          ) : (
+            platformBilled && (
+              <Button
+                type="button"
+                size="sm"
+                disabled={isPending || !paymentsConfigured}
+                onClick={() => run(() => startFeeFreeMigration(business.id))}
+              >
+                Create replacement account
+              </Button>
+            )
+          )}
+
+          {legacyAccounts.length > 0 && (
+            <div className="border-t pt-2">
+              <p className="text-xs text-muted-foreground">
+                Replaced {legacyAccounts.length === 1 ? "account" : "accounts"}. Leave
+                {legacyAccounts.length === 1 ? " it" : " them"} open on Stripe until the
+                remaining balance pays out.
+              </p>
+              {legacyAccounts.map((id) => (
+                <p key={id} className="font-mono text-xs text-muted-foreground">
+                  {id}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       <details className="rounded-md border bg-muted/30 px-3 py-2">

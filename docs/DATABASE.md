@@ -258,6 +258,30 @@ merchant of record; Prime skims the fee. This matches how the existing (Xano-era
 were onboarded. Use Prime's PLATFORM secret key (env `STRIPE_SECRET_KEY`), the same account
 whose connected accounts back each business.
 
+**Account shape.** New accounts are created with controller properties
+(`connectControllerParams()` in `src/lib/stripe/server.ts`), never `type: "express"`. The
+shorthand sets `controller.fees.payer = application_express`, which bills Stripe's Connect
+fees ($2 per monthly active account + 0.25% of payout volume) to PRIME. Spelling the
+controller out (`stripe_dashboard.type: express`, `fees.payer: account`,
+`losses.payments: stripe`) gives the business the identical Express dashboard and Stripe-run
+onboarding while Stripe bills the business and charges the platform nothing. The Xano-era
+fleet is still on the old shape; each one migrates via the owner-only flow on
+`/admin/businesses/[id]` using the three columns below. Full runbook, including the kiosk
+Terminal step that is deliberately not built yet, in
+[`docs/stripe-fee-free-accounts.md`](stripe-fee-free-accounts.md).
+
+- `businesses.stripe_account_id_pending` (text, unique): a new fee-free account while it
+  onboards. Takes no charges; the live account keeps every charge until the switch.
+- `businesses.stripe_account_id_legacy` (text[]): retired accounts, oldest first.
+  Reference only, so the old account stays findable while its balance pays out.
+- `businesses.stripe_fees_payer` (text): `controller.fees.payer` of the live account,
+  synced from Stripe. `account` = Prime pays no Connect fees. `application*` = Prime is
+  billed. NULL until the first status refresh.
+
+Switching accounts never strands a refund: the refund action routes by
+`stripe_transactions.connected_account_id` (the account the charge settled on), not by the
+business's current account.
+
 ### Tables
 - `stripe_transactions` — the payment ledger, one row per Stripe charge / payment_intent,
   deduped on `stripe_id`. Columns include `business_id`, `connected_account_id`,

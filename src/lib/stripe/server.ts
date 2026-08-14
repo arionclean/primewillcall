@@ -40,6 +40,41 @@ export function getStripeClient(): Stripe | null {
 }
 
 /**
+ * Controller properties for every NEW connected account.
+ *
+ * Do NOT go back to `type: "express"`. That shorthand assigns
+ * `controller.fees.payer = "application_express"`, which bills Stripe's Connect
+ * fees ($2 per monthly active account + 0.25% of payout volume) to PRIME. Spelling
+ * the controller out instead gives the business the same Express dashboard and the
+ * same Stripe-run onboarding, while Stripe collects its fees from the business and
+ * charges the platform nothing. Prime's `application_fee_amount` is unaffected.
+ *
+ * `losses.payments: "stripe"` also moves negative-balance liability off Prime,
+ * which is what Stripe recommends for direct charges.
+ */
+export function connectControllerParams(): Stripe.AccountCreateParams.Controller {
+  return {
+    stripe_dashboard: { type: "express" },
+    fees: { payer: "account" },
+    losses: { payments: "stripe" },
+    requirement_collection: "stripe",
+  };
+}
+
+/** The one `fees.payer` value where Stripe bills the business, not the platform. */
+export const FEE_FREE_FEES_PAYER = "account";
+
+/** True when Prime pays no Stripe Connect fees on this account. */
+export function isFeeFreeAccount(feesPayer: string | null | undefined): boolean {
+  return feesPayer === FEE_FREE_FEES_PAYER;
+}
+
+/** `controller.fees.payer` off a retrieved account, or null if Stripe omitted it. */
+export function accountFeesPayer(account: Stripe.Account): string | null {
+  return account.controller?.fees?.payer ?? null;
+}
+
+/**
  * Metadata keys written on every charge so the webhook + ledger can link a
  * Stripe object back to a booking. Standardized on `booking_id` everywhere
  * (the legacy Xano checkout path used `internal_id`, which the webhook did not
@@ -56,6 +91,10 @@ export const STRIPE_META = {
  * Stripe charges the platform for Connect, passed through as the application fee.
  * This is a single GLOBAL rate (not per-business). Override with the
  * STRIPE_PLATFORM_FEE_BPS env var if the deal changes.
+ *
+ * Note: on accounts using `connectControllerParams()` Prime pays no Connect fee,
+ * so this 0.25% stops being a pass-through and becomes margin. Whether to keep it,
+ * drop it, or re-price it is a business call, so the rate is left alone here.
  */
 export const DEFAULT_PLATFORM_FEE_BPS = 25;
 

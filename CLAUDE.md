@@ -295,7 +295,7 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
 - **Payments (Stripe)** are largely built (Supabase-native replication of the live Xano
   Connect model; Xano is never written to). Model: Stripe Connect **direct charges** on each
   business's connected account with a platform `application_fee` (Prime's cut). Built:
-  per-business Connect Express onboarding on `/admin/businesses/[id]` (create account,
+  per-business Connect onboarding on `/admin/businesses/[id]` (create account,
   onboarding link, Express dashboard login, refresh status, owner-only "link existing
   `acct_...`"); a single global platform fee (`STRIPE_PLATFORM_FEE_BPS`, default 25 bps =
   0.25%, the Connect fee passed through); a single webhook at `/api/stripe/webhook` (official
@@ -313,7 +313,19 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   account, records `stripe_refunds`, webhook reconciles); and **customer payment links**
   (`POST /api/bookings/[id]/payment-link` + the "Payment link" button in the booking edit
   modal) that mint a Checkout link for a booking to send the customer.
-  **Still to do**: taking payment inline in the internal `/schedule` new-booking flow, and
-  saved-customer flows (`customers.stripe_customer_id` is still a placeholder). Go-live
-  config (platform key, register the two webhook endpoints, connect each business) is the
-  remaining operational step.
+  **Account shape**: accounts are created with controller properties
+  (`connectControllerParams()`), never `type: "express"` (the shorthand puts Stripe's
+  Connect fees, $2 per active account + 0.25% of payout volume, on PRIME). The business
+  keeps the same Express dashboard and Stripe-run onboarding; Stripe just bills it instead
+  of us. The Xano-era fleet is still on the old shape, and Stripe cannot convert an account,
+  so each one migrates through the owner-only flow on `/admin/businesses/[id]`: create
+  replacement account -> onboard -> switch over, using
+  `businesses.stripe_account_id_pending` / `_legacy` / `stripe_fees_payer`. Both accounts
+  run side by side, so the switch is one gated row update with no window where charges fail.
+  **Still to do**: the kiosk Terminal side of that migration (Locations and readers belong
+  to an account, so a migrated kiosk business needs a new Location + re-registered readers;
+  deliberately not built until there are accounts to point at); taking payment inline in the
+  internal `/schedule` new-booking flow; and saved-customer flows
+  (`customers.stripe_customer_id` is still a placeholder). Go-live config (platform key,
+  register the two webhook endpoints, connect each business) is the remaining operational
+  step. Runbook in [`docs/stripe-fee-free-accounts.md`](docs/stripe-fee-free-accounts.md).

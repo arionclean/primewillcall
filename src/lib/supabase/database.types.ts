@@ -274,9 +274,12 @@ export type Database = {
           phone: string | null
           slug: string
           stripe_account_id: string | null
+          stripe_account_id_legacy: string[]
+          stripe_account_id_pending: string | null
           stripe_account_synced_at: string | null
           stripe_charges_enabled: boolean
           stripe_details_submitted: boolean
+          stripe_fees_payer: string | null
           stripe_payouts_enabled: boolean
           stripe_requirements_due: number
           timezone: string
@@ -296,9 +299,12 @@ export type Database = {
           phone?: string | null
           slug: string
           stripe_account_id?: string | null
+          stripe_account_id_legacy?: string[]
+          stripe_account_id_pending?: string | null
           stripe_account_synced_at?: string | null
           stripe_charges_enabled?: boolean
           stripe_details_submitted?: boolean
+          stripe_fees_payer?: string | null
           stripe_payouts_enabled?: boolean
           stripe_requirements_due?: number
           timezone?: string
@@ -318,9 +324,12 @@ export type Database = {
           phone?: string | null
           slug?: string
           stripe_account_id?: string | null
+          stripe_account_id_legacy?: string[]
+          stripe_account_id_pending?: string | null
           stripe_account_synced_at?: string | null
           stripe_charges_enabled?: boolean
           stripe_details_submitted?: boolean
+          stripe_fees_payer?: string | null
           stripe_payouts_enabled?: boolean
           stripe_requirements_due?: number
           timezone?: string
