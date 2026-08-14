@@ -11,7 +11,6 @@ import { DateField } from "@/components/ui/date-field";
 import { Input } from "@/components/ui/input";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
 import type { Database } from "@/lib/supabase/database.types";
 
 import { createBookingAction, type CreateBookingState } from "./actions";
@@ -38,8 +37,14 @@ export type ScheduleFormTour = {
 
 const INITIAL: CreateBookingState = {};
 
-function hhmm(t: string): string {
-  return /^\d{2}:\d{2}/.test(t) ? t.slice(0, 5) : t;
+/** "14:30:00" -> "2:30 PM". Timeslots are stored as a plain local clock time. */
+function slotLabel(t: string): string {
+  const m = /^(\d{1,2}):(\d{2})/.exec(t);
+  if (!m) return t;
+  const hour = Number(m[1]);
+  const suffix = hour >= 12 ? "PM" : "AM";
+  const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${hour12}:${m[2]} ${suffix}`;
 }
 
 function todayInNewYork(): string {
@@ -82,6 +87,7 @@ export function ScheduleForm({
   const [date, setDate] = useState<string>(todayInNewYork());
   const [slotIndex, setSlotIndex] = useState<number>(0);
   const [pax, setPax] = useState<Record<string, number>>({});
+  const [priceOverride, setPriceOverride] = useState<string | null>(null);
   const [customer, setCustomer] = useState({
     full_name: "",
     email: "",
@@ -124,6 +130,12 @@ export function ScheduleForm({
     return selected.tiers.some((t) => (pax[t.id] ?? 0) > 0);
   }, [pax, selected]);
 
+  // Manual price. null = charge the tier prices (the common case). Once the
+  // desk types a price it sticks, even if the pax counts change after, so an
+  // agreed price is never silently overwritten. "Reset" puts it back.
+  const overridden = priceOverride !== null;
+  const priceValue = overridden ? priceOverride : (totalCents / 100).toFixed(2);
+
   function setQty(tierId: string, next: number) {
     const v = Math.max(0, Math.floor(Number.isFinite(next) ? next : 0));
     setPax((p) => ({ ...p, [tierId]: v }));
@@ -147,6 +159,8 @@ export function ScheduleForm({
         name="slot_duration"
         value={slot ? String(slot.duration_minutes) : ""}
       />
+      {/* Empty unless the desk typed a price, so the server bills tier prices. */}
+      <input type="hidden" name="total_override" value={priceOverride ?? ""} />
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Left column: booking details */}
@@ -209,7 +223,7 @@ export function ScheduleForm({
               </Field>
               <Field
                 label="Timeslot"
-                htmlFor=""
+                htmlFor="slot-picker"
                 error={state.fieldErrors?.slot_start}
               >
                 {noSlots ? (
@@ -218,26 +232,18 @@ export function ScheduleForm({
                     them.
                   </p>
                 ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {selected.timeslots.map((s, i) => {
-                      const active = i === slotIndex;
-                      return (
-                        <button
-                          key={`${s.start_time}-${i}`}
-                          type="button"
-                          onClick={() => setSlotIndex(i)}
-                          className={cn(
-                            "rounded-full border px-3 py-1.5 text-sm transition",
-                            active
-                              ? "border-primary bg-primary text-primary-foreground"
-                              : "border-border bg-background text-foreground hover:bg-muted",
-                          )}
-                        >
-                          {hhmm(s.start_time)}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <select
+                    id="slot-picker"
+                    value={slotIndex}
+                    onChange={(e) => setSlotIndex(Number(e.target.value))}
+                    className="h-10 w-full rounded-md border bg-background px-3 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-ring/50"
+                  >
+                    {selected.timeslots.map((s, i) => (
+                      <option key={`${s.start_time}-${i}`} value={i}>
+                        {slotLabel(s.start_time)}
+                      </option>
+                    ))}
+                  </select>
                 )}
               </Field>
             </div>
@@ -312,11 +318,42 @@ export function ScheduleForm({
                   );
                 })}
                 <Card>
-                  <CardContent className="flex items-center justify-between py-3">
-                    <span className="text-sm font-medium">Total</span>
-                    <span className="text-lg font-semibold tabular-nums">
-                      {formatMoney(totalCents)}
-                    </span>
+                  <CardContent className="py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium">Total</p>
+                        {overridden && (
+                          <p className="text-xs text-muted-foreground">
+                            Custom price.{" "}
+                            <button
+                              type="button"
+                              onClick={() => setPriceOverride(null)}
+                              className="underline underline-offset-2 hover:text-foreground"
+                            >
+                              Reset to {formatMoney(totalCents)}
+                            </button>
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-lg font-semibold text-muted-foreground">
+                          $
+                        </span>
+                        <Input
+                          aria-label="Total price"
+                          inputMode="decimal"
+                          value={priceValue}
+                          onChange={(e) => setPriceOverride(e.target.value)}
+                          onFocus={(e) => e.currentTarget.select()}
+                          className="h-10 w-28 text-right text-lg font-semibold tabular-nums"
+                        />
+                      </div>
+                    </div>
+                    {state.fieldErrors?.total_override && (
+                      <p className="mt-2 text-right text-xs text-destructive">
+                        {state.fieldErrors.total_override}
+                      </p>
+                    )}
                   </CardContent>
                 </Card>
               </div>

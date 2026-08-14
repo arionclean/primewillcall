@@ -212,6 +212,25 @@ export async function createBookingAction(
     return { error: "Add at least one guest." };
   }
 
+  // Manual price. Blank means charge the tier prices, which stay the default and
+  // the only thing the client can't tamper with. A value here is a deliberate
+  // desk-side adjustment (discount, cash deal), so the breakdown keeps the list
+  // prices and only the charged total moves.
+  const totalOverrideRaw = String(formData.get("total_override") ?? "").trim();
+  if (totalOverrideRaw) {
+    const cleaned = totalOverrideRaw.replace(/[$,\s]/g, "");
+    if (!/^\d+(\.\d{1,2})?$/.test(cleaned)) {
+      return {
+        fieldErrors: { total_override: "Enter a price like 60 or 59.99." },
+      };
+    }
+    const cents = Math.round(Number(cleaned) * 100);
+    if (cents > 100_000_00) {
+      return { fieldErrors: { total_override: "That price is too high." } };
+    }
+    total_cents = cents;
+  }
+
   // Compute times.
   const startsAtIso = nyLocalToUtcIso(date, slotStart);
   const endsAtIso = new Date(

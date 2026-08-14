@@ -61,6 +61,29 @@ function slotLabel(hhmm: string): string {
   return slotTimeFormatter.format(new Date(2000, 0, 1, h, m ?? 0));
 }
 
+const moneyFormatter = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+});
+
+/** 6000 -> "$60.00". */
+function formatCents(cents: number): string {
+  return moneyFormatter.format((cents ?? 0) / 100);
+}
+
+/** 6000 -> "60.00", for the editable price box. */
+function centsToInput(cents: number): string {
+  return ((cents ?? 0) / 100).toFixed(2);
+}
+
+/** "$1,299.50" -> 129950. null when it isn't a price we can charge. */
+function priceInputToCents(raw: string): number | null {
+  const cleaned = raw.replace(/[$,\s]/g, "");
+  if (!/^\d+(\.\d{1,2})?$/.test(cleaned)) return null;
+  const cents = Math.round(Number(cleaned) * 100);
+  return cents > 100_000_00 ? null : cents;
+}
+
 const BOOKING_SELECT = `
   id,
   starts_at,
@@ -1830,6 +1853,12 @@ function EditBookingModal({
   const [notes, setNotes] = useState(booking.notes ?? "");
   const [fullName, setFullName] = useState(booking.customer?.full_name ?? "");
   const [email, setEmail] = useState(booking.customer?.email ?? "");
+  // Opens on what the booking actually charges (an OTA or Groupon price is not
+  // the tier price, and reopening a booking must not quietly rewrite it).
+  // Editing guests or the tour re-prices from the tiers, until someone types a
+  // price by hand, which then wins.
+  const [price, setPrice] = useState(centsToInput(booking.total_cents));
+  const [priceTouched, setPriceTouched] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -1850,6 +1879,36 @@ function EditBookingModal({
       null,
     [businessTours, tours, businessTourId],
   );
+
+  /** What the tiers say these guests cost. Mirrors the breakdown built on save. */
+  function tierTotalCents(
+    a: string,
+    c: string,
+    i: string,
+    tour: TourOption | null,
+  ): number {
+    const priceByLabel = new Map<string, number>();
+    for (const t of tour?.tiers ?? []) {
+      priceByLabel.set(t.label.toLowerCase(), t.price_cents);
+    }
+    return (
+      toNonNegativeInteger(a) * (priceByLabel.get("adult") ?? 0) +
+      toNonNegativeInteger(c) * (priceByLabel.get("child") ?? 0) +
+      toNonNegativeInteger(i) * (priceByLabel.get("infant") ?? 0)
+    );
+  }
+
+  /** Re-price after a guest/tour edit, unless a price was typed by hand. */
+  function reprice(a: string, c: string, i: string, tourId: string) {
+    if (priceTouched) return;
+    const tour =
+      businessTours.find((t) => t.id === tourId) ??
+      tours.find((t) => t.id === tourId) ??
+      null;
+    setPrice(centsToInput(tierTotalCents(a, c, i, tour)));
+  }
+
+  const tierPriceNow = tierTotalCents(adult, child, infant, selectedTour);
 
   // Time choices come from the tour's configured timeslots only. The booking's
   // current time is always kept selectable so we never silently move it.
@@ -1937,6 +1996,16 @@ function EditBookingModal({
     addLine("adult", a);
     addLine("child", c);
     addLine("infant", i);
+
+    // The price box is what we charge. The breakdown keeps the tier prices, so
+    // an adjusted total still shows what each guest line was worth.
+    const chargedCents = priceInputToCents(price);
+    if (chargedCents === null) {
+      setError("Enter a price like 60 or 59.99.");
+      setSaving(false);
+      return;
+    }
+    totalCents = chargedCents;
 
     const supabase = getSupabaseBrowserClient();
     const { error: bookingError } = await supabase
@@ -2125,7 +2194,10 @@ function EditBookingModal({
                     min="0"
                     value={adult}
                     disabled={busy}
-                    onChange={(e) => setAdult(e.target.value)}
+                    onChange={(e) => {
+                      setAdult(e.target.value);
+                      reprice(e.target.value, child, infant, businessTourId);
+                    }}
                     className="h-9 w-full min-w-0 rounded-md border bg-background px-2 text-center text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50"
                   />
                 </label>
@@ -2136,7 +2208,10 @@ function EditBookingModal({
                     min="0"
                     value={child}
                     disabled={busy}
-                    onChange={(e) => setChild(e.target.value)}
+                    onChange={(e) => {
+                      setChild(e.target.value);
+                      reprice(adult, e.target.value, infant, businessTourId);
+                    }}
                     className="h-9 w-full min-w-0 rounded-md border bg-background px-2 text-center text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50"
                   />
                 </label>
@@ -2147,11 +2222,51 @@ function EditBookingModal({
                     min="0"
                     value={infant}
                     disabled={busy}
-                    onChange={(e) => setInfant(e.target.value)}
+                    onChange={(e) => {
+                      setInfant(e.target.value);
+                      reprice(adult, child, e.target.value, businessTourId);
+                    }}
                     className="h-9 w-full min-w-0 rounded-md border bg-background px-2 text-center text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50"
                   />
                 </label>
               </div>
+
+              <label className={cn(editFieldClass, "max-w-xs")}>
+                Price
+                <span className="relative block">
+                  <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                    $
+                  </span>
+                  <input
+                    inputMode="decimal"
+                    value={price}
+                    disabled={busy}
+                    onChange={(e) => {
+                      setPrice(e.target.value);
+                      setPriceTouched(true);
+                    }}
+                    onFocus={(e) => e.currentTarget.select()}
+                    className={cn(editInputClass, "pl-6 text-right tabular-nums")}
+                  />
+                </span>
+                {priceTouched &&
+                  priceInputToCents(price) !== tierPriceNow && (
+                    <span className="text-xs font-normal text-muted-foreground">
+                      Custom price.{" "}
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          setPrice(centsToInput(tierPriceNow));
+                          setPriceTouched(false);
+                        }}
+                        className="underline underline-offset-2 hover:text-foreground"
+                      >
+                        Reset to {formatCents(tierPriceNow)}
+                      </button>
+                    </span>
+                  )}
+              </label>
 
               <label className={cn(editFieldClass, "max-w-xs")}>
                 Status
@@ -2208,7 +2323,10 @@ function EditBookingModal({
                   required
                   value={businessTourId}
                   disabled={busy}
-                  onChange={(e) => setBusinessTourId(e.target.value)}
+                  onChange={(e) => {
+                    setBusinessTourId(e.target.value);
+                    reprice(adult, child, infant, e.target.value);
+                  }}
                   className={editInputClass}
                 >
                   {businessTours.length === 0 ? (
