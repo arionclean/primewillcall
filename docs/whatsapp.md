@@ -45,18 +45,22 @@ feature depends on:
 - **The window check fails closed.** If the lookup errors, we send a template rather than
   risk a rejected free-form message.
 
+## Sender configuration
+
+The sender `whatsapp:+17868226594` ("Booking Notifications", ONLINE) posts incoming
+messages to `https://qbnizuhozzwkiitfkjee.supabase.co/functions/v1/twilio-inbound-sms`
+(POST). It was set through the Messaging v2 Senders API, not the console: the console's
+sender form refuses to save until the public "Profile about" is filled in, and its save
+call was returning 404 regardless. The API updates the webhook alone and leaves the
+public profile untouched, which is what we want.
+
 ## Not live yet
 
-The plumbing is deployed and tested. What is missing is configuration and surface:
+The plumbing is deployed, tested and receiving. What is missing is surface:
 
-1. **The sender has no inbound webhook.** `whatsapp:+17868226594` is ONLINE in Twilio
-   with an empty `callback_url`, so customer replies go nowhere and no window ever
-   opens. Point it at
-   `https://qbnizuhozzwkiitfkjee.supabase.co/functions/v1/twilio-inbound-sms` (POST).
-   This is the one step that has to happen before anything else works.
-2. **No automation uses WhatsApp.** Every `messaging_rules` row is `channel = 'sms'`.
+1. **No automation uses WhatsApp.** Every `messaging_rules` row is `channel = 'sms'`.
    One approved template exists (`key_west_confirmation`).
-3. **The staff Messages screen is SMS-only.** It reads `sms_messages` and calls
+2. **The staff Messages screen is SMS-only.** It reads `sms_messages` and calls
    `sms-send`. Sending WhatsApp by hand means merging the two tables into one thread
    view, which is a UI change, not a plumbing one.
 
