@@ -157,7 +157,6 @@ Deno.serve(async (req) => {
 
   const booking = { id: created.booking_id, public_token: created.public_token };
   const totalCents = created.total_cents;
-  const startsAtIso = created.starts_at;
 
   // Charge the convenience fee via a Stripe Checkout Session created DIRECTLY on the
   // business's connected account, with a platform application_fee (Prime's cut). The
