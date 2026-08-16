@@ -73,7 +73,7 @@ is_active, created_at, updated_at` — unique `(tour_id, start_time)`.
 created_by? (-> staff), created_at` — unique `(tour_id, closed_on, start_time)`.
 A row means "this departure is closed on this date" (weather, charter, sold out
 offline). Open is the default: closing inserts, reopening deletes. Managed on the
-`/availability` page; read by the public `/api/gp/*` endpoints so closed times
+`/availability` page; read by the public `gp-*` edge functions so closed times
 disappear from the Groupon page. Keyed by `start_time` (not timeslot id) on purpose:
 the tour editor replaces timeslot rows wholesale and closures must survive that.
 Existing bookings are not affected by a closure.
@@ -120,6 +120,42 @@ webhook, and OTA status resends update rather than duplicate), else the Xano
 `unique_id`, else `xano-<id>`. `legacy_reference` keeps the raw OTA ref but is NOT
 unique (the bulk import also stored channel/payment placeholders like `Groupon` and
 `kiosk-sale-card` there), so it is a label, never a dedup key.
+
+### create_booking() (the one way a booking is created)
+
+`create_booking(p_business_tour_id, p_date, p_slot_start, p_customer_name, ...)` inserts
+the customer and the booking **in one transaction** and returns
+`(booking_id, public_token, total_cents, starts_at, ends_at)`. Migration
+`20260816120000_create_booking_rpc.sql`.
+
+Both callers go through it:
+
+| Caller | Mode | Guards |
+|---|---|---|
+| `/schedule` staff form (`schedule/actions.ts`) | `p_pricing => 'tiers'` | closures and inactive slots allowed (staff override) |
+| public `gp-book` edge function | `p_pricing => 'groupon'` | `p_respect_closures`, `p_active_slots_only` both true |
+
+What the database decides, not the caller:
+
+- **The slot duration.** Read from `tour_timeslots`, so `ends_at` is always the tour's
+  real duration. `/schedule` used to post `slot_duration` from the form and trust it.
+- **The prices.** `tiers` mode reads `tour_pax_tiers`; `groupon` mode reads
+  `business_tours.groupon_fee_cents`. The caller sends quantities only. The single
+  exception is `p_total_override_cents`, the deliberate desk-side adjustment, which moves
+  the charged total and leaves the breakdown at list prices.
+- **The UTC timestamps.** `(date + time) AT TIME ZONE 'America/New_York'` resolves the
+  real offset for that date, DST included. This replaced a hand-rolled offset parse that
+  had been copied into three TypeScript files.
+
+`SECURITY INVOKER`, so **RLS still decides**: the staff form runs as the signed-in user
+and is governed by the `customers` / `bookings` policies; `gp-book` runs as the service
+role and bypasses them, exactly as before. A policy denial arrives as SQLSTATE `42501`.
+Failures raise a short stable token the callers map to their own wording:
+`tour_not_available`, `bad_slot`, `slot_closed`, `no_prices`, `no_guests`,
+`groupon_not_available`.
+
+The `on_native_booking_created` trigger still fires from the insert inside the function
+(`legacy_id` is NULL at insert time), so the messaging automations are unaffected.
 
 ### staff_tours
 `staff_id, tour_id, created_at` — which tours a `check_in` staffer is assigned to.
@@ -198,7 +234,7 @@ behavior (booking held, fee collected manually).
   fee always comes from this row, never from the model.
 
 ### Request flow (all server-side, service role; no anon DB access)
-- `POST /api/gp/validate` — uploads the photo to `gp-vouchers`, then hands the public URL
+- `gp-validate` (edge function): uploads the photo to `gp-vouchers`, then hands the public URL
   to the `gp-voucher-vision` edge function and returns
   `{ valid, businessTourId, productName, feeCents, passengers, voucherCode, imageUrl }`.
   The edge function ports the Xano vision chain (~1.5s avg there): Google Cloud Vision
@@ -238,10 +274,10 @@ behavior (booking held, fee collected manually).
   exempt from the gate: they already require one of our own product titles in the voucher,
   and gating them would drop real vouchers whose photo is too poor to read the storefront
   line. The fee always comes from the matched row, never from the model.
-- `GET /api/gp/slots?business_tour_id&date` — active `tour_timeslots` for the matched
+- `gp-slots` (edge function; body `{ business_tour_id, date }`): active `tour_timeslots` for the matched
   product's master tour, past times hidden for today (NY), minus any
   `tour_slot_closures` for that date. Replaces Xano `manage_slots`.
-- `POST /api/gp/book` — re-validates the product + fee (and rejects a time closed for
+- `gp-book` (edge function): re-validates the product + fee (and rejects a time closed for
   that date), creates the customer
   (`legacy_source = 'groupon'`) and a `pending` booking (`source_channel = 'groupon'`,
   `legacy_reference = <voucher code>`, `total_cents = fee × passengers`, the fee as a
@@ -311,10 +347,12 @@ role. `stripe_events`: RLS on, no policies (service-role only).
   `account.updated` keeps the status flags in sync. The platform fee is a single global rate
   (`STRIPE_PLATFORM_FEE_BPS`, default 25 bps = 0.25%), applied as the application fee on
   every direct charge.
-- **Webhook** (`/api/stripe/webhook`, Next.js route, `nodejs` runtime): one endpoint for
-  both platform and Connect deliveries (two dashboard endpoints, two signing secrets:
-  `STRIPE_WEBHOOK_SECRET` + `STRIPE_WEBHOOK_SECRET_CONNECTED`). Uses the official
-  `constructEvent` verifier. Handles `checkout.session.completed` / `payment_intent.succeeded`
+- **Webhook** (`stripe-webhook` Supabase edge function, `supabase/functions/stripe-webhook/`):
+  one endpoint for both platform and Connect deliveries (two dashboard endpoints, two signing
+  secrets: `STRIPE_WEBHOOK_SECRET` + `STRIPE_WEBHOOK_SECRET_CONNECTED`, set as Supabase
+  function secrets). Deployed with JWT off; the Stripe signature is the auth. Uses the
+  official `constructEventAsync` verifier (Deno has no Node crypto).
+  Handles `checkout.session.completed` / `payment_intent.succeeded`
   (flip booking to `confirmed`, set `paid_at` + `stripe_payment_intent_id`), `charge.*`
   (upsert the ledger), `charge.dispute.*`, and `account.updated`.
 - **Booking link**: every charge carries `metadata.booking_id` + `metadata.source` (set on
@@ -347,8 +385,8 @@ role. `stripe_events`: RLS on, no policies (service-role only).
   link for a booking (RLS authorizes the read, direct charge on the business's account with
   the platform fee) and send it to the customer; surfaced by the "Payment link" button in the
   booking edit modal.
-- **Kiosk POS (Stripe Terminal)**: `POST /api/kiosk/connection-token` (Terminal connection
-  token) + `POST /api/kiosk/payment-intent` (`card_present` direct charge with the platform
+- **Kiosk POS (Stripe Terminal)**: the `kiosk-connection-token` (Terminal connection
+  token) + `kiosk-payment-intent` (`card_present` direct charge with the platform
   fee) for the PrimeKiosk tablet. Both resolve the connected account server-side from the
   tablet's `kiosk` tag (`kiosks.slug`, via `src/lib/kiosk/resolve.ts`), so the caller can
   never pick the account. Card sales land in `stripe_transactions` (`source='kiosk'`) through

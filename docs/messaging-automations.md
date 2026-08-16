@@ -101,7 +101,7 @@ Remaining steps to turn sending on:
    (`TWILIO_*`, `CRON_SECRET`) are set on the function; the cron reads `CRON_SECRET` from Vault.
 3. ~~Schedule the cron~~ (done; SQL kept below for reference / disaster recovery).
 4. **Wire the other booking path**: add the same `maybeRunNewBookingRules({...})` call after
-   the booking insert in `src/app/api/gp/book/route.ts` (the internal `/schedule` flow is
+   the booking insert in `supabase/functions/gp-book/index.ts` (the internal `/schedule` flow is
    already wired in `src/app/(app)/schedule/actions.ts`). Until then, Groupon (`/gp`)
    bookings never enqueue or fire any automation.
 5. **Flip it on**: set `MESSAGING_AUTOMATIONS_ENABLED=true` on the Next app — but only once

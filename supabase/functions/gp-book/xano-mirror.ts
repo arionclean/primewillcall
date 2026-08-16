@@ -1,39 +1,39 @@
-import "server-only";
-
 /**
  * Temporary double-write of a public /gp booking into Xano.
  *
- * While `/gp` is the test bed for the Supabase messaging automations, Supabase
- * is the one sending the SMS. Xano still needs the booking though, so that a
- * failure in the new stack does not leave staff with a guest who booked and no
- * record on the side they actually work from.
+ * While /gp is the test bed for the Supabase messaging automations, Supabase is the
+ * one sending the SMS. Xano still needs the booking though, so that a failure in the
+ * new stack does not leave staff with a guest who booked and no record on the side
+ * they actually work from.
  *
  * Two things keep this from double-texting the guest:
  *
- *  1. **No phone.** Xano's booking SMS trigger reads the phone off the booking
- *     row. `booking/v12` maps the literal string "null" to a null phone, so the
- *     trigger has no destination and sends nothing. Confirmed with the owner
- *     that the trigger stops there and does not fall back to the contact record.
- *  2. **`trigger: false`.** A second brake, free to set, in case a campaign
- *     trigger keys off that flag rather than the phone.
+ *  1. **No phone.** Xano's booking SMS trigger reads the phone off the booking row.
+ *     `booking/v12` maps the literal string "null" to a null phone, so the trigger has
+ *     no destination and sends nothing. Confirmed with the owner that the trigger stops
+ *     there and does not fall back to the contact record.
+ *  2. **`trigger: false`.** A second brake, free to set, in case a campaign trigger keys
+ *     off that flag rather than the phone.
  *
  * And one thing keeps the booking from coming back at us as a duplicate: Xano's
  * "New Supabase platfomr" trigger mirrors every `bookings` row into Supabase via
- * `xano-booking-sync`, which upserts on `legacy_id` derived as
- * `ota-<booking_reference>`. We choose the reference ourselves and stamp the
- * matching `legacy_id` on our own row at insert time, so the round trip updates
- * the booking we already created instead of inserting a second one.
+ * `xano-booking-sync`, which upserts on `legacy_id` derived as `ota-<booking_reference>`.
+ * We choose the reference ourselves and stamp the matching `legacy_id` on our own row,
+ * so the round trip updates the booking we already created instead of inserting a second.
  *
- * Never throws. A mirror failure is logged and the guest's booking stands: the
- * Supabase row is the source of truth for the test.
+ * Never throws. A mirror failure is logged and the guest's booking stands: the Supabase
+ * row is the source of truth for the test.
  *
- * Remove this module, its env vars, and the call in /api/gp/book when the test
- * ends. See docs/gp-xano-mirror.md.
+ * OFF unless the GP_XANO_MIRROR secret is "true" AND XANO_API_TOKEN is set. This is the
+ * only path in the codebase that writes to Xano; delete this file, its secrets, and the
+ * call in index.ts when the test ends. See docs/gp-xano-mirror.md.
  */
 
 const XANO_BOOKINGS_API = "https://xmhi-aj9d-cnsb.n7.xano.io/api:0AUqUbBn";
 const XANO_GP_CHANNEL = "groupon-surcharge";
 const TIMEOUT_MS = 8_000;
+
+import { nyDateString } from "../_shared/ny-time.ts";
 
 /** Booking reference shared by both systems. Also the Xano internal_id. */
 export function gpMirrorRef(): string {
@@ -45,11 +45,12 @@ export const gpMirrorLegacyId = (ref: string): string => `ota-${ref}`;
 
 export function gpMirrorEnabled(): boolean {
   return (
-    process.env.GP_XANO_MIRROR === "true" && !!process.env.XANO_API_TOKEN?.trim()
+    Deno.env.get("GP_XANO_MIRROR") === "true" &&
+    Boolean(Deno.env.get("XANO_API_TOKEN")?.trim())
   );
 }
 
-export type GpMirrorInput = {
+export interface GpMirrorInput {
   ref: string;
   publicToken: string;
   legacyCompanyId: string | null;
@@ -61,7 +62,7 @@ export type GpMirrorInput = {
   passengers: number;
   voucherImageUrls: string[];
   note: string;
-};
+}
 
 /** "Ada Lovelace" -> { first: "Ada", last: "Lovelace" } */
 function splitName(full: string): { first: string; last: string } {
@@ -69,16 +70,6 @@ function splitName(full: string): { first: string; last: string } {
   if (parts.length === 0) return { first: "", last: "" };
   if (parts.length === 1) return { first: parts[0], last: "" };
   return { first: parts[0], last: parts.slice(1).join(" ") };
-}
-
-/** Xano stores the tour day as a New York wall-clock date, not a UTC one. */
-function nyDateString(iso: string): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/New_York",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date(iso));
 }
 
 export async function mirrorGpBookingToXano(
@@ -133,16 +124,17 @@ export async function mirrorGpBookingToXano(
       method: "POST",
       headers: {
         "content-type": "application/json",
-        authorization: `Bearer ${process.env.XANO_API_TOKEN}`,
+        authorization: `Bearer ${Deno.env.get("XANO_API_TOKEN")}`,
       },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     if (!res.ok) {
-      return { ok: false, error: `xano ${res.status}: ${(await res.text()).slice(0, 300)}` };
+      const text = await res.text().catch(() => "");
+      return { ok: false, error: `Xano ${res.status}: ${text.slice(0, 200)}` };
     }
     return { ok: true };
-  } catch (e) {
-    return { ok: false, error: String(e) };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
 }

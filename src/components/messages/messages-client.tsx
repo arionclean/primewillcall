@@ -32,6 +32,29 @@ function getSmsClient(): SupabaseClient {
   return getSupabaseBrowserClient() as unknown as SupabaseClient;
 }
 
+/**
+ * Call one of the SMS edge functions. Sending and history sync live in Supabase
+ * (that is where the Twilio credentials are), and `invoke` attaches the signed-in
+ * staff member's token, which the function turns back into their staff row.
+ *
+ * On a non-2xx the SDK gives us an error whose `context` is the raw Response, so
+ * read the body from there to recover the function's own reason.
+ */
+async function invokeSmsFunction<T>(
+  name: "sms-send" | "sms-sync",
+  body?: Record<string, unknown>,
+): Promise<{ data: T | null; error: string | null }> {
+  const { data, error } = await getSmsClient().functions.invoke<T>(name, { body });
+  if (!error) {
+    return { data: data ?? null, error: null };
+  }
+  const response = (error as { context?: Response }).context;
+  const payload = (await response?.json?.().catch(() => null)) as
+    | { error?: string; reason?: string }
+    | null;
+  return { data: (payload as T) ?? null, error: payload?.reason ?? payload?.error ?? error.message };
+}
+
 function counterpartOf(message: SmsMessage): string {
   return message.direction === "inbound" ? message.from_phone : message.to_phone;
 }
@@ -88,11 +111,10 @@ export function MessagesClient() {
   const runSync = useCallback(async () => {
     setSyncing(true);
     try {
-      const response = await fetch("/api/sms/sync", { method: "POST" });
-      if (!response.ok) {
-        // The API's reason is for the log, not for a manager reading a phone.
-        const body = (await response.json().catch(() => null)) as { error?: string } | null;
-        console.error("[messages] sync failed:", body?.error ?? response.status);
+      const { error: syncError } = await invokeSmsFunction("sms-sync");
+      if (syncError) {
+        // The function's reason is for the log, not for a manager reading a phone.
+        console.error("[messages] sync failed:", syncError);
         setError("Could not refresh messages. Try again.");
       }
     } finally {
@@ -145,14 +167,12 @@ export function MessagesClient() {
     setSending(true);
     setError(null);
     try {
-      const response = await fetch("/api/sms/send", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ to, body: body.trim(), tag: "chat" }),
-      });
-      const result = (await response.json()) as { sent?: boolean; reason?: string; error?: string };
-      if (!response.ok || !result.sent) {
-        setError(result.reason ?? result.error ?? "Failed to send");
+      const { data, error: sendError } = await invokeSmsFunction<{ sent?: boolean; reason?: string }>(
+        "sms-send",
+        { to, body: body.trim(), tag: "chat" },
+      );
+      if (sendError || !data?.sent) {
+        setError(sendError ?? data?.reason ?? "Failed to send");
         return false;
       }
       return true;

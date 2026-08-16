@@ -1,4 +1,5 @@
-// Stripe webhook, Supabase-native (Deno) port of the Vercel /api/stripe/webhook route.
+// Stripe webhook. This is THE handler: the equivalent Vercel route was deleted, so Stripe
+// delivers here and nowhere else.
 // One endpoint handles both the platform's own events and Connect events forwarded from
 // connected accounts. Register the endpoint(s) in Stripe pointing here; each has its own
 // signing secret (platform + connected). Signature verification uses the Stripe SDK's
@@ -11,7 +12,7 @@
 // STRIPE_WEBHOOK_SECRET_CONNECTED. SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY are provided.
 //
 // This file is the source of truth for the deployed `stripe-webhook` function. Keep the
-// ledger row shape in sync with src/app/api/stripe/webhook/route.ts.
+// ledger row shape in sync with the stripe_transactions table and src/lib/stripe/server.ts.
 
 import Stripe from "npm:stripe@22.3.0";
 import { createClient } from "jsr:@supabase/supabase-js@2";

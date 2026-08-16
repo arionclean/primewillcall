@@ -2,11 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+
 // Public Groupon voucher-redemption flow, ported from the legacy Bubble/Xano
 // widget. Three steps: upload the voucher -> confirm details -> pay. The design
 // (green theme, light cards, step pills, upload arrow, invalid modal) mirrors the
-// original; the logic is rewired to this app's /api/gp/* routes. Payment is the
-// final migration phase, so the checkout step is stubbed for now.
+// original; the logic is rewired to the gp-slots / gp-validate / gp-book Supabase
+// edge functions. Those run with the service role and re-derive the product, the
+// fee and the slot from the database, so nothing here is trusted.
 
 const SUPPORT_PHONE_DISPLAY = "+1 (786) 714-1314";
 const SUPPORT_PHONE_TEL = "+17867141314";
@@ -26,6 +29,25 @@ type Slot = { value: string; label: string; durationMinutes: number };
 
 function formatUsd(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
+}
+
+/**
+ * Call one of the public /gp edge functions. The page has no login, so `invoke`
+ * sends the publishable anon key: enough for the function's JWT gate, and the
+ * service-role work all happens on the Supabase side.
+ *
+ * Returns the parsed body even on a non-2xx (the functions answer with a typed
+ * `{ valid: false }` / `{ ok: false }` shape the callers already branch on), so a
+ * rejected voucher reads the same as it did through the old route.
+ */
+async function invokeGp<T>(
+  name: "gp-slots" | "gp-validate" | "gp-book",
+  body: FormData | Record<string, unknown>,
+): Promise<T | null> {
+  const { data, error } = await getSupabaseBrowserClient().functions.invoke<T>(name, { body });
+  if (!error) return data ?? null;
+  const response = (error as { context?: Response }).context;
+  return ((await response?.json?.().catch(() => null)) as T) ?? null;
 }
 
 function maskPhone(digits: string): string {
@@ -126,11 +148,11 @@ export function GrouponFlow() {
       setSlotValue("");
       setSlotsMsg("Loading times...");
       try {
-        const res = await fetch(
-          `/api/gp/slots?business_tour_id=${encodeURIComponent(businessTourId)}&date=${encodeURIComponent(forDate)}`,
-        );
-        const json = (await res.json()) as { slots?: Slot[] };
-        const next = json.slots ?? [];
+        const json = await invokeGp<{ slots?: Slot[] }>("gp-slots", {
+          business_tour_id: businessTourId,
+          date: forDate,
+        });
+        const next = json?.slots ?? [];
         if (next.length === 0) {
           setSlotsMsg("No times available");
           return;
@@ -158,8 +180,7 @@ export function GrouponFlow() {
       const form = new FormData();
       form.append("file", blob, "voucher.jpg");
 
-      const res = await fetch("/api/gp/validate", { method: "POST", body: form });
-      const json = (await res.json()) as {
+      const json = await invokeGp<{
         valid?: boolean;
         businessTourId?: string;
         businessName?: string;
@@ -170,9 +191,9 @@ export function GrouponFlow() {
         imageUrl?: string | null;
         reason?: string;
         message?: string;
-      };
+      }>("gp-validate", form);
 
-      if (json.valid && json.businessTourId) {
+      if (json?.valid && json.businessTourId) {
         // Vouchers for a different experience can't share one reservation.
         if (match && match.businessTourId !== json.businessTourId) {
           setModal({
@@ -214,8 +235,8 @@ export function GrouponFlow() {
         setModal({
           open: true,
           message:
-            json.message ||
-            json.reason ||
+            json?.message ||
+            json?.reason ||
             `We could not match that voucher. Call us at ${SUPPORT_PHONE_DISPLAY} for help.`,
           preview: localPreview,
         });
@@ -236,36 +257,31 @@ export function GrouponFlow() {
     if (!match || submitting) return;
     setSubmitting(true);
     try {
-      const res = await fetch("/api/gp/book", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          businessTourId: match.businessTourId,
-          customerName: name.trim(),
-          phone,
-          date,
-          slotStart: slotValue,
-          passengers: match.passengers,
-          voucherCodes: match.voucherCodes,
-          imageUrl: gallery[gallery.length - 1] ?? null,
-        }),
-      });
-      const json = (await res.json()) as {
+      const json = await invokeGp<{
         ok?: boolean;
         totalCents?: number;
         message?: string;
         payment?: { status?: string; checkoutUrl?: string | null };
-      };
-      if (json.ok) {
+      }>("gp-book", {
+        businessTourId: match.businessTourId,
+        customerName: name.trim(),
+        phone,
+        date,
+        slotStart: slotValue,
+        passengers: match.passengers,
+        voucherCodes: match.voucherCodes,
+        imageUrl: gallery[gallery.length - 1] ?? null,
+      });
+      if (json?.ok) {
         // When Stripe is wired for this business, go collect the fee. Otherwise
         // fall back to the held-reservation confirmation (staff collect manually).
         if (json.payment?.checkoutUrl) {
           window.location.href = json.payment.checkoutUrl;
           return;
         }
-        setConfirmed({ totalCents: json.totalCents ?? match.feeCents * match.passengers });
+        setConfirmed({ totalCents: json?.totalCents ?? match.feeCents * match.passengers });
       } else {
-        setStatusMsg(json.message ?? "Could not complete your reservation. Please try again.");
+        setStatusMsg(json?.message ?? "Could not complete your reservation. Please try again.");
       }
     } catch {
       setStatusMsg("Could not complete your reservation. Please try again.");

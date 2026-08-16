@@ -79,8 +79,8 @@ double-text today:
 
 1. **Outbound.** Xano still runs its own rateAsk campaign for Xano-synced
    bookings. The sweep only considers `legacy_id IS NULL`.
-2. **Inbound.** `api/webhooks/twilio/sms/route.ts` still mirrors every inbound
-   message to Xano, whose fn 269 also branches on rateAsk replies.
+2. **Inbound.** The inbound webhook still mirrors every inbound message to Xano,
+   whose fn 269 also branches on rateAsk replies.
 
 ## The five brakes
 
@@ -105,10 +105,10 @@ Plus the global `sms_hourly_cap`, since every send goes through
 | Ask delay knob | `migrations/20260721136000_review_ask_delay_setting.sql` |
 | Link nudge added then removed | `migrations/20260721142000` + `20260721143000` |
 | Ask + re-ask sweep | `supabase/functions/enqueue-review-asks/index.ts` |
-| Reply classifier | `src/lib/reviews/classify.ts` |
-| Replies + cancellation | `src/lib/reviews/funnel.ts` |
-| The four messages | `src/lib/reviews/copy.ts` |
-| Inbound hook | `src/app/api/webhooks/twilio/sms/route.ts` |
+| Reply classifier | `supabase/functions/twilio-inbound-sms/index.ts` (was `src/lib/reviews/classify.ts`) |
+| Replies + cancellation | same file (was `src/lib/reviews/funnel.ts`) |
+| The four messages | `src/lib/reviews/copy.ts` (the ask/re-ask; the two reply branches are inlined in the edge function) |
+| Inbound hook | `supabase/functions/twilio-inbound-sms/index.ts`, with the Vercel route still receiving until Twilio is repointed |
 | Tracked link | `src/app/r/[token]/route.ts` |
 | Read-only card | `admin/messaging/review-funnel-card.tsx` |
 
