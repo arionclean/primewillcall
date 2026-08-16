@@ -52,7 +52,8 @@ interface Body {
   passengers?: number;
   voucherCodes?: string[];
   voucherCode?: string | null; // legacy single-code shape, still accepted
-  imageUrl?: string | null;
+  imageUrls?: string[];
+  imageUrl?: string | null; // legacy single-image shape, still accepted
 }
 
 Deno.serve(async (req) => {
@@ -81,7 +82,15 @@ Deno.serve(async (req) => {
   )
     .map((c) => String(c ?? "").trim())
     .filter(Boolean);
-  const imageUrl = String(body.imageUrl ?? "").trim() || null;
+  // Every uploaded voucher, not just the last one. Only stored URLs: the page keeps a
+  // local blob: preview in the same gallery when vision could not return one, and that
+  // would be a dead link the moment the tab closes.
+  const imageUrls = (Array.isArray(body.imageUrls) ? body.imageUrls : [])
+    .concat(body.imageUrl ? [body.imageUrl] : [])
+    .map((u) => String(u ?? "").trim())
+    .filter((u) => u.startsWith("http"))
+    .filter((u, i, all) => all.indexOf(u) === i);
+  const imageUrl = imageUrls[imageUrls.length - 1] ?? null;
 
   if (!businessTourId || !customerName) {
     return json({ ok: false, error: "missing_fields", message: "Name and product are required." }, 400);
@@ -135,6 +144,8 @@ Deno.serve(async (req) => {
       // A guest may only book a departure that is open and active.
       p_respect_closures: true,
       p_active_slots_only: true,
+      // What the bookings list renders as the voucher photo.
+      p_groupon_voucher_urls: imageUrls,
     })
     .maybeSingle<CreatedBooking>();
 
@@ -182,7 +193,7 @@ Deno.serve(async (req) => {
       customerName,
       startsAtIso,
       passengers,
-      voucherImageUrls: imageUrl ? [imageUrl] : [],
+      voucherImageUrls: imageUrls,
       note: noteParts.join(" · "),
     });
     if (!mirror.ok) {

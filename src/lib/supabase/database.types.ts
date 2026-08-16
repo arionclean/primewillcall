@@ -1718,9 +1718,10 @@ export type Database = {
         Row: {
           body: string
           booking_id: string | null
-          business_id: string
+          business_id: string | null
           created_at: string
           customer_id: string | null
+          direction: Database["public"]["Enums"]["sms_direction"]
           error: string | null
           from_phone: string
           id: string
@@ -1732,9 +1733,10 @@ export type Database = {
         Insert: {
           body: string
           booking_id?: string | null
-          business_id: string
+          business_id?: string | null
           created_at?: string
           customer_id?: string | null
+          direction?: Database["public"]["Enums"]["sms_direction"]
           error?: string | null
           from_phone: string
           id?: string
@@ -1746,9 +1748,10 @@ export type Database = {
         Update: {
           body?: string
           booking_id?: string | null
-          business_id?: string
+          business_id?: string | null
           created_at?: string
           customer_id?: string | null
+          direction?: Database["public"]["Enums"]["sms_direction"]
           error?: string | null
           from_phone?: string
           id?: string
@@ -1865,6 +1868,7 @@ export type Database = {
           p_customer_name: string
           p_customer_phone?: string
           p_date: string
+          p_groupon_voucher_urls?: string[]
           p_legacy_reference?: string
           p_notes?: string
           p_passengers?: number
@@ -2118,6 +2122,7 @@ export type Database = {
           txn_count: number
         }[]
       }
+      whatsapp_window_open: { Args: { p_phone: string }; Returns: boolean }
     }
     Enums: {
       booking_status:

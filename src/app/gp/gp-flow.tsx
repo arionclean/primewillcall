@@ -270,7 +270,9 @@ export function GrouponFlow() {
         slotStart: slotValue,
         passengers: match.passengers,
         voucherCodes: match.voucherCodes,
-        imageUrl: gallery[gallery.length - 1] ?? null,
+        // Every voucher the guest uploaded for this product. The server keeps only the
+        // stored https URLs; a local blob: preview never reaches the database.
+        imageUrls: gallery,
       });
       if (json?.ok) {
         // When Stripe is wired for this business, go collect the fee. Otherwise
