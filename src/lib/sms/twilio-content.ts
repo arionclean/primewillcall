@@ -1,18 +1,17 @@
-import { getTwilioCredentials } from "@/lib/sms/twilio";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 /**
- * Twilio Content API client for WhatsApp templates. Twilio (not our DB) is
- * the source of truth: WhatsApp business-initiated messages require Meta
- * approval, and the approval status lives on the Content resource.
+ * WhatsApp template catalog, read through the `whatsapp-templates` edge function.
+ *
+ * Twilio (not our DB) is the source of truth: business-initiated WhatsApp messages
+ * require Meta approval, and the approval status lives on the Content resource.
+ * The Twilio call itself happens in Supabase, so the credentials stay function
+ * secrets; this module only carries the request there as the signed-in staff user.
  */
-const CONTENT_API = "https://content.twilio.com/v1";
 
-export type WhatsappTemplateStatus =
-  | "approved"
-  | "pending"
-  | "rejected"
-  | "draft"
-  | string;
+export type WhatsappTemplateStatus = "approved" | "pending" | "rejected" | "draft" | string;
 
 export interface WhatsappTemplate {
   sid: string;
@@ -25,98 +24,50 @@ export interface WhatsappTemplate {
   dateCreated: string;
 }
 
-function authHeader(): string {
-  const { accountSid, authToken } = getTwilioCredentials();
-  return `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString("base64")}`;
+async function invoke<T>(body: Record<string, unknown>): Promise<T> {
+  const supabase = (await getSupabaseServerClient()) as unknown as SupabaseClient;
+  const { data, error } = await supabase.functions.invoke<T & { error?: string }>(
+    "whatsapp-templates",
+    { body },
+  );
+  // A non-2xx from the function surfaces as error with the body attached, so read
+  // our own message out of it rather than showing "Edge Function returned 4xx".
+  if (error) {
+    const detail = await readErrorMessage(error);
+    throw new Error(detail ?? error.message);
+  }
+  if (data && typeof data === "object" && "error" in data && data.error) {
+    throw new Error(String(data.error));
+  }
+  return data as T;
 }
 
-interface ContentAndApprovalItem {
-  sid: string;
-  friendly_name: string;
-  language: string;
-  date_created: string;
-  types: Record<string, { body?: string }>;
-  approval_requests?: {
-    status?: string;
-    category?: string;
-    rejection_reason?: string;
-  } | null;
-}
-
-function normalizeStatus(raw: string | undefined): WhatsappTemplateStatus {
-  if (!raw || raw === "unsubmitted") return "draft";
-  if (raw === "received" || raw === "submitted" || raw === "pending") return "pending";
-  return raw;
+/** supabase-js wraps the failing Response; the useful message is inside its body. */
+async function readErrorMessage(error: unknown): Promise<string | null> {
+  const context = (error as { context?: Response }).context;
+  if (!context || typeof context.json !== "function") return null;
+  try {
+    const parsed = (await context.json()) as { error?: string };
+    return parsed?.error ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export async function listWhatsappTemplates(): Promise<WhatsappTemplate[]> {
-  const response = await fetch(`${CONTENT_API}/ContentAndApprovals?PageSize=100`, {
-    headers: { Authorization: authHeader() },
-    cache: "no-store",
-  });
-  if (!response.ok) {
-    throw new Error(`Twilio Content API failed with status ${response.status}`);
-  }
-  const data = (await response.json()) as { contents?: ContentAndApprovalItem[] };
-
-  return (data.contents ?? [])
-    .map((item) => {
-      const firstType = Object.values(item.types ?? {})[0];
-      return {
-        sid: item.sid,
-        name: item.friendly_name,
-        language: item.language,
-        body: firstType?.body ?? "",
-        status: normalizeStatus(item.approval_requests?.status),
-        category: item.approval_requests?.category ?? null,
-        rejectionReason: item.approval_requests?.rejection_reason || null,
-        dateCreated: item.date_created,
-      };
-    })
-    .sort((a, b) => (a.dateCreated < b.dateCreated ? 1 : -1));
+  const data = await invoke<{ templates: WhatsappTemplate[] }>({ action: "list" });
+  return data.templates ?? [];
 }
 
 /**
- * Create a text template and submit it for WhatsApp approval in one step.
- * `name` must be lowercase letters, numbers, and underscores (Meta rule);
- * the body can use numbered variables like {{1}}.
+ * Create a text template and submit it for WhatsApp approval.
+ * The name is normalized to Meta's rule (lowercase, numbers, underscores) inside
+ * the function; the body can use numbered variables like {{1}}.
  */
 export async function createWhatsappTemplate(input: {
   name: string;
   body: string;
   category: "UTILITY" | "MARKETING";
 }): Promise<{ sid: string }> {
-  const createResponse = await fetch(`${CONTENT_API}/Content`, {
-    method: "POST",
-    headers: { Authorization: authHeader(), "Content-Type": "application/json" },
-    body: JSON.stringify({
-      friendly_name: input.name,
-      language: "en",
-      types: { "twilio/text": { body: input.body } },
-    }),
-  });
-  const created = (await createResponse.json()) as { sid?: string; message?: string };
-  if (!createResponse.ok || !created.sid) {
-    throw new Error(created.message ?? `Could not create the template (${createResponse.status})`);
-  }
-
-  const approvalResponse = await fetch(
-    `${CONTENT_API}/Content/${created.sid}/ApprovalRequests/whatsapp`,
-    {
-      method: "POST",
-      headers: { Authorization: authHeader(), "Content-Type": "application/json" },
-      body: JSON.stringify({ name: input.name, category: input.category }),
-    },
-  );
-  if (!approvalResponse.ok) {
-    const failure = (await approvalResponse.json().catch(() => null)) as {
-      message?: string;
-    } | null;
-    throw new Error(
-      failure?.message ??
-        `Template created but the approval submission failed (${approvalResponse.status})`,
-    );
-  }
-
-  return { sid: created.sid };
+  return invoke<{ sid: string }>({ action: "create", ...input });
 }

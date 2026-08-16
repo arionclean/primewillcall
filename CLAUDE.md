@@ -106,9 +106,16 @@ supabase/functions/            Deno edge functions. Everything public, webhook-d
                                twilio-inbound-sms, sms-send, sms-sync, gp-voucher-vision,
                                run-booking-automations, dispatch-scheduled-messages,
                                enqueue-review-asks, email-booking-parse, kiosk-*,
-                               gp-slots, gp-validate, gp-book, xano-booking-sync.
+                               gp-slots, gp-validate, gp-book, xano-booking-sync,
+                               whatsapp-send, whatsapp-templates.
                                `_shared/` holds the modules they share (sms.ts,
-                               staff-auth.ts, gp.ts, ny-time.ts, parse-booking-email.ts).
+                               whatsapp.ts, staff-auth.ts, gp.ts, ny-time.ts,
+                               parse-booking-email.ts).
+supabase/config.toml           per-function `verify_jwt`. Not optional: the CLI defaults a
+                               function to JWT ON, which breaks any caller that cannot send
+                               a Supabase token (pg_cron sends only `x-cron-secret`, Twilio
+                               only `X-Twilio-Signature`). Add an entry for every new
+                               function before deploying it.
 docs/                          ARCHITECTURE, DATABASE, platform-migration, shadcn-foundation
 scripts/                       import_legacy_bookings.py (one-way Xano -> Supabase tunnel)
 src/app/_archive, src/components/_archive   legacy Bubble pages, kept as reference only.
@@ -226,6 +233,21 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   (pg_cron) is the single thing that calls Twilio and it enforces the global hourly cap.
   `messaging_settings.automations_enabled` is ON. Full model + go-live checklist in
   [`docs/messaging-automations.md`](docs/messaging-automations.md).
+- **WhatsApp** shares that engine but not its rules. Meta lets a business open a
+  conversation only with an approved template; when the customer replies, a **24-hour
+  window** opens in which free-form text is allowed, and each new reply restarts it.
+  So the channel is built around that window, not around a send call:
+  `whatsapp_messages.direction` records inbound replies (Twilio posts WhatsApp to the
+  same `twilio-inbound-sms` webhook, addressed `whatsapp:+1...`), the inbound row is
+  what opens the window, and `whatsapp_window_open(phone)` is the single answer to
+  "may we write freely?". Every send goes through `sendWhatsapp` in
+  `_shared/whatsapp.ts`, which reads the window and picks free-form or template
+  itself, so a caller can never collect a Twilio 63016 by guessing. `whatsapp-send`
+  is the staff-facing entry point, `whatsapp-templates` is the Twilio Content catalog
+  (list + submit for approval). **Not live**: no `messaging_rules` row uses the
+  WhatsApp channel yet, the staff Messages screen is still SMS-only, and the sender
+  `+17868226594` has no inbound webhook set in the Twilio console, so replies do not
+  reach us and no window ever opens. See [`docs/whatsapp.md`](docs/whatsapp.md).
 - **Review automation** (post-tour rating funnel) is built and deployed but
   **switched OFF**: 3h after a tour ends the customer is texted for a 1-5 rating;
   a 5 gets the Google review link (plus one 24h nudge if never clicked), a 1-4 gets

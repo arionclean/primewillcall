@@ -8,13 +8,17 @@
 // with, character for character. It is built from SUPABASE_URL unless TWILIO_WEBHOOK_URL
 // overrides it.
 //
-// Behaviour is identical to the route it replaces:
+// It serves both channels, because Twilio posts WhatsApp to the same webhook with
+// From/To addressed as "whatsapp:+1...":
 //   1. verify the signature (skip only if TWILIO_VALIDATE_SIGNATURE=false)
 //   2. mirror the raw payload to Xano so its flows keep working during coexistence
-//   3. log the message, linking it to a customer by phone
-//   4. STOP/START keywords flip sms_opt_outs and stop there
-//   5. otherwise offer it to the review funnel (inert while
-//      messaging_settings.review_automation_enabled is false)
+//      (SMS only; Xano never handled WhatsApp)
+//   3. log the message, linking it to a customer by phone. WhatsApp goes to
+//      whatsapp_messages, and that inbound row is what opens the 24-hour window
+//      in which we may answer without an approved template
+//   4. STOP/START keywords flip sms_opt_outs and stop there (both channels: an
+//      opt-out is per person)
+//   5. otherwise offer it to the review funnel, which is SMS-only
 // It always answers 200 with empty TwiML, or Twilio retries the message.
 //
 // Secrets: TWILIO_AUTH_TOKEN, GROQ_API_KEY (optional, review classifier fallback),
@@ -33,6 +37,7 @@ import {
   setOptOut,
   SUPABASE_URL,
 } from "../_shared/sms.ts";
+import { isWhatsappAddress, logWhatsappMessage, stripWhatsappPrefix } from "../_shared/whatsapp.ts";
 
 const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY") ?? "";
 const APP_URL = (Deno.env.get("APP_URL") ?? "https://primewillcall.vercel.app").replace(/\/+$/, "");
@@ -410,30 +415,55 @@ Deno.serve(async (req) => {
     }
   }
 
-  // Keep Xano's copy of the flow alive during coexistence.
-  await forwardToXano(params);
+  // The same Twilio webhook serves both channels; WhatsApp arrives addressed as
+  // "whatsapp:+1...". It is a different conversation with different rules, so it
+  // does not go down the SMS path below.
+  const isWhatsapp = isWhatsappAddress(params.From) || isWhatsappAddress(params.To);
+
+  // Keep Xano's copy of the flow alive during coexistence. Xano only ever handled
+  // SMS, so a WhatsApp payload would be a message it cannot place.
+  if (!isWhatsapp) await forwardToXano(params);
 
   // Same guard the Xano endpoint used: only handle real inbound messages.
   if (params.SmsStatus !== "received") return twiml();
 
   const body = params.Body ?? "";
+  const fromPhone = normalizeUsPhone(params.From) ?? stripWhatsappPrefix(params.From ?? "");
+  const toPhone = normalizeUsPhone(params.To) ?? stripWhatsappPrefix(params.To ?? "");
 
-  await logSmsMessage({
-    direction: "inbound",
-    from_phone: normalizeUsPhone(params.From) ?? params.From ?? "",
-    to_phone: normalizeUsPhone(params.To) ?? params.To ?? "",
-    body,
-    status: "received",
-    twilio_sid: params.MessageSid ?? null,
-  });
+  if (isWhatsapp) {
+    // Recording this is what opens the 24-hour window: until the row exists, every
+    // reply we send has to be an approved template.
+    await logWhatsappMessage({
+      direction: "inbound",
+      from_phone: fromPhone,
+      to_phone: toPhone,
+      body,
+      status: "received",
+      twilio_sid: params.MessageSid ?? null,
+    });
+  } else {
+    await logSmsMessage({
+      direction: "inbound",
+      from_phone: fromPhone,
+      to_phone: toPhone,
+      body,
+      status: "received",
+      twilio_sid: params.MessageSid ?? null,
+    });
+  }
 
   const optAction = classifyOptKeyword(body);
   if (optAction) {
-    const phone = normalizeUsPhone(params.From) ?? params.From;
-    if (phone) await setOptOut(phone, optAction === "opt_out", body.trim().toUpperCase());
+    // Opt-out is per person, not per channel: STOP on WhatsApp stops the texts too.
+    if (fromPhone) await setOptOut(fromPhone, optAction === "opt_out", body.trim().toUpperCase());
     // STOP/START are never a review reply, so stop here.
     return twiml();
   }
+
+  // The review funnel asks over SMS and decides from the last SMS we sent, so a
+  // WhatsApp message is never an answer to it.
+  if (isWhatsapp) return twiml();
 
   try {
     await handleInboundReviewReply(params.From ?? "", body);
