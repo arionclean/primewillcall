@@ -283,12 +283,28 @@ export async function POST(req: Request) {
   const base = appBaseUrl();
   let checkoutUrl: string | null = null;
 
+  // Falling back to manual collection used to be silent, which is the worst way
+  // for it to fail: the guest is told a human will collect the fee and nothing
+  // says why Stripe was skipped. Name the reason in the log every time.
+  if (!stripe) {
+    console.error("[gp] Stripe skipped: STRIPE_SECRET_KEY is not set");
+  } else if (!base) {
+    console.error("[gp] Stripe skipped: NEXT_PUBLIC_APP_URL is not set");
+  }
+
   if (stripe && base) {
     const { data: biz } = await admin
       .from("businesses")
       .select("stripe_account_id, stripe_charges_enabled")
       .eq("id", bt.business_id)
       .maybeSingle();
+
+    if (!biz?.stripe_account_id || !biz.stripe_charges_enabled) {
+      console.error(
+        `[gp] Stripe skipped: business ${bt.business_id} is not onboarded ` +
+          `(account=${biz?.stripe_account_id ?? "none"}, charges=${biz?.stripe_charges_enabled ?? false})`,
+      );
+    }
 
     if (biz?.stripe_account_id && biz.stripe_charges_enabled) {
       const applicationFee = computeApplicationFeeCents(totalCents);
@@ -327,8 +343,14 @@ export async function POST(req: Request) {
           { stripeAccount: biz.stripe_account_id },
         );
         checkoutUrl = session.url;
-      } catch {
-        // Fall through to the manual-collection fallback below.
+      } catch (e) {
+        // Fall through to the manual-collection fallback below. Stripe rejects a
+        // total under $0.50, which is what a $0 Groupon product produces, so this
+        // is a reachable path and not only an outage.
+        console.error(
+          `[gp] Stripe checkout failed for booking ${booking.id} ` +
+            `(${totalCents} cents on ${biz.stripe_account_id}): ${e instanceof Error ? e.message : String(e)}`,
+        );
         checkoutUrl = null;
       }
     }
