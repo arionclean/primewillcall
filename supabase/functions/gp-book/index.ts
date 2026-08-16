@@ -10,7 +10,11 @@
 // Deployed with JWT on: the public page sends the publishable anon key.
 //
 // Secrets: STRIPE_SECRET_KEY (platform key), STRIPE_PLATFORM_FEE_BPS (optional, default 25),
-// APP_URL (Stripe redirect base), GP_XANO_MIRROR + XANO_API_TOKEN (optional, see xano-mirror.ts).
+// APP_URL (Stripe redirect base).
+//
+// The Xano mirror does NOT run here. It runs from the Stripe webhook once the guest has
+// paid, because stamping legacy_id marks a booking as Xano-synced and silences its own
+// confirmation text. See supabase/functions/_shared/gp-xano-mirror.ts.
 
 import Stripe from "npm:stripe@22.3.0";
 
@@ -22,13 +26,6 @@ import {
   json,
   STRIPE_META,
 } from "../_shared/gp.ts";
-import {
-  gpMirrorEnabled,
-  gpMirrorLegacyId,
-  gpMirrorRef,
-  mirrorGpBookingToXano,
-} from "./xano-mirror.ts";
-
 const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
 const stripe = STRIPE_SECRET_KEY
   ? new Stripe(STRIPE_SECRET_KEY, { httpClient: Stripe.createFetchHttpClient() })
@@ -99,13 +96,10 @@ Deno.serve(async (req) => {
     return json({ ok: false, error: "bad_datetime", message: "Pick a valid date and time." }, 400);
   }
 
-  // Authoritative product + fee (never trust the client's fee). The legacy ids and
-  // business name ride along for the temporary Xano mirror below.
+  // Authoritative product + fee (never trust the client's fee).
   const { data: bt } = await db
     .from("business_tours")
-    .select(
-      "id, name, business_id, tour_id, is_active, groupon_fee_cents, legacy_product_id, business:businesses!business_tours_business_id_fkey(name, legacy_company_id)",
-    )
+    .select("id, name, business_id, tour_id, is_active, groupon_fee_cents")
     .eq("id", businessTourId)
     .maybeSingle();
   if (!bt || !bt.is_active || bt.groupon_fee_cents === null) {
@@ -123,9 +117,6 @@ Deno.serve(async (req) => {
   }
   if (imageUrl) noteParts.push(`voucher ${imageUrl}`);
 
-  // Reference shared with the temporary Xano mirror, decided before the insert so the
-  // matching legacy_id can be stamped on our row a moment later.
-  const mirrorRef = gpMirrorEnabled() ? gpMirrorRef() : null;
 
   const { data: created, error: rpcErr } = await db
     .rpc("create_booking", {
@@ -167,39 +158,6 @@ Deno.serve(async (req) => {
   const booking = { id: created.booking_id, public_token: created.public_token };
   const totalCents = created.total_cents;
   const startsAtIso = created.starts_at;
-
-  // Temporary Xano mirror. Never blocks the guest: a failure is logged and the Supabase
-  // booking stands.
-  if (mirrorRef) {
-    // `legacy_id` is stamped HERE, never in the insert above. The automations trigger is
-    // `AFTER INSERT ... WHEN (new.legacy_id IS NULL)`, so setting it inline would mark the
-    // booking as Xano-synced and silence the very SMS this test exists to exercise.
-    await db
-      .from("bookings")
-      .update({ legacy_id: gpMirrorLegacyId(mirrorRef) })
-      .eq("id", booking.id);
-
-    const biz = bt.business as unknown as { name: string; legacy_company_id: string | null } | null;
-    const mirror = await mirrorGpBookingToXano({
-      ref: mirrorRef,
-      // Unpaid until the Stripe webhook says otherwise. Mirroring "confirmed" here is
-      // what corrupted the pending state on the way back through xano-booking-sync.
-      status: "pending",
-      publicToken: booking.public_token,
-      legacyCompanyId: biz?.legacy_company_id ?? null,
-      legacyProductId: bt.legacy_product_id,
-      productName: bt.name,
-      supplierName: biz?.name ?? "",
-      customerName,
-      startsAtIso,
-      passengers,
-      voucherImageUrls: imageUrls,
-      note: noteParts.join(" · "),
-    });
-    if (!mirror.ok) {
-      console.error(`[gp] Xano mirror failed for booking ${booking.id} (${mirrorRef}): ${mirror.error}`);
-    }
-  }
 
   // Charge the convenience fee via a Stripe Checkout Session created DIRECTLY on the
   // business's connected account, with a platform application_fee (Prime's cut). The

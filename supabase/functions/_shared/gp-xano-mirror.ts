@@ -6,6 +6,12 @@
  * new stack does not leave staff with a guest who booked and no record on the side
  * they actually work from.
  *
+ * **Runs after payment, from the Stripe webhook, not at booking creation.** Stamping
+ * `legacy_id` is what makes a booking look Xano-synced, and the confirmation trigger
+ * deliberately skips those so nobody is texted twice. Mirroring at creation therefore
+ * silenced the guest's own confirmation, since by payment time the id was already set.
+ * Mirroring after payment gets both: the text goes out, then Xano receives its copy.
+ *
  * Two things keep this from double-texting the guest:
  *
  *  1. **No phone.** Xano's booking SMS trigger reads the phone off the booking row.
@@ -33,7 +39,7 @@ const XANO_BOOKINGS_API = "https://xmhi-aj9d-cnsb.n7.xano.io/api:0AUqUbBn";
 const XANO_GP_CHANNEL = "groupon-surcharge";
 const TIMEOUT_MS = 8_000;
 
-import { nyDateString } from "../_shared/ny-time.ts";
+import { nyDateString } from "./ny-time.ts";
 
 /** Booking reference shared by both systems. Also the Xano internal_id. */
 export function gpMirrorRef(): string {
