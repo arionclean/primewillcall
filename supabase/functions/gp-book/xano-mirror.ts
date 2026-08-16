@@ -52,6 +52,12 @@ export function gpMirrorEnabled(): boolean {
 
 export interface GpMirrorInput {
   ref: string;
+  /**
+   * The booking's real status. Sending a hardcoded "confirmed" is what let an unpaid
+   * /gp booking come back through Xano's sync and overwrite our `pending` row as
+   * confirmed, erasing the fact that nobody had paid.
+   */
+  status: "pending" | "confirmed";
   publicToken: string;
   legacyCompanyId: string | null;
   legacyProductId: string | null;
@@ -103,7 +109,8 @@ export async function mirrorGpBookingToXano(
     child: 0,
     infant: 0,
     paxs: input.passengers,
-    status: "confirmed",
+    status: input.status,
+    payment_status: input.status === "confirmed" ? "paid" : "unpaid",
     checked: false,
     live: true,
     trigger: false,

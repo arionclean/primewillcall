@@ -171,6 +171,9 @@ Deno.serve(async (req) => {
     const biz = bt.business as unknown as { name: string; legacy_company_id: string | null } | null;
     const mirror = await mirrorGpBookingToXano({
       ref: mirrorRef,
+      // Unpaid until the Stripe webhook says otherwise. Mirroring "confirmed" here is
+      // what corrupted the pending state on the way back through xano-booking-sync.
+      status: "pending",
       publicToken: booking.public_token,
       legacyCompanyId: biz?.legacy_company_id ?? null,
       legacyProductId: bt.legacy_product_id,

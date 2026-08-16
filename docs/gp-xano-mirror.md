@@ -49,8 +49,8 @@ safe, because Xano cannot push the row back before we have called it.
 | `GP_XANO_MIRROR` | `"true"` enables the mirror. Anything else disables it. |
 | `XANO_API_TOKEN` | Xano API token, auth group 57. `booking/v12` requires it. |
 
-Both are read by the `gp-book` edge function, so they are Supabase function secrets
-and in the Vercel project env. They are NOT Supabase function secrets.
+Both are read by the `gp-book` edge function, so they are Supabase function secrets.
+Vercel no longer needs either one.
 
 A mirror failure never fails the guest's booking: it is logged as
 `[gp] Xano mirror failed ...` and the Supabase row stands, since that is the
