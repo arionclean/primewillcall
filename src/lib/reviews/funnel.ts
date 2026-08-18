@@ -24,7 +24,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { normalizeUsPhone } from "@/lib/sms/format";
+import { normalizeUsPhone } from "@/lib/phone";
 import { isOptedOut } from "@/lib/sms/messages";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { Database } from "@/lib/supabase/database.types";

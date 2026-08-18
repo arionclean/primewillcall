@@ -8,6 +8,7 @@ import { Search, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import { formatUsPhoneDisplay } from "@/lib/phone";
 
 /**
  * Global booking search. Lives in the sidebar (so it shows on every page that
@@ -67,15 +68,6 @@ function localDateOf(iso: string): string {
   }).formatToParts(new Date(iso));
   const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
   return `${get("year")}-${get("month")}-${get("day")}`;
-}
-
-function formatPhone(raw: string | null): string {
-  if (!raw) return "";
-  const digits = raw.replace(/\D/g, "");
-  if (digits.length === 10) {
-    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
-  }
-  return raw;
 }
 
 function escapeLike(value: string): string {
@@ -333,7 +325,7 @@ export function GlobalSearch() {
                             {r.customerPhone && (
                               <>
                                 <span aria-hidden>·</span>
-                                <span>{formatPhone(r.customerPhone)}</span>
+                                <span>{formatUsPhoneDisplay(r.customerPhone)}</span>
                               </>
                             )}
                             <span aria-hidden>·</span>

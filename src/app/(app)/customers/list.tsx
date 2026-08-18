@@ -7,6 +7,7 @@ import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { formatUsPhoneDisplay } from "@/lib/phone";
 
 export const CUSTOMERS_PAGE = 50;
 
@@ -22,16 +23,6 @@ export type CustomerRow = {
 
 const SELECT =
   "id, full_name, phone, email, business_id, created_at, business:businesses(name)";
-
-/** Format stored phone digits as (XXX) XXX-XXXX; fall back to the raw value. */
-export function formatPhone(raw: string | null): string {
-  if (!raw) return "-";
-  const d = raw.replace(/\D/g, "");
-  if (d.length === 10) return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
-  if (d.length === 11 && d[0] === "1")
-    return `(${d.slice(1, 4)}) ${d.slice(4, 7)}-${d.slice(7)}`;
-  return raw;
-}
 
 function joinedLabel(iso: string): string {
   return new Intl.DateTimeFormat("en-US", {
@@ -164,7 +155,7 @@ export function CustomersList({
 
                 {/* Phone */}
                 <span className="mt-1 block text-sm text-muted-foreground sm:mt-0 sm:text-foreground">
-                  {formatPhone(c.phone)}
+                  {formatUsPhoneDisplay(c.phone, "-")}
                 </span>
 
                 {/* Email */}

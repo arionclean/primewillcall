@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { handleInboundReviewReply } from "@/lib/reviews/funnel";
-import { normalizeUsPhone } from "@/lib/sms/format";
+import { normalizeUsPhone } from "@/lib/phone";
 import { classifyOptKeyword, logSmsMessage, setOptOut } from "@/lib/sms/messages";
 import { validateTwilioSignature } from "@/lib/sms/twilio";
 
