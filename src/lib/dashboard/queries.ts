@@ -68,6 +68,22 @@ export function getTodayRange(timezone: string = DEFAULT_TIMEZONE): {
   };
 }
 
+/** Today's calendar date in the given timezone, as plain numbers. */
+function localDateParts(
+  timezone: string,
+  now: Date = new Date(),
+): { year: number; month: number; day: number } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const get = (type: string) =>
+    Number(parts.find((p) => p.type === type)?.value ?? "0");
+  return { year: get("year"), month: get("month"), day: get("day") };
+}
+
 function parseOffset(s: string): number {
   // "GMT", "GMT-4", "GMT+5:30", "GMT-04:30"
   const m = s.match(/GMT([+-])(\d{1,2})(?::?(\d{2}))?/);
@@ -103,13 +119,20 @@ export type MonthlyGuests = {
   year: number;
   month: number; // 1-12
   monthLabel: string; // e.g. "June 2026"
-  days: MonthDay[];
+  days: MonthDay[]; // every day of the month, including days still to come
+  /**
+   * The totals below cover the month so far. For the month in progress that
+   * stops at today: the days after it hold bookings that have not happened
+   * yet, and counting them makes "lowest day" and the like meaningless.
+   */
   totalGuests: number;
   checkedGuests: number;
   highestDay: number;
   lowestDay: number; // lowest among days that had guests
   dailyAverage: number; // over days that had guests
-  prevTotalGuests: number; // previous month, for comparison
+  compareThroughDay: number | null; // last day counted, null when the month is over
+  prevComparedGuests: number; // the same span of last month, for the delta
+  peakDay: number; // tallest day of the whole month, for the chart scale
 };
 
 // ── Queries ───────────────────────────────────────────────────────────────────
@@ -251,18 +274,29 @@ export async function getMonthlyGuests(
     checkedGuests: v.checkedGuests,
   }));
 
-  const active = days.filter((d) => d.guests > 0);
-  const totalGuests = days.reduce((s, d) => s + d.guests, 0);
-  const checkedGuests = days.reduce((s, d) => s + d.checkedGuests, 0);
+  // Everything summarised below stops at today when the month is still running,
+  // and last month is cut at the same day, so the numbers are like for like.
+  const today = localDateParts(timezone);
+  const compareThroughDay =
+    year === today.year && month === today.month ? today.day : null;
+  const withinCompare = (day: number) =>
+    compareThroughDay === null || day <= compareThroughDay;
+
+  const elapsed = days.filter((d) => withinCompare(d.day));
+  const active = elapsed.filter((d) => d.guests > 0);
+  const totalGuests = elapsed.reduce((s, d) => s + d.guests, 0);
+  const checkedGuests = elapsed.reduce((s, d) => s + d.checkedGuests, 0);
   const highestDay = active.reduce((m, d) => Math.max(m, d.guests), 0);
   const lowestDay = active.reduce((m, d) => Math.min(m, d.guests), highestDay);
   const dailyAverage = active.length
     ? Math.round(totalGuests / active.length)
     : 0;
-  const prevTotalGuests = (prev.data ?? []).reduce(
-    (s, r) => s + Number(r.guests),
+  const prevComparedGuests = (prev.data ?? []).reduce(
+    (s, r) => (withinCompare(Number(r.day)) ? s + Number(r.guests) : s),
     0,
   );
+  // The bars still draw the whole month, so they scale to the whole month.
+  const peakDay = days.reduce((m, d) => Math.max(m, d.guests), 0);
 
   return {
     year,
@@ -274,7 +308,9 @@ export async function getMonthlyGuests(
     highestDay,
     lowestDay: active.length ? lowestDay : 0,
     dailyAverage,
-    prevTotalGuests,
+    compareThroughDay,
+    prevComparedGuests,
+    peakDay,
   };
 }
 
