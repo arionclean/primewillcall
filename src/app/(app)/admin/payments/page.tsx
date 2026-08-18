@@ -184,7 +184,6 @@ export default async function PaymentsPage({
   return (
     <PaymentsView
       role={staff.role}
-      paymentsConfigured={Boolean(process.env.STRIPE_SECRET_KEY)}
       items={items}
       summary={summaryRows?.[0] ?? null}
       kiosks={(kioskRows ?? []).flatMap((k) => (k.slug ? [k.slug] : []))}
