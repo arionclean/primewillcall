@@ -12,6 +12,13 @@ function monthHref(year: number, month: number): string {
   return `/dashboard?month=${year}-${String(month).padStart(2, "0")}`;
 }
 
+/** Short month name, e.g. "Jul". */
+function monthShortName(year: number, month: number): string {
+  return new Date(year, month - 1, 1).toLocaleDateString("en-US", {
+    month: "short",
+  });
+}
+
 /** Weekday name for a calendar date, e.g. "Sat". */
 function weekdayShort(year: number, month: number, day: number): string {
   return new Date(year, month - 1, day).toLocaleDateString("en-US", {
@@ -23,21 +30,36 @@ function weekdayShort(year: number, month: number, day: number): string {
  * Guests-per-day for a month, with month navigation and a compare-to-last-month
  * delta. Pure data (people), no money. Each bar shows total guests, with the
  * checked-in portion filled darker. Hovering a bar shows a styled tooltip.
+ *
+ * The bars draw the whole month (the tail of a running month is what is booked
+ * ahead), while the totals and the delta stop at today, measured against the
+ * same days of last month.
  */
 export function MonthChart({ data }: { data: MonthlyGuests }) {
   const { year, month, monthLabel, days } = data;
   const prev = month === 1 ? { y: year - 1, m: 12 } : { y: year, m: month - 1 };
   const next = month === 12 ? { y: year + 1, m: 1 } : { y: year, m: month + 1 };
-  const max = Math.max(data.highestDay, 1);
+  const max = Math.max(data.peakDay, 1);
   const monthShort = monthLabel.split(" ")[0];
 
   const [hovered, setHovered] = useState<number | null>(null);
 
-  const delta = data.totalGuests - data.prevTotalGuests;
+  const delta = data.totalGuests - data.prevComparedGuests;
   const pct =
-    data.prevTotalGuests > 0
-      ? Math.round((delta / data.prevTotalGuests) * 100)
+    data.prevComparedGuests > 0
+      ? Math.round((delta / data.prevComparedGuests) * 100)
       : null;
+
+  // A month in progress is compared day for day against last month, so name the
+  // exact span. "vs last month" would read as the whole of it.
+  const prevMonthDays = new Date(prev.y, prev.m, 0).getDate();
+  const compareLabel =
+    data.compareThroughDay === null
+      ? "vs last month"
+      : `vs ${monthShortName(prev.y, prev.m)} 1-${Math.min(
+          data.compareThroughDay,
+          prevMonthDays,
+        )}`;
 
   const active = hovered !== null ? days[hovered] : null;
   const xPct =
@@ -66,7 +88,7 @@ export function MonthChart({ data }: { data: MonthlyGuests }) {
                   {delta >= 0 ? "+" : ""}
                   {pct}%
                 </span>{" "}
-                vs last month
+                {compareLabel}
               </>
             )}
           </p>
@@ -94,7 +116,7 @@ export function MonthChart({ data }: { data: MonthlyGuests }) {
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_15rem]">
         {/* Chart */}
-        {data.totalGuests === 0 ? (
+        {data.peakDay === 0 ? (
           <div className="flex h-56 items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground">
             No guests this month.
           </div>
@@ -190,6 +212,11 @@ export function MonthChart({ data }: { data: MonthlyGuests }) {
 
         {/* Quick stats */}
         <div className="space-y-1.5 text-sm">
+          {data.compareThroughDay !== null && (
+            <p className="pb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Month to date
+            </p>
+          )}
           <Stat label="Total guests" value={data.totalGuests} />
           <Stat label="Checked in" value={data.checkedGuests} />
           <Stat

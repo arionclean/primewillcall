@@ -6,41 +6,50 @@ Status and remaining work for moving SMS off Xano. Background and architecture:
 ## Already done
 
 - [x] `sms_messages` / `sms_opt_outs` tables, RLS, realtime, `sms_conversations()` RPC (applied to Supabase)
-- [x] Outbound send lib + `POST /api/sms/send` (staff auth, opt-out aware, logs + links customers)
-- [x] Inbound webhook `POST /api/webhooks/twilio/sms` (signature check, logging, STOP/START, mirrors payload to Xano)
-- [x] History sync from the Twilio Messages API (`POST /api/sms/sync`, dedupe by `twilio_sid`)
+- [x] Outbound send + inbound webhook + history sync, live and deployed
 - [x] Chat UI at `/messages` with realtime updates
-- [x] Messaging rules engine `runNewBookingRules()` in src/lib/sms/rules.ts (owner-editable rules in /admin/messaging replace the Xano trigger "City tour campaign_v1")
+- [x] Booking automations: the `on_native_booking_created` trigger calls
+      `run-booking-automations` (enqueue only), and `dispatch-scheduled-messages` sends
+      under a global hourly cap. `messaging_settings.automations_enabled` is ON.
+- [x] **Sending, syncing and inbound handling all run in Supabase edge functions**
+      (2026-08-16). Vercel still needs `TWILIO_ACCOUNT_SID` + `TWILIO_AUTH_TOKEN` for two
+      things: the inbound route until Twilio is repointed (signature check), and
+      `/admin/messaging` listing WhatsApp content templates (`src/lib/sms/twilio-content.ts`).
+      | Was (Vercel) | Now (Supabase) |
+      |---|---|
+      | `POST /api/sms/send` | `sms-send` (JWT on, resolves caller's staff row) |
+      | `POST /api/sms/sync` | `sms-sync` (JWT on, owner + business_manager) |
+      | `POST /api/webhooks/twilio/sms` | `twilio-inbound-sms` (JWT off, X-Twilio-Signature is the auth) |
+      | `src/lib/sms/{messages,twilio,sync}.ts` | `supabase/functions/_shared/sms.ts` |
+      | `src/lib/sms/rules.ts` (never wired up) | `run-booking-automations` edge function |
 
-## Safe to do NOW (Xano keeps working, zero risk)
+## Remaining: point Twilio at Supabase
 
-These can be done any time before the real migration; the webhook mirroring
-(`XANO_SMS_FORWARD_URL`) keeps Xano's flow fully alive.
+The inbound webhook still arrives at the **Vercel** route; the edge function is deployed
+and tested but receives nothing until the console is changed. Both behave identically
+(same logging, STOP/START, Xano mirroring, review branch), so this is a URL swap.
 
-- [ ] Push the branch and deploy to Vercel
-- [ ] Set Vercel env vars: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`,
-      `SUPABASE_SERVICE_ROLE_KEY`, both `NEXT_PUBLIC_SUPABASE_*`,
-      `TWILIO_WEBHOOK_BASE_URL` = production URL, and leave `TWILIO_VALIDATE_SIGNATURE` unset (on)
-- [ ] In Twilio (number 877-460-8995, Messaging, "A message comes in"):
-      save the current Xano URL somewhere (rollback), then set
-      `https://<production-domain>/api/webhooks/twilio/sms` (HTTP POST)
-- [ ] Test: text the number, message appears in /messages AND Xano still reacts
-      (its notification still arrives); reply from the chat
-- [ ] Rollback if needed: paste the old Xano URL back in Twilio
+- [ ] In Twilio (number 877-460-8995, Messaging, "A message comes in"): save the current
+      URL for rollback, then set
+      `https://qbnizuhozzwkiitfkjee.supabase.co/functions/v1/twilio-inbound-sms` (HTTP POST)
+- [ ] Confirm: text the number, a row appears in `sms_messages` within seconds, and Xano
+      still reacts (the mirror is preserved)
+- [ ] Then delete `src/app/api/webhooks/twilio/sms/route.ts` plus the now-unused
+      `src/lib/sms/{messages,twilio}.ts` and `src/lib/reviews/*` server halves
+- [ ] Rollback if needed: paste the Vercel URL back in Twilio (works until the route is deleted)
 
-## At the REAL migration (needs Xano switched off)
+## At the REAL Xano cutover
 
-- [ ] Wire `runNewBookingRules()` into the Supabase booking-creation flow
-      (xano-booking-sync edge function or wherever bookings are inserted), so the
-      new-booking SMS comes from here instead of Xano's bookings trigger
-- [ ] Disable the Xano bookings trigger "City tour campaign_v1" (trigger id 30, table 64)
-      the moment the step above is live, so customers do not get double texts
-- [ ] Set `XANO_SMS_FORWARD_URL=""` in Vercel to stop mirroring webhooks to Xano
-- [ ] Decide on the review funnel: Xano's "analyze inbound message_v2" (rate 1-5 ask,
-      AI classification, Google-review ask via Make, flowList timers) stops working
-      when mirroring stops. Rebuild in Supabase or retire it.
+- [ ] Disable the Xano bookings trigger "City tour campaign_v1" (trigger id 30, table 64).
+      Supabase already sends for Supabase-native bookings; Xano still sends for its own,
+      so there is no overlap today, but this is the switch that ends Xano's half.
+- [ ] Set the `XANO_SMS_FORWARD_URL` function secret to `""` to stop mirroring inbound
+      webhooks to Xano
+- [ ] Turn on the review funnel (`messaging_settings.review_automation_enabled`) only
+      after the mirror is off, or customers get texted twice. Set the `APP_URL` secret
+      first: it is the base of the `/r/<token>` review link.
 - [ ] Optional: notifications when a customer texts in (Xano pings the merchant today;
-      here it is only visible in /messages)
+      here it is only visible in `/messages`)
 - [ ] Cleanup: regenerate `src/lib/supabase/database.types.ts` (sms tables are untyped
       casts today), and remove the Xano SMS endpoints/functions once everything is off
 

@@ -22,7 +22,7 @@ export default async function EditBusinessPage({
   const { data: business } = await supabase
     .from("businesses")
     .select(
-      "id, name, phone, contact_email, google_review_url, logo_url, stripe_account_id, stripe_charges_enabled, stripe_payouts_enabled, stripe_details_submitted, stripe_requirements_due",
+      "id, name, phone, contact_email, google_review_url, logo_url, stripe_account_id, stripe_charges_enabled, stripe_payouts_enabled, stripe_details_submitted, stripe_requirements_due, stripe_account_id_pending, stripe_account_id_legacy, stripe_fees_payer",
     )
     .eq("id", id)
     .maybeSingle();
@@ -57,11 +57,7 @@ export default async function EditBusinessPage({
         </p>
         <Card>
           <CardContent className="py-6">
-            <StripeConnectPanel
-              business={business}
-              paymentsConfigured={Boolean(process.env.STRIPE_SECRET_KEY)}
-              justReturned={stripe === "return"}
-            />
+            <StripeConnectPanel business={business} justReturned={stripe === "return"} />
           </CardContent>
         </Card>
       </section>

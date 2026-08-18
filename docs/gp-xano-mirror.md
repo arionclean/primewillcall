@@ -49,8 +49,8 @@ safe, because Xano cannot push the row back before we have called it.
 | `GP_XANO_MIRROR` | `"true"` enables the mirror. Anything else disables it. |
 | `XANO_API_TOKEN` | Xano API token, auth group 57. `booking/v12` requires it. |
 
-Both are read by `/api/gp/book`, a Next.js route, so they belong in `.env.local`
-and in the Vercel project env. They are NOT Supabase function secrets.
+Both are read by the `gp-book` edge function, so they are Supabase function secrets.
+Vercel no longer needs either one.
 
 A mirror failure never fails the guest's booking: it is logged as
 `[gp] Xano mirror failed ...` and the Supabase row stands, since that is the
@@ -61,7 +61,7 @@ source of truth for the test.
 1. Set `GP_XANO_MIRROR=` (or drop it) in `.env.local` and Vercel. That alone
    stops all Xano writes.
 2. Delete `src/lib/xano/gp-mirror.ts` and its block in
-   `src/app/api/gp/book/route.ts` (the import, `mirrorRef`, the `legacy_id`
+   `supabase/functions/gp-book/index.ts` (the import, `mirrorRef`, the `legacy_id`
    update, the mirror call).
 3. Drop `GP_XANO_MIRROR` and `XANO_API_TOKEN` from `.env.example`.
 4. Delete this file.

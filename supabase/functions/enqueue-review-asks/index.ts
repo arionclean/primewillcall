@@ -34,6 +34,7 @@
 // Auth: x-cron-secret must equal the CRON_SECRET function secret.
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { toE164 } from "../_shared/phone.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -127,9 +128,11 @@ Deno.serve(async (req) => {
     const { data: existing } = await db.from("reviews").select("booking_id").in("booking_id", ids);
     const alreadyInFunnel = new Set((existing ?? []).map((r) => r.booking_id));
 
+    // customers.phone is digits only, sms_opt_outs.phone_number is E.164 (it comes
+    // from Twilio). Compare in E.164 or the opt-out check silently matches nothing.
     const phones = bookings
-      .map((b) => (b.customer as { phone: string | null } | null)?.phone ?? "")
-      .filter(Boolean);
+      .map((b) => toE164((b.customer as { phone: string | null } | null)?.phone))
+      .filter((p): p is string => p !== null);
     const { data: optOuts } = await db
       .from("sms_opt_outs")
       .select("phone_number")
@@ -146,7 +149,7 @@ Deno.serve(async (req) => {
       const customer = booking.customer as { full_name: string | null; phone: string | null } | null;
       const business = booking.business as { google_review_url: string | null } | null;
 
-      const toPhone = (customer?.phone ?? "").trim();
+      const toPhone = toE164(customer?.phone);
       if (!toPhone || blocked.has(toPhone)) continue;
 
       // Brake 5. Nowhere to send happy customers means do not ask at all.

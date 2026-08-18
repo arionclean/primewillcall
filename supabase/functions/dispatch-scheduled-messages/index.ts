@@ -16,12 +16,13 @@
 
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 
+import { sendWhatsapp } from "../_shared/whatsapp.ts";
+
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const ACCOUNT_SID = Deno.env.get("TWILIO_ACCOUNT_SID") ?? "";
 const AUTH_TOKEN = Deno.env.get("TWILIO_AUTH_TOKEN") ?? "";
 const SMS_FROM = Deno.env.get("TWILIO_FROM_NUMBER") ?? "";
-const WHATSAPP_FROM_RAW = Deno.env.get("TWILIO_WHATSAPP_FROM") ?? "";
 const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
 
@@ -37,12 +38,9 @@ interface ScheduledMessage {
   body: string | null;
   whatsapp_content_sid: string | null;
   whatsapp_variables: Record<string, string> | null;
-}
-
-function whatsappFrom(): string {
-  const raw = WHATSAPP_FROM_RAW.trim().replace(/^whatsapp:/i, "");
-  if (!raw) return "";
-  return raw.startsWith("+") ? raw : `+${raw}`;
+  business_id: string | null;
+  booking_id: string | null;
+  customer_id: string | null;
 }
 
 async function twilioSend(
@@ -79,18 +77,22 @@ async function sendOne(
       new URLSearchParams({ To: row.to_phone, From: SMS_FROM, Body: row.body ?? "" }),
     );
   }
-  const from = whatsappFrom();
-  if (!from) return { ok: false, error: "TWILIO_WHATSAPP_FROM not configured" };
-  if (!row.whatsapp_content_sid) return { ok: false, error: "No WhatsApp template" };
-  const params = new URLSearchParams({
-    To: `whatsapp:${row.to_phone}`,
-    From: `whatsapp:${from}`,
-    ContentSid: row.whatsapp_content_sid,
+
+  // WhatsApp goes through the shared sender: it picks template vs free-form from
+  // the 24h window and writes the row into whatsapp_messages, which is what keeps
+  // the conversation history (and the window) complete.
+  const result = await sendWhatsapp({
+    to: row.to_phone,
+    body: row.body,
+    contentSid: row.whatsapp_content_sid,
+    contentVariables: row.whatsapp_variables,
+    businessId: row.business_id,
+    bookingId: row.booking_id,
+    customerId: row.customer_id,
   });
-  if (row.whatsapp_variables && Object.keys(row.whatsapp_variables).length > 0) {
-    params.set("ContentVariables", JSON.stringify(row.whatsapp_variables));
-  }
-  return twilioSend(params);
+  return result.sent
+    ? { ok: true, sid: result.sid, status: result.status }
+    : { ok: false, error: result.reason ?? "WhatsApp send failed" };
 }
 
 /** Send an email via Resend (used for the cap alert). Returns ok. */

@@ -1,157 +1,320 @@
 "use client";
 
+import { CreditCard, ExternalLink, RefreshCw, RotateCcw } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Field } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 
-import {
-  createConnectAccount,
-  createLoginLink,
-  createOnboardingLink,
-  linkExistingAccount,
-  refreshAccountStatus,
-  type PaymentsActionResult,
-} from "./payments-actions";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+
+/** One call into the `stripe-connect` edge function. */
+type ConnectRequest = {
+  action:
+    | "status"
+    | "create"
+    | "onboarding_link"
+    | "login_link"
+    | "refresh"
+    | "start_migration"
+    | "switch_over"
+    | "switch_back"
+    | "cancel_migration";
+  target?: "primary" | "pending";
+  account_id?: string;
+};
+
+type ConnectResponse = {
+  url?: string;
+  ok?: true;
+  configured?: boolean;
+  pending?: PendingAccount | null;
+};
+
+/**
+ * Call the `stripe-connect` edge function.
+ *
+ * Stripe's platform key lives in Supabase, not on Vercel, so every Stripe call
+ * happens there. `invoke` attaches the signed-in staff member's token, which the
+ * function turns back into their staff row and re-checks the role against.
+ *
+ * On a non-2xx the SDK hands back an error whose `context` is the raw Response,
+ * so read the body from there to recover the function's own message.
+ */
+async function invokeConnect(
+  businessId: string,
+  request: ConnectRequest,
+): Promise<{ data: ConnectResponse | null; error: string | null }> {
+  const { data, error } = await getSupabaseBrowserClient().functions.invoke<ConnectResponse>(
+    "stripe-connect",
+    { body: { business_id: businessId, ...request } },
+  );
+  if (!error) return { data: data ?? null, error: null };
+
+  const response = (error as { context?: Response }).context;
+  const payload = (await response?.json?.().catch(() => null)) as { error?: string } | null;
+  return { data: null, error: payload?.error ?? error.message };
+}
+
+type BusinessPaymentsFields = {
+  id: string;
+  stripe_account_id: string | null;
+  stripe_charges_enabled: boolean;
+  stripe_payouts_enabled: boolean;
+  stripe_details_submitted: boolean;
+  stripe_requirements_due: number;
+  stripe_account_id_pending: string | null;
+  stripe_account_id_legacy: string[];
+  stripe_fees_payer: string | null;
+};
+
+type PendingAccount = {
+  id: string;
+  chargesEnabled: boolean;
+  detailsSubmitted: boolean;
+  requirementsDue: number;
+};
 
 type StripeConnectPanelProps = {
-  business: {
-    id: string;
-    stripe_account_id: string | null;
-    stripe_charges_enabled: boolean;
-    stripe_payouts_enabled: boolean;
-    stripe_details_submitted: boolean;
-    stripe_requirements_due: number;
-  };
-  paymentsConfigured: boolean;
+  business: BusinessPaymentsFields;
   /** True when the page loaded from a Stripe onboarding return_url. */
   justReturned?: boolean;
 };
 
+type Tone = "live" | "pending" | "blocked";
+
+/**
+ * One plain-language status instead of a row of flags. Stripe exposes four
+ * booleans; a manager only needs to know whether money is moving and, if not,
+ * whose turn it is to act.
+ */
+function accountStatus(b: BusinessPaymentsFields): {
+  tone: Tone;
+  label: string;
+  detail: string;
+} {
+  const due = b.stripe_requirements_due;
+  const dueText = `${due} ${due === 1 ? "detail" : "details"}`;
+
+  if (!b.stripe_details_submitted) {
+    return {
+      tone: "pending",
+      label: "Setup not finished",
+      detail: "The business still has to complete its details on Stripe.",
+    };
+  }
+  if (!b.stripe_charges_enabled) {
+    return {
+      tone: "blocked",
+      label: "Not taking payments yet",
+      detail:
+        due > 0
+          ? `Stripe needs ${dueText} before payments can start.`
+          : "Stripe is reviewing what the business submitted.",
+    };
+  }
+  if (!b.stripe_payouts_enabled) {
+    return {
+      tone: "pending",
+      label: "Taking payments, payouts on hold",
+      detail: "Stripe needs more information before it can pay this business.",
+    };
+  }
+  if (due > 0) {
+    return {
+      tone: "pending",
+      label: "Live, attention needed",
+      detail: `Stripe needs ${dueText} soon to keep this account open.`,
+    };
+  }
+  return {
+    tone: "live",
+    label: "Live",
+    detail: "Taking payments and paying out.",
+  };
+}
+
+const DOT: Record<Tone, string> = {
+  live: "bg-emerald-500",
+  pending: "bg-amber-500",
+  blocked: "bg-red-500",
+};
+
 export function StripeConnectPanel({
   business,
-  paymentsConfigured,
   justReturned = false,
 }: StripeConnectPanelProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [acctId, setAcctId] = useState("");
+  // null while the first status call is in flight, so the panel does not flash
+  // "not switched on" at someone whose platform is configured fine.
+  const [configured, setConfigured] = useState<boolean | null>(null);
+  const [pending, setPending] = useState<PendingAccount | null>(null);
 
   const connected = Boolean(business.stripe_account_id);
+  const status = accountStatus(business);
   const needsAttention =
     connected &&
     (!business.stripe_charges_enabled || business.stripe_requirements_due > 0);
+  const busy = isPending || configured === false;
 
-  function run(action: () => Promise<PaymentsActionResult>) {
+  // `account` is the one fees.payer value where Stripe bills the business and Prime
+  // pays no Connect fee. Anything else, NULL included, is an account created before
+  // this change: every one of those bills Prime, so they all get the same offer to
+  // move. NULL happens whenever Stripe has not been read for the account yet, which
+  // includes accounts the current API key cannot reach at all.
+  const feeFree = business.stripe_fees_payer === "account";
+  const legacyAccounts = business.stripe_account_id_legacy ?? [];
+
+  /**
+   * Read Stripe's view of this business: is the platform usable, and is a switch
+   * pending.
+   *
+   * A failed call is NOT treated as "no Stripe key". Not being able to reach the
+   * function and the platform not having a key are different problems with
+   * different fixes, and showing the second when it is really the first sends
+   * whoever is looking at the wrong one.
+   */
+  const loadStatus = useCallback(async () => {
+    const { data, error: err } = await invokeConnect(business.id, { action: "status" });
+    if (err || !data) {
+      setConfigured(null);
+      setError(err ?? "Could not reach payments. Try again in a moment.");
+      return;
+    }
+    setConfigured(data.configured ?? false);
+    setPending(data.pending ?? null);
+  }, [business.id]);
+
+  function run(request: ConnectRequest) {
     setError(null);
     setNotice(null);
     startTransition(async () => {
-      const res = await action();
-      if (res.error) {
-        setError(res.error);
+      const { data, error: err } = await invokeConnect(business.id, request);
+      if (err) {
+        setError(err);
         return;
       }
-      if (res.url) {
-        window.location.href = res.url;
+      if (data?.url) {
+        window.location.href = data.url;
         return;
       }
-      if (res.ok) {
+      if (data?.ok) {
         setNotice("Saved.");
+        await loadStatus();
         router.refresh();
       }
     });
   }
 
-  // On return from Stripe onboarding, pull the latest status once.
+  function confirmSwitch() {
+    const ok = window.confirm(
+      "Switch this business to the new account? Every new payment will settle there from now on. Payments already taken on the old account stay there, and refunds for them keep working.",
+    );
+    if (ok) run({ action: "switch_over" });
+  }
+
+  function confirmSwitchBack(accountId: string) {
+    const ok = window.confirm(
+      "Send payments back to the previous account? New payments will settle there again.",
+    );
+    if (ok) run({ action: "switch_back", account_id: accountId });
+  }
+
+  // Bootstrap: ask the function what it can do and whether a switch is pending.
+  // Coming back from Stripe onboarding also re-syncs the row, since the details
+  // the business just submitted are not in our copy yet.
   useEffect(() => {
-    if (justReturned && paymentsConfigured && connected) {
-      run(() => refreshAccountStatus(business.id));
+    if (justReturned && connected) {
+      run({ action: "refresh" });
+      return;
     }
+    void loadStatus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
-    <div className="space-y-4">
-      {!paymentsConfigured && (
+    <div className="space-y-5">
+      {configured === false && (
         <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          Card payments are not switched on for the platform yet, so this
-          business cannot be set up right now.
+          Card payments are not switched on for the platform yet, so this business
+          cannot be set up right now.
         </p>
       )}
 
       {connected ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge tone={business.stripe_charges_enabled ? "success" : "neutral"}>
-            {business.stripe_charges_enabled
-              ? "Taking payments"
-              : "Not taking payments yet"}
-          </Badge>
-          <Badge tone={business.stripe_payouts_enabled ? "success" : "neutral"}>
-            {business.stripe_payouts_enabled ? "Payouts on" : "Payouts on hold"}
-          </Badge>
-          <Badge tone={business.stripe_details_submitted ? "success" : "warning"}>
-            {business.stripe_details_submitted
-              ? "Details complete"
-              : "Details needed"}
-          </Badge>
-          {business.stripe_requirements_due > 0 && (
-            <Badge tone="danger">
-              {business.stripe_requirements_due} thing
-              {business.stripe_requirements_due === 1 ? "" : "s"} left to finish
-            </Badge>
-          )}
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <span
+              className={cn("mt-1.5 size-2 shrink-0 rounded-full", DOT[status.tone])}
+              aria-hidden
+            />
+            <div className="space-y-0.5">
+              <p className="text-sm font-medium">{status.label}</p>
+              <p className="text-xs text-muted-foreground">{status.detail}</p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {needsAttention && (
+              <Button
+                type="button"
+                disabled={busy}
+                onClick={() => run({ action: "onboarding_link" })}
+              >
+                Finish setup on Stripe
+                <ExternalLink />
+              </Button>
+            )}
+            {business.stripe_details_submitted && (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy}
+                onClick={() => run({ action: "login_link" })}
+              >
+                Open Stripe dashboard
+                <ExternalLink />
+              </Button>
+            )}
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={busy}
+              onClick={() => run({ action: "refresh" })}
+            >
+              <RefreshCw />
+              Refresh
+            </Button>
+          </div>
         </div>
       ) : (
-        <p className="text-sm text-muted-foreground">
-          This business is not set up to take payments yet.
-        </p>
+        <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed px-4 py-8 text-center">
+          <span className="flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
+            <CreditCard className="size-5" />
+          </span>
+          <div className="space-y-1">
+            <p className="text-sm font-medium">Accept payments with Stripe</p>
+            <p className="mx-auto max-w-sm text-xs text-muted-foreground">
+              Stripe collects the business details, verifies them, and pays out to
+              their bank. It takes a few minutes and all of it happens on Stripe.
+            </p>
+          </div>
+          <Button
+            type="button"
+            size="lg"
+            disabled={busy}
+            onClick={() => run({ action: "create" })}
+          >
+            Set up payments with Stripe
+            <ExternalLink />
+          </Button>
+        </div>
       )}
-
-      <div className="flex flex-wrap items-center gap-2">
-        {!connected && (
-          <Button
-            type="button"
-            disabled={isPending || !paymentsConfigured}
-            onClick={() => run(() => createConnectAccount(business.id))}
-          >
-            Set up payments
-          </Button>
-        )}
-        {needsAttention && (
-          <Button
-            type="button"
-            disabled={isPending || !paymentsConfigured}
-            onClick={() => run(() => createOnboardingLink(business.id))}
-          >
-            Finish setup
-          </Button>
-        )}
-        {connected && business.stripe_details_submitted && (
-          <Button
-            type="button"
-            variant="outline"
-            disabled={isPending || !paymentsConfigured}
-            onClick={() => run(() => createLoginLink(business.id))}
-          >
-            Open Stripe dashboard
-          </Button>
-        )}
-        {connected && (
-          <Button
-            type="button"
-            variant="outline"
-            disabled={isPending || !paymentsConfigured}
-            onClick={() => run(() => refreshAccountStatus(business.id))}
-          >
-            Refresh status
-          </Button>
-        )}
-      </div>
 
       {error && (
         <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -164,34 +327,118 @@ export function StripeConnectPanel({
         </p>
       )}
 
-      <details className="rounded-md border bg-muted/30 px-3 py-2">
-        <summary className="cursor-pointer text-sm font-medium">
-          Use an account this business already has
-        </summary>
-        <div className="mt-3 space-y-2">
-          <Field
-            label="Stripe account ID"
-            htmlFor="stripe-acct"
-            hint="If this business is already on Stripe, paste its account ID here instead of setting up a new one."
-          >
-            <Input
-              id="stripe-acct"
-              value={acctId}
-              onChange={(e) => setAcctId(e.target.value)}
-              placeholder="acct_..."
-            />
-          </Field>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={isPending || !paymentsConfigured || acctId.trim() === ""}
-            onClick={() => run(() => linkExistingAccount(business.id, acctId))}
-          >
-            Link account
-          </Button>
+      {connected && (
+        <div className="space-y-3 rounded-lg border bg-muted/30 px-4 py-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-medium">Stripe pricing</span>
+            {feeFree ? (
+              <Badge tone="success">Prime pays no Stripe fees</Badge>
+            ) : (
+              <Badge tone="warning">Old account</Badge>
+            )}
+          </div>
+
+          {feeFree ? (
+            <p className="text-xs text-muted-foreground">
+              Stripe bills this business directly. Prime pays nothing per payout or per
+              month for it.
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              This account predates the new setup, so Stripe bills Prime for it: 0.25%
+              of everything paid out plus $2 in any month it pays out. A new account
+              removes both charges and looks the same to the business (same Stripe
+              dashboard, same onboarding). The business confirms its details once, then
+              you switch it over here. Nothing changes for them until you do.
+            </p>
+          )}
+
+          {pending ? (
+            <div className="space-y-2 rounded-md border bg-background px-3 py-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-medium">Replacement account</span>
+                <Badge tone={pending.chargesEnabled ? "success" : "neutral"}>
+                  {pending.chargesEnabled ? "Ready to switch" : "Onboarding"}
+                </Badge>
+                {pending.requirementsDue > 0 && (
+                  <Badge tone="danger">
+                    {pending.requirementsDue} still needed
+                  </Badge>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                It takes no payments until you switch over. Nothing changes for the
+                business in the meantime.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={busy || !pending.chargesEnabled}
+                  onClick={confirmSwitch}
+                >
+                  Switch over
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => run({ action: "onboarding_link", target: "pending" })}
+                >
+                  Continue onboarding
+                  <ExternalLink />
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => run({ action: "cancel_migration" })}
+                >
+                  Discard
+                </Button>
+              </div>
+            </div>
+          ) : (
+            !feeFree && (
+              <Button
+                type="button"
+                size="sm"
+                disabled={busy}
+                onClick={() => run({ action: "start_migration" })}
+              >
+                Create the new account
+                <ExternalLink />
+              </Button>
+            )
+          )}
+
+          {legacyAccounts.length > 0 && (
+            <div className="space-y-2 border-t pt-3">
+              <p className="text-xs text-muted-foreground">
+                Replaced {legacyAccounts.length === 1 ? "account" : "accounts"}. Leave
+                {legacyAccounts.length === 1 ? " it" : " them"} open on Stripe until the
+                remaining balance pays out.
+              </p>
+              {legacyAccounts.map((id, i) => (
+                <Button
+                  key={id}
+                  type="button"
+                  size="xs"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => confirmSwitchBack(id)}
+                >
+                  <RotateCcw />
+                  Send payments back to the previous account
+                  {legacyAccounts.length > 1 ? ` ${i + 1}` : ""}
+                </Button>
+              ))}
+            </div>
+          )}
         </div>
-      </details>
+      )}
     </div>
   );
 }

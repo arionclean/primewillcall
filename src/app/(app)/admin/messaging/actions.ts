@@ -100,6 +100,18 @@ function parseMessageFields(
 }
 
 /**
+ * Read a trigger's product set off a form. The picker posts a comma-separated
+ * list of business_tour ids; empty means "any product", which is stored as NULL.
+ */
+function readProductIds(formData: FormData, field: string): string[] | null {
+  const ids = String(formData.get(field) ?? "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
+  return ids.length > 0 ? ids : null;
+}
+
+/**
  * Create a message. The message is authored fully in the editor before
  * anything touches the database, so there are no draft rows.
  *
@@ -118,12 +130,12 @@ export async function createMessageAction(
   const parsed = parseMessageFields(formData);
   if (!parsed.ok) return { error: parsed.error };
 
-  const businessTourId = String(formData.get("business_tour_id") ?? "").trim() || null;
+  const businessTourIds = readProductIds(formData, "business_tour_ids");
   const automationId = String(formData.get("automation_id") ?? "").trim();
   const { error } = await auth.supabase.from("messaging_rules").insert({
     ...parsed.fields,
     trigger_event: readTrigger(formData),
-    business_tour_id: businessTourId,
+    business_tour_ids: businessTourIds,
     ...(automationId ? { automation_id: automationId } : {}),
   });
   if (error) return { error: `Could not save: ${error.message}` };
@@ -255,8 +267,8 @@ export async function toggleAutomationActiveAction(formData: FormData): Promise<
 }
 
 /**
- * Re-point a whole automation at a different product. Every message in the
- * automation moves together. Automations are keyed by `automation_id`, so this
+ * Re-point a whole automation at a different set of products. Every message in
+ * the automation moves together. An empty set means "any product". Automations are keyed by `automation_id`, so this
  * never merges two automations that happen to land on the same product.
  */
 export async function updateAutomationProductAction(formData: FormData): Promise<void> {
@@ -265,11 +277,11 @@ export async function updateAutomationProductAction(formData: FormData): Promise
 
   const automationId = String(formData.get("automation_id") ?? "").trim();
   if (!automationId) return;
-  const newId = String(formData.get("automation_product_new") ?? "").trim() || null;
+  const newIds = readProductIds(formData, "automation_product_new");
 
   const { error } = await auth.supabase
     .from("messaging_rules")
-    .update({ business_tour_id: newId })
+    .update({ business_tour_ids: newIds })
     .eq("automation_id", automationId);
   if (error) return;
 
