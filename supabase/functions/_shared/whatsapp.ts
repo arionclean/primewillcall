@@ -92,9 +92,51 @@ export interface SendWhatsappResult {
   mode?: "freeform" | "template";
 }
 
-/** Human-readable record of a template send, since the body lives in Twilio. */
+/** Last resort when Twilio will not tell us what the template says. */
 function templateSummary(contentSid: string, vars: Record<string, string>): string {
   return `[template ${contentSid}] ${JSON.stringify(vars)}`;
+}
+
+// Template bodies live in Twilio, not in our database, and they change only when
+// someone edits and re-submits one for approval. Cache per isolate so a burst of
+// automation sends costs one lookup, not one per message.
+const templateBodyCache = new Map<string, string>();
+
+async function fetchTemplateBody(contentSid: string): Promise<string | null> {
+  const cached = templateBodyCache.get(contentSid);
+  if (cached !== undefined) return cached;
+  if (!ACCOUNT_SID || !AUTH_TOKEN) return null;
+  try {
+    const response = await fetch(`https://content.twilio.com/v1/Content/${contentSid}`, {
+      headers: { Authorization: twilioAuthHeader() },
+    });
+    if (!response.ok) return null;
+    const json = await response.json() as { types?: Record<string, { body?: string }> };
+    const body = Object.values(json.types ?? {})[0]?.body ?? null;
+    if (body) templateBodyCache.set(contentSid, body);
+    return body;
+  } catch {
+    return null;
+  }
+}
+
+/** Fill {{1}}, {{2}} ... with the values we actually sent. */
+function renderTemplateBody(body: string, vars: Record<string, string>): string {
+  return body.replace(/\{\{\s*([a-z0-9_]+)\s*\}\}/gi, (match, name: string) => vars[name] ?? match);
+}
+
+/**
+ * What to store as the message body. A template send is still a message the
+ * customer read, so log its text with the variables filled in rather than a
+ * content sid and a blob of JSON, which is not something staff should ever see
+ * in a conversation.
+ */
+async function loggableTemplateBody(
+  contentSid: string,
+  vars: Record<string, string>,
+): Promise<string> {
+  const template = await fetchTemplateBody(contentSid);
+  return template ? renderTemplateBody(template, vars) : templateSummary(contentSid, vars);
 }
 
 async function postToTwilio(
@@ -183,7 +225,7 @@ export async function sendWhatsapp(input: SendWhatsappInput): Promise<SendWhatsa
     direction: "outbound",
     from_phone: from,
     to_phone: to,
-    body: useFreeform ? body : templateSummary(contentSid, contentVariables),
+    body: useFreeform ? body : await loggableTemplateBody(contentSid, contentVariables),
     status: result.ok ? result.status ?? "queued" : "failed",
     twilio_sid: result.sid ?? null,
     error: result.error ?? null,
