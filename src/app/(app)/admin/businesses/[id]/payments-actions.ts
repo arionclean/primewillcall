@@ -156,7 +156,7 @@ export async function createOnboardingLink(
 
   const base = appBaseUrl();
   if (!base) {
-    return { error: "Set NEXT_PUBLIC_APP_URL to enable Stripe onboarding links." };
+    return { error: "Payment setup is not available right now." };
   }
 
   const accountId = await accountIdFor(businessId, target);

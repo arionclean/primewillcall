@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { getStripeClient, platformFeeBps } from "@/lib/stripe/server";
+import { getStripeClient } from "@/lib/stripe/server";
 import { cn } from "@/lib/utils";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -92,9 +92,7 @@ export default async function EditBusinessPage({
       <section className="mt-8">
         <h2 className="mb-1 text-sm font-semibold">Payments</h2>
         <p className="mb-3 text-xs text-muted-foreground">
-          Connect this business to Stripe so it can accept payments and receive
-          payouts. Charges settle on the business&apos;s account with Prime&apos;s
-          platform fee.
+          Set this business up to take card payments and get paid out.
         </p>
         <Card>
           <CardContent className="py-6">
@@ -102,7 +100,6 @@ export default async function EditBusinessPage({
               business={business}
               pending={pending}
               paymentsConfigured={Boolean(process.env.STRIPE_SECRET_KEY)}
-              feeBps={platformFeeBps()}
               justReturned={stripe === "return"}
             />
           </CardContent>

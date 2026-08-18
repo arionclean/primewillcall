@@ -81,7 +81,7 @@ Stripe itself or from `stripe_account_id_legacy`.
   gated on `charges_enabled`, so there is no moment where charges point at an account
   that cannot take them.
 - **Webhooks need no change.** Connected-account events from both accounts arrive at the
-  same `/api/stripe/webhook` endpoint.
+  same `stripe-webhook` Supabase edge function.
 - **In-flight Checkout links** created before the switch still complete on the old
   account, and the webhook still records them.
 
@@ -96,9 +96,9 @@ that runs a PrimeKiosk tablet needs, after its switch:
 3. Each physical reader re-registered against the new Location.
 
 This is deliberately not built or automated yet: there are no new accounts to create
-Locations on. Until a kiosk business is migrated, `/api/kiosk/*` keeps resolving the
-account through `src/lib/kiosk/resolve.ts` exactly as before. Do the switch for
-non-kiosk businesses first.
+Locations on. Until a kiosk business is migrated, the `kiosk-connection-token` and
+`kiosk-payment-intent` edge functions keep resolving the account from the tablet's
+`kiosks.slug` exactly as before. Do the switch for non-kiosk businesses first.
 
 ## Schema
 

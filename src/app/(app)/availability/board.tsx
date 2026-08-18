@@ -181,7 +181,7 @@ export function AvailabilityBoard({
                   <CardTitle className="text-base">{tour.name}</CardTitle>
                   <CardDescription>
                     {tour.slots.length === 0
-                      ? "No times configured"
+                      ? "No times set up"
                       : `${openCount} of ${tour.slots.length} times open`}
                   </CardDescription>
                 </div>

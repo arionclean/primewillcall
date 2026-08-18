@@ -119,6 +119,16 @@ type BookingStatus =
   | "cancelled";
 
 /**
+ * One plain sentence for the desk, with the real error kept in the console.
+ * Postgres wording ("violates row-level security policy") tells a staffer
+ * nothing they can act on, and it puts our plumbing on a screen guests can see.
+ */
+function deskError(action: string, error: unknown): string {
+  console.error(`[bookings] ${action} failed:`, error);
+  return `Could not ${action}. Try again, and tell Prime if it keeps happening.`;
+}
+
+/**
  * A booking's payment status. Confirmed is the normal state and shows no tag.
  * Only the states that need the operator's attention get a badge. Check-in is a
  * separate concern (its own column, driven by `checked_in_at`), not a status.
@@ -857,7 +867,7 @@ export function BookingsList({
               : b,
           ),
         );
-        setErrorMsg(`Unable to update check-in: ${error.message}`);
+        setErrorMsg(deskError("update the check-in", error));
       }
       setBusyId(null);
     },
@@ -890,7 +900,7 @@ export function BookingsList({
             b.id === booking.id ? { ...b, peek: booking.peek } : b,
           ),
         );
-        setErrorMsg(`Unable to update Peek status: ${error.message}`);
+        setErrorMsg(deskError("update the Peek mark", error));
       }
       setBusyId(null);
     },
@@ -930,7 +940,7 @@ export function BookingsList({
               : b,
           ),
         );
-        setErrorMsg(`Unable to update redemption: ${error.message}`);
+        setErrorMsg(deskError("update the voucher", error));
       }
       setBusyId(null);
     },
@@ -2025,7 +2035,7 @@ function EditBookingModal({
       .eq("id", booking.id);
 
     if (bookingError) {
-      setError(`Unable to update booking: ${bookingError.message}`);
+      setError(deskError("save the booking", bookingError));
       setSaving(false);
       return;
     }
@@ -2046,7 +2056,7 @@ function EditBookingModal({
         })
         .eq("id", booking.customer_id);
       if (custError) {
-        setError(`Booking saved, but customer update failed: ${custError.message}`);
+        setError(deskError("save the guest's details", custError));
         setSaving(false);
         return;
       }
@@ -2068,9 +2078,7 @@ function EditBookingModal({
         .select("id, full_name, phone, email")
         .single();
       if (insertError || !inserted) {
-        setError(
-          `Booking saved, but customer creation failed: ${insertError?.message ?? "unknown error"}`,
-        );
+        setError(deskError("add the guest", insertError));
         setSaving(false);
         return;
       }
@@ -2082,7 +2090,7 @@ function EditBookingModal({
         .update({ customer_id: nextCustomerId })
         .eq("id", booking.id);
       if (linkError) {
-        setError(`Booking saved, but customer link failed: ${linkError.message}`);
+        setError(deskError("link the guest to the booking", linkError));
         setSaving(false);
         return;
       }
@@ -2137,7 +2145,7 @@ function EditBookingModal({
       .eq("id", booking.id);
 
     if (deleteError) {
-      setError(`Unable to delete booking: ${deleteError.message}`);
+      setError(deskError("delete the booking", deleteError));
       setDeleting(false);
       return;
     }
@@ -2305,7 +2313,7 @@ function EditBookingModal({
                     className={editInputClass}
                   >
                     {slotOptions.length === 0 ? (
-                      <option value="">No timeslots</option>
+                      <option value="">No times available</option>
                     ) : (
                       slotOptions.map((s) => (
                         <option key={s} value={s}>

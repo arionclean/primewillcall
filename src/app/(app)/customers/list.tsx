@@ -25,7 +25,7 @@ const SELECT =
 
 /** Format stored phone digits as (XXX) XXX-XXXX; fall back to the raw value. */
 export function formatPhone(raw: string | null): string {
-  if (!raw) return "—";
+  if (!raw) return "-";
   const d = raw.replace(/\D/g, "");
   if (d.length === 10) return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
   if (d.length === 11 && d[0] === "1")
@@ -169,13 +169,13 @@ export function CustomersList({
 
                 {/* Email */}
                 <span className="block truncate text-sm text-muted-foreground">
-                  {c.email ?? "—"}
+                  {c.email ?? "-"}
                 </span>
 
                 {/* Business (owner only) */}
                 {isOwner && (
                   <span className="mt-1 block truncate text-sm text-muted-foreground sm:mt-0">
-                    {c.business?.name ?? "—"}
+                    {c.business?.name ?? "-"}
                   </span>
                 )}
 

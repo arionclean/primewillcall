@@ -40,7 +40,7 @@ export function NewVariantForm({
   return (
     <form action={formAction} className="space-y-6">
       <FormSection
-        title="Variant basics"
+        title="Business and name"
         contentClassName="grid gap-5 sm:grid-cols-2"
       >
           <Field
@@ -62,9 +62,9 @@ export function NewVariantForm({
           </Field>
 
           <Field
-            label="Variant name"
+            label="Name customers see"
             htmlFor="name"
-            hint={`This is the name customers will see. The master tour is "${tourName}".`}
+            hint={`This business can sell "${tourName}" under its own name.`}
             error={state.fieldErrors?.name}
             className="sm:col-span-2"
           >
@@ -78,7 +78,7 @@ export function NewVariantForm({
           </Field>
       </FormSection>
 
-      <FormSection title="Pax tiers" contentClassName="space-y-4">
+      <FormSection title="Prices" contentClassName="space-y-4">
           <p className="text-xs text-muted-foreground">
             Prices are per person. Adjust as needed. Empty rows are ignored.
           </p>
@@ -134,7 +134,7 @@ export function NewVariantForm({
       )}
 
       <div className="flex items-center gap-2">
-        <SubmitButton>Save variant</SubmitButton>
+        <SubmitButton>Save</SubmitButton>
         <Link
           href={`/admin/tours/${tourId}`}
           className={cn(buttonVariants({ variant: "outline" }))}

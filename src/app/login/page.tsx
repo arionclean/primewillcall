@@ -39,7 +39,8 @@ function LoginForm() {
           router.replace(nextParam ?? "/dashboard");
         }
       } catch (sessionError) {
-        setError(sessionError instanceof Error ? sessionError.message : "Unable to check session.");
+        console.error("[login] session check failed:", sessionError);
+        setError("Something went wrong. Refresh the page and try again.");
       }
     };
 
@@ -76,7 +77,7 @@ function LoginForm() {
 
         if (!staffRow) {
           setError(
-            "Signed in, but no active staff record is linked to this email. Contact the owner to provision your account.",
+            "This email is not set up to use the app yet. Ask Prime to add you.",
           );
           await supabase.auth.signOut();
           return;

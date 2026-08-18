@@ -93,6 +93,20 @@ function kioskLabel(slug: string): string {
   return m ? `Kiosk ${m[1]}` : slug;
 }
 
+/**
+ * Where a sale came from, in words. The stored value is a slug ("kiosk1",
+ * "groupon"), which is fine in the database and wrong on a screen. A handful of
+ * rows carried over from the old system hold its 32-character record id
+ * instead; those get no label at all rather than a wall of digits.
+ */
+function sourceLabel(source: string | null): string | null {
+  if (!source) return null;
+  const channel = CHANNEL_OPTIONS.find((c) => c.value === source);
+  if (channel) return channel.label;
+  if (!/^[a-z][a-z0-9 _-]{0,15}$/i.test(source)) return null;
+  return kioskLabel(source);
+}
+
 type PaymentsViewProps = {
   role: StaffRole;
   paymentsConfigured: boolean;
@@ -164,7 +178,7 @@ function detectPreset(from: string, to: string): PresetKey {
 }
 
 function formatDateTime(iso: string | null): string {
-  if (!iso) return "—";
+  if (!iso) return "-";
   return new Intl.DateTimeFormat("en-US", {
     timeZone: NY_TZ,
     month: "short",
@@ -207,7 +221,7 @@ function MovedFrom({ from }: { from: string | null }) {
   if (!from) return null;
   return (
     <p className="truncate text-xs italic text-muted-foreground">
-      moved from {kioskLabel(from)}
+      moved from {sourceLabel(from)}
     </p>
   );
 }
@@ -229,7 +243,9 @@ function customerLabel(txn: Txn): { primary: string; secondary: string } {
     txn.customer_name ??
     txn.customer_email ??
     (txn.booking_ref ? `Sale ${txn.booking_ref}` : "Card customer");
-  const secondary = [txn.source, txn.business?.name].filter(Boolean).join(" · ");
+  const secondary = [sourceLabel(txn.source), txn.business?.name]
+    .filter(Boolean)
+    .join(" · ");
   return { primary, secondary };
 }
 
@@ -243,8 +259,10 @@ function statusBadge(sale: {
   const refunded = sale.amount_refunded ?? 0;
   if (refunded > 0 && refunded >= sale.amount) return { label: "Refunded", tone: "neutral" };
   if (refunded > 0) return { label: "Partly refunded", tone: "warning" };
-  if (sale.status === "succeeded") return { label: "Succeeded", tone: "success" };
-  return { label: sale.status ?? "—", tone: "info" };
+  if (sale.status === "succeeded") return { label: "Paid", tone: "success" };
+  // Anything else is a charge Stripe has not settled. Its raw state name
+  // ("requires_payment_method") is not something a manager should have to read.
+  return { label: "Not completed", tone: "info" };
 }
 
 /** The sale's amount and refunded total, whichever tender it is. */
@@ -574,7 +592,10 @@ export function PaymentsView({
             <tbody>
               {items.map((item) => {
                 if (item.kind === "cash") {
-                  const secondary = [item.kiosk_slug, item.business?.name]
+                  const secondary = [
+                    sourceLabel(item.kiosk_slug),
+                    item.business?.name,
+                  ]
                     .filter(Boolean)
                     .join(" · ");
                   const cashRefunded = item.amount_refunded_cents ?? 0;
@@ -646,7 +667,7 @@ export function PaymentsView({
                             </Button>
                           )}
                           {!cashRefundable && !canMove && (
-                            <span className="text-muted-foreground">—</span>
+                            <span className="text-muted-foreground">-</span>
                           )}
                         </div>
                       </td>
@@ -726,7 +747,7 @@ export function PaymentsView({
                           </Button>
                         )}
                         {!txn.receipt_url && !refundable && !canMove && (
-                          <span className="text-muted-foreground">—</span>
+                          <span className="text-muted-foreground">-</span>
                         )}
                       </div>
                     </td>
@@ -780,11 +801,9 @@ export function PaymentsView({
               <p className="mt-1 text-sm text-muted-foreground">
                 It currently counts toward{" "}
                 <span className="font-medium text-foreground">
-                  {kioskLabel(
-                    (moveFor.kind === "cash"
-                      ? moveFor.kiosk_slug
-                      : moveFor.source) ?? "—",
-                  )}
+                  {sourceLabel(
+                    moveFor.kind === "cash" ? moveFor.kiosk_slug : moveFor.source,
+                  ) ?? "no source"}
                 </span>
                 . Moving it only changes which kiosk it counts for. No money
                 moves and the customer is not charged again.

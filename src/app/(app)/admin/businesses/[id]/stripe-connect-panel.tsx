@@ -42,8 +42,6 @@ type StripeConnectPanelProps = {
     requirementsDue: number;
   } | null;
   paymentsConfigured: boolean;
-  /** Global platform fee in basis points (0.25% = 25), shown read-only. */
-  feeBps: number;
   /** True when the page loaded from a Stripe onboarding return_url. */
   justReturned?: boolean;
 };
@@ -111,7 +109,6 @@ export function StripeConnectPanel({
   business,
   pending,
   paymentsConfigured,
-  feeBps,
   justReturned = false,
 }: StripeConnectPanelProps) {
   const router = useRouter();
@@ -163,7 +160,7 @@ export function StripeConnectPanel({
 
   function confirmSwitchBack(accountId: string) {
     const ok = window.confirm(
-      `Send payments back to ${accountId}? New payments will settle on that account again.`,
+      "Send payments back to the previous account? New payments will settle there again.",
     );
     if (ok) run(() => switchToLegacyAccount(business.id, accountId));
   }
@@ -180,8 +177,8 @@ export function StripeConnectPanel({
     <div className="space-y-5">
       {!paymentsConfigured && (
         <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          Payments are not configured yet. Set STRIPE_SECRET_KEY (and the webhook
-          secrets) to enable Stripe onboarding and charges.
+          Card payments are not switched on for the platform yet, so this business
+          cannot be set up right now.
         </p>
       )}
 
@@ -195,9 +192,6 @@ export function StripeConnectPanel({
             <div className="space-y-0.5">
               <p className="text-sm font-medium">{status.label}</p>
               <p className="text-xs text-muted-foreground">{status.detail}</p>
-              <p className="pt-1 font-mono text-[0.7rem] text-muted-foreground/70">
-                {business.stripe_account_id}
-              </p>
             </div>
           </div>
 
@@ -283,7 +277,7 @@ export function StripeConnectPanel({
           {feeFree ? (
             <p className="text-xs text-muted-foreground">
               Stripe bills this business directly. Prime pays nothing per payout or per
-              month for it, and still collects the platform fee below.
+              month for it.
             </p>
           ) : (
             <p className="text-xs text-muted-foreground">
@@ -308,9 +302,6 @@ export function StripeConnectPanel({
                   </Badge>
                 )}
               </div>
-              <p className="font-mono text-[0.7rem] text-muted-foreground/70">
-                {pending.id}
-              </p>
               <p className="text-xs text-muted-foreground">
                 It takes no payments until you switch over. Nothing changes for the
                 business in the meantime.
@@ -366,32 +357,24 @@ export function StripeConnectPanel({
                 {legacyAccounts.length === 1 ? " it" : " them"} open on Stripe until the
                 remaining balance pays out.
               </p>
-              {legacyAccounts.map((id) => (
-                <div key={id} className="flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-[0.7rem] text-muted-foreground/70">
-                    {id}
-                  </span>
-                  <Button
-                    type="button"
-                    size="xs"
-                    variant="ghost"
-                    disabled={busy}
-                    onClick={() => confirmSwitchBack(id)}
-                  >
-                    <RotateCcw />
-                    Send payments back here
-                  </Button>
-                </div>
+              {legacyAccounts.map((id, i) => (
+                <Button
+                  key={id}
+                  type="button"
+                  size="xs"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => confirmSwitchBack(id)}
+                >
+                  <RotateCcw />
+                  Send payments back to the previous account
+                  {legacyAccounts.length > 1 ? ` ${i + 1}` : ""}
+                </Button>
               ))}
             </div>
           )}
         </div>
       )}
-
-      <p className="border-t pt-4 text-sm text-muted-foreground">
-        Platform fee: {(feeBps / 100).toFixed(2)}% (global, applied to every charge as
-        Prime&apos;s application fee).
-      </p>
     </div>
   );
 }

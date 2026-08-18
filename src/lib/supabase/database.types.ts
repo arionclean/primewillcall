@@ -1718,9 +1718,10 @@ export type Database = {
         Row: {
           body: string
           booking_id: string | null
-          business_id: string
+          business_id: string | null
           created_at: string
           customer_id: string | null
+          direction: Database["public"]["Enums"]["sms_direction"]
           error: string | null
           from_phone: string
           id: string
@@ -1732,9 +1733,10 @@ export type Database = {
         Insert: {
           body: string
           booking_id?: string | null
-          business_id: string
+          business_id?: string | null
           created_at?: string
           customer_id?: string | null
+          direction?: Database["public"]["Enums"]["sms_direction"]
           error?: string | null
           from_phone: string
           id?: string
@@ -1746,9 +1748,10 @@ export type Database = {
         Update: {
           body?: string
           booking_id?: string | null
-          business_id?: string
+          business_id?: string | null
           created_at?: string
           customer_id?: string | null
+          direction?: Database["public"]["Enums"]["sms_direction"]
           error?: string | null
           from_phone?: string
           id?: string
@@ -1855,6 +1858,36 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      create_booking: {
+        Args: {
+          p_active_slots_only?: boolean
+          p_business_tour_id: string
+          p_created_by_staff_id?: string
+          p_customer_email?: string
+          p_customer_legacy_source?: string
+          p_customer_name: string
+          p_customer_phone?: string
+          p_date: string
+          p_groupon_voucher_urls?: string[]
+          p_legacy_reference?: string
+          p_notes?: string
+          p_passengers?: number
+          p_pax?: Json
+          p_pricing?: string
+          p_respect_closures?: boolean
+          p_slot_start: string
+          p_source_channel?: string
+          p_status?: Database["public"]["Enums"]["booking_status"]
+          p_total_override_cents?: number
+        }
+        Returns: {
+          booking_id: string
+          ends_at: string
+          public_token: string
+          starts_at: string
+          total_cents: number
+        }[]
+      }
       current_kiosk_slug: { Args: never; Returns: string }
       current_staff: {
         Args: never
@@ -1873,20 +1906,6 @@ export type Database = {
         }[]
       }
       generate_booking_token: { Args: never; Returns: string }
-      groupon_candidates: {
-        Args: never
-        Returns: {
-          aliases: string[]
-          business_id: string
-          business_name: string
-          business_tour_id: string
-          groupon_fee_cents: number
-          merchant_names: string[]
-          product_name: string
-          tour_id: string
-          tour_name: string
-        }[]
-      }
       gp_shadow_summary: {
         Args: { p_from?: string; p_to?: string }
         Returns: {
@@ -1905,6 +1924,20 @@ export type Database = {
           tier_title: number
           total: number
           xano_only: number
+        }[]
+      }
+      groupon_candidates: {
+        Args: never
+        Returns: {
+          aliases: string[]
+          business_id: string
+          business_name: string
+          business_tour_id: string
+          groupon_fee_cents: number
+          merchant_names: string[]
+          product_name: string
+          tour_id: string
+          tour_name: string
         }[]
       }
       heal_ledger_booking_links: {
@@ -2089,6 +2122,7 @@ export type Database = {
           txn_count: number
         }[]
       }
+      whatsapp_window_open: { Args: { p_phone: string }; Returns: boolean }
     }
     Enums: {
       booking_status:

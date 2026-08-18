@@ -222,13 +222,13 @@ export function ScheduleForm({
                 />
               </Field>
               <Field
-                label="Timeslot"
+                label="Departure time"
                 htmlFor="slot-picker"
                 error={state.fieldErrors?.slot_start}
               >
                 {noSlots ? (
                   <p className="rounded-md border border-dashed bg-muted/30 px-3 py-3 text-xs text-muted-foreground">
-                    No timeslots configured for this tour. Ask Prime to add
+                    This tour has no departure times yet. Ask Prime to add
                     them.
                   </p>
                 ) : (
@@ -252,7 +252,7 @@ export function ScheduleForm({
           <FormSection title="Guests" contentClassName="space-y-4">
             {selected.tiers.length === 0 ? (
               <p className="rounded-md border border-dashed bg-muted/30 px-3 py-3 text-xs text-muted-foreground">
-                No pax tiers configured for this tour. Ask Prime to add them.
+                This tour has no prices set up yet. Ask Prime to add them.
               </p>
             ) : (
               <div className="space-y-3">

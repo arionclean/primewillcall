@@ -207,7 +207,8 @@ export function GlobalSearch() {
         }
       } catch (e) {
         if (!cancelled) {
-          setError(e instanceof Error ? e.message : "Search failed.");
+          console.error("[search] failed:", e);
+          setError("Search is not working right now. Try again.");
           setResults([]);
         }
       } finally {

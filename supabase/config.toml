@@ -1,0 +1,51 @@
+project_id = "qbnizuhozzwkiitfkjee"
+
+# Per-function JWT settings. Without an entry here the CLI deploys a function with
+# verify_jwt ON, which silently breaks anything whose caller cannot send a Supabase
+# token. Two of ours cannot: pg_cron posts to the dispatcher with only x-cron-secret,
+# and Twilio posts to the webhook with only X-Twilio-Signature. Both authenticate
+# inside the function body, so the entries below must stay false.
+
+[functions.dispatch-scheduled-messages]
+verify_jwt = false
+
+[functions.run-booking-automations]
+verify_jwt = false
+
+[functions.twilio-inbound-sms]
+verify_jwt = false
+
+[functions.enqueue-review-asks]
+verify_jwt = false
+
+[functions.stripe-webhook]
+verify_jwt = false
+
+# Everything else keeps verify_jwt = true: the staff UI and the public /gp page
+# both call them with a Supabase token attached, and the remaining two are invoked
+# with the service role key.
+[functions.email-booking-parse]
+verify_jwt = true
+
+[functions.xano-booking-sync]
+verify_jwt = true
+[functions.whatsapp-send]
+verify_jwt = true
+
+[functions.whatsapp-templates]
+verify_jwt = true
+
+[functions.sms-send]
+verify_jwt = true
+
+[functions.sms-sync]
+verify_jwt = true
+
+[functions.gp-slots]
+verify_jwt = true
+
+[functions.gp-validate]
+verify_jwt = true
+
+[functions.gp-book]
+verify_jwt = true

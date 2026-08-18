@@ -80,11 +80,10 @@ src/
       auth/signout/            POST sign out
       bookings/[id]/check-in/  POST mark checked in
       bookings/[id]/payment-link/  POST mint a Stripe Checkout link for a booking
-      kiosk/                   Stripe Terminal: connection-token + payment-intent (PrimeKiosk)
-      stripe/webhook/          POST Stripe webhook (platform + Connect events)
+      webhooks/twilio/sms/     POST inbound SMS. Superseded by the twilio-inbound-sms edge
+                               function; still live until Twilio's console is repointed.
       places/autocomplete/     Google Places proxy (keeps key server-side)
       places/details/          Google Place details proxy
-      gp/                      PUBLIC: validate (vision) + slots + book for /gp
     gp/                        PUBLIC voucher-redemption page (no auth; outside (app))
     booking/[token]/           PUBLIC guest booking-details page (no auth; outside (app))
     login/                     sign-in (client); middleware redirects here when signed out
@@ -99,10 +98,24 @@ src/
     supabase/                  client (browser), server (RSC/actions), admin (service role),
                                database.types.ts (generated)
     dashboard/queries.ts       dashboard fetchers + shared formatters (cents, time, pax)
-    gp/vision.ts               typed client for the gp-voucher-vision edge function
     utils.ts                   cn()
   middleware.ts                session refresh + auth redirect for app routes
 supabase/migrations/           timestamped SQL migrations (source of truth for schema)
+supabase/functions/            Deno edge functions. Everything public, webhook-driven or
+                               scheduled lives here, NOT in a Next route: stripe-webhook,
+                               twilio-inbound-sms, sms-send, sms-sync, gp-voucher-vision,
+                               run-booking-automations, dispatch-scheduled-messages,
+                               enqueue-review-asks, email-booking-parse, kiosk-*,
+                               gp-slots, gp-validate, gp-book, xano-booking-sync,
+                               whatsapp-send, whatsapp-templates.
+                               `_shared/` holds the modules they share (sms.ts,
+                               whatsapp.ts, staff-auth.ts, gp.ts, ny-time.ts,
+                               parse-booking-email.ts).
+supabase/config.toml           per-function `verify_jwt`. Not optional: the CLI defaults a
+                               function to JWT ON, which breaks any caller that cannot send
+                               a Supabase token (pg_cron sends only `x-cron-secret`, Twilio
+                               only `X-Twilio-Signature`). Add an entry for every new
+                               function before deploying it.
 docs/                          ARCHITECTURE, DATABASE, platform-migration, shadcn-foundation
 scripts/                       import_legacy_bookings.py (one-way Xano -> Supabase tunnel)
 src/app/_archive, src/components/_archive   legacy Bubble pages, kept as reference only.
@@ -159,6 +172,12 @@ src/app/_archive, src/components/_archive   legacy Bubble pages, kept as referen
   Display with `Intl.DateTimeFormat({ timeZone: "America/New_York" })`.
 - **Money**: integer cents in the DB. Format with `formatCents` in `lib/dashboard/queries.ts`.
 - **Google Places**: only through `/api/places/*`. The key never reaches the browser.
+- **Creating a booking**: always through the `create_booking()` Postgres function, never
+  hand-rolled inserts. It writes the customer + booking in one transaction and takes the
+  slot duration, the tier/Groupon prices and the UTC timestamps from the database, so a
+  caller can only send quantities. Both the staff `/schedule` form and the public
+  `gp-book` edge function use it. It is `SECURITY INVOKER`, so RLS still scopes the
+  caller. See "create_booking()" in [`docs/DATABASE.md`](docs/DATABASE.md).
 - **Analytics / aggregation**: never fetch-all-and-sum-in-JS. Supabase caps a single
   read at **1000 rows**, so a naive month query silently truncates. Push the
   aggregation into a Postgres function (RPC), e.g. `dashboard_monthly_guests`, which
@@ -182,13 +201,18 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   do not run `npm run dev` in a terminal and the preview at the same time.
 - Always keep it green: `npx tsc --noEmit` (0 errors) and `npm run lint` (0 warnings)
   before considering a change done.
-- `/dashboard/debug` shows exactly what the server sees for the current session (auth
-  id, linked staff row, role, business). First stop when auth or scoping looks wrong.
+- There is no debug screen in the app: nothing internal (auth ids, roles, raw errors)
+  is ever put in front of staff. To see what the server sees for a session, query
+  `current_staff()` in Supabase, or read the server log.
 - **RLS denial looks like "no rows" or a 42501 error, not a crash.** If a write
   silently does nothing or a list is empty for a role that should see data, check the
   policy in `docs/DATABASE.md` and confirm `current_staff()` returns what you expect.
-- Test accounts (dev Supabase): owner `alegarcialuis98@gmail.com`; manager
-  `skymanager@gmail.com` (Miami Skyline Cruises); check-in `kiosk1@gmail.com`.
+- Test accounts (dev Supabase): owner `sky@gmail.com` (was
+  `alegarcialuis98@gmail.com`); manager `skymanager@gmail.com` (Miami Skyline
+  Cruises); check-in `kiosk1@gmail.com`. The owner address is not a mailbox Prime
+  controls, so password resets and auth mail do not reach anyone here. The dashboard
+  user panel only offers emailed recovery, so set an owner password with the Auth
+  admin API (`PUT /auth/v1/admin/users/<id>` with the service role key) instead.
 
 ## Adding a feature (checklist)
 
@@ -207,13 +231,28 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
 - Profile / settings not built.
 - **Messaging automations** (`/admin/messaging`) are built: owner rules grouped as
   trigger (a new booking, per product) plus one or more actions (SMS / WhatsApp), each with
-  an optional **wait** (`messaging_rules.delay_minutes`). The engine
-  (`runNewBookingRules` in `src/lib/sms/rules.ts`) sends immediate actions inline and
-  enqueues delayed ones into `scheduled_messages`; the `dispatch-scheduled-messages` edge
-  function (invoked by pg_cron) sends the due ones. **Not live yet**: booking creation only
-  fires the automations when `MESSAGING_AUTOMATIONS_ENABLED=true` (wired into `/schedule`,
-  still to wire `/api/gp/book`), and the cron + Twilio secrets must be set. Full model +
-  go-live checklist in [`docs/messaging-automations.md`](docs/messaging-automations.md).
+  an optional **wait** (`messaging_rules.delay_minutes`). The engine is **all in Supabase**:
+  the `on_native_booking_created` trigger calls the `run-booking-automations` edge function,
+  which only ever ENQUEUES into `scheduled_messages`; `dispatch-scheduled-messages`
+  (pg_cron) is the single thing that calls Twilio and it enforces the global hourly cap.
+  `messaging_settings.automations_enabled` is ON. Full model + go-live checklist in
+  [`docs/messaging-automations.md`](docs/messaging-automations.md).
+- **WhatsApp** shares that engine but not its rules. Meta lets a business open a
+  conversation only with an approved template; when the customer replies, a **24-hour
+  window** opens in which free-form text is allowed, and each new reply restarts it.
+  So the channel is built around that window, not around a send call:
+  `whatsapp_messages.direction` records inbound replies (Twilio posts WhatsApp to the
+  same `twilio-inbound-sms` webhook, addressed `whatsapp:+1...`), the inbound row is
+  what opens the window, and `whatsapp_window_open(phone)` is the single answer to
+  "may we write freely?". Every send goes through `sendWhatsapp` in
+  `_shared/whatsapp.ts`, which reads the window and picks free-form or template
+  itself, so a caller can never collect a Twilio 63016 by guessing. `whatsapp-send`
+  is the staff-facing entry point, `whatsapp-templates` is the Twilio Content catalog
+  (list + submit for approval). The sender `+17868226594` posts incoming messages to
+  `twilio-inbound-sms`, set through the Messaging v2 Senders API (the console's sender
+  form will not save without a public "Profile about" and was 404ing anyway).
+  **Not live**: no `messaging_rules` row uses the WhatsApp channel yet, and the staff
+  Messages screen is still SMS-only. See [`docs/whatsapp.md`](docs/whatsapp.md).
 - **Review automation** (post-tour rating funnel) is built and deployed but
   **switched OFF**: 3h after a tour ends the customer is texted for a 1-5 rating;
   a 5 gets the Google review link (plus one 24h nudge if never clicked), a 1-4 gets
@@ -246,14 +285,16 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   (owner-only "Redeem" / "Redeemed" toggle on Groupon rows in the bookings list,
   `bookings.groupon_redeemed_at`) after redeeming it on Groupon's own platform. See the
   Stripe entry below and [`docs/DATABASE.md`](docs/DATABASE.md) "Groupon convenience fee" +
-  "Payments (Stripe)". The matcher is graded against live Xano by the **shadow test**
-  (`gp_shadow_runs` + the `gp-shadow-compare` edge function + owner-only
-  `/admin/gp-shadow`); it is read-only with respect to Xano and creates no bookings.
-  Feeding it needs one additive hook in Xano's `vision_v4` post_process, which is a
-  live-Xano write and is **not applied yet**. See
+  "Payments (Stripe)". The matcher can be graded against live Xano by the **shadow test**
+  (`gp_shadow_runs` + the `gp-shadow-compare` edge function); it is read-only with respect
+  to Xano and creates no bookings. Its **`/admin/gp-shadow` page was removed** in the
+  production cleanup, since a screen comparing us to Xano is migration scaffolding, not
+  something the app should show. The table and edge function are untouched, so the
+  results are still readable by SQL. Feeding it also needs one additive hook in Xano's
+  `vision_v4` post_process, which is a live-Xano write and is **not applied yet**. See
   [`docs/gp-shadow-test.md`](docs/gp-shadow-test.md).
 - `/availability` (owner + business manager) opens/closes booking times per day via
-  `tour_slot_closures`; `/api/gp/slots` and `/api/gp/book` respect closures. The
+  `tour_slot_closures`; the `gp-slots` and `gp-book` edge functions respect closures. The
   internal `/schedule` booking form does NOT block closed times (staff can override);
   wire that in if the business asks for it.
 - `/analytics` is built, organized as in-page tabs (`analytics-tabs.tsx`, client state,
@@ -283,8 +324,8 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   [`docs/DATABASE.md`](docs/DATABASE.md).
 - **Kiosk POS (Stripe Terminal)** is built: the PrimeKiosk tablet's card + cash sales,
   Supabase-native replacement for the Xano `connection-token_v6` / `payment-intent_v2`
-  endpoints. `POST /api/kiosk/connection-token` (Terminal connection token) and
-  `POST /api/kiosk/payment-intent` (card_present DIRECT charge with the platform fee) both
+  endpoints. The `kiosk-connection-token` (Terminal connection token) and
+  `kiosk-payment-intent` (card_present DIRECT charge with the platform fee) edge functions both
   resolve the connected account server-side from the tablet's `kiosk` tag via
   `kiosks.slug` (`src/lib/kiosk/resolve.ts`), so a caller can never choose which account
   to charge. Card sales record into `stripe_transactions` (source=`kiosk`) through the
@@ -298,15 +339,22 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   per-business Connect onboarding on `/admin/businesses/[id]` (a single "Set up payments
   with Stripe" CTA that creates the account and hands off to Stripe's hosted onboarding,
   then a plain-language status line plus Express dashboard login and refresh; buttons
-  only, no account-id input anywhere); a single global platform fee (`STRIPE_PLATFORM_FEE_BPS`, default 25 bps =
-  0.25%, the Connect fee passed through); a single webhook at `/api/stripe/webhook` (official
-  signature verify, `stripe_events` idempotency, handles checkout/payment_intent/charge/
-  dispute/`account.updated`); the ledger tables `stripe_transactions` / `stripe_refunds` /
+  only, no account-id input anywhere); a single global platform fee
+  (`STRIPE_PLATFORM_FEE_BPS`, default 25 bps = 0.25%, historically the Connect fee passed
+  through, now margin on any fee-free account); a single webhook, the **`stripe-webhook`
+  Supabase edge function** (official signature verify, `stripe_events` idempotency, handles
+  checkout/payment_intent/charge/dispute/`account.updated`); the ledger tables
+  `stripe_transactions` / `stripe_refunds` /
   `stripe_events`; and the public `/gp` Groupon checkout now creates a real Checkout Session
   (with a graceful manual-collection fallback when a business is not yet onboarded). Shared
-  client + fee helpers in `src/lib/stripe/server.ts`. Requires env `STRIPE_SECRET_KEY`
-  (Prime's PLATFORM key), `STRIPE_WEBHOOK_SECRET`, `STRIPE_WEBHOOK_SECRET_CONNECTED`,
-  `STRIPE_PLATFORM_FEE_BPS`, `NEXT_PUBLIC_APP_URL`. See `docs/DATABASE.md` "Payments (Stripe)".
+  client + fee helpers in `src/lib/stripe/server.ts`. `STRIPE_SECRET_KEY` (Prime's PLATFORM
+  key) is needed in **both** places, because the Stripe logic is split: Vercel runs the admin
+  server actions (account setup, refunds, payment links) and Supabase runs `stripe-webhook`
+  and `gp-book`. Vercel additionally needs `STRIPE_PLATFORM_FEE_BPS` and `NEXT_PUBLIC_APP_URL`;
+  the two webhook signing secrets (`STRIPE_WEBHOOK_SECRET`, `STRIPE_WEBHOOK_SECRET_CONNECTED`)
+  live only as Supabase function secrets. A test key on one side and a live key on the other
+  is the failure that reads "the provided key does not have access to account acct_...", since
+  a test key cannot open a live connected account. See `docs/DATABASE.md` "Payments (Stripe)".
   Also built: the **`/admin/payments`** transactions dashboard (owner + business_manager;
   check_in redirected out) with a date-range + owner business filter and DB-aggregated
   totals via the `stripe_payments_summary` RPC; a **refund** action

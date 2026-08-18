@@ -113,7 +113,7 @@ export function ManagerEditTourForm({
       <FormSection title="Pricing" contentClassName="space-y-4">
         {tiers.length === 0 ? (
           <p className="rounded-md border border-dashed bg-muted/30 px-3 py-3 text-xs text-muted-foreground">
-            No price tiers set. Ask Prime to add them.
+            No prices set. Ask Prime to add them.
           </p>
         ) : (
           <div className="space-y-3">
@@ -186,7 +186,7 @@ export function ManagerEditTourForm({
         </div>
         <div>
           <p className="text-xs font-medium text-muted-foreground">
-            Timeslots
+            Departure times
           </p>
           {timeslots.length === 0 ? (
             <p className="mt-1 text-sm text-muted-foreground">None set.</p>

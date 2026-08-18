@@ -37,15 +37,18 @@ async function OwnerToursList() {
     )
     .order("name", { ascending: true });
 
+  // The screen shows a plain "could not load" line; the detail belongs in the
+  // server log, not in front of a manager.
+  if (error) console.error("[tours] owner list fetch error:", error);
+
   return (
     <div>
       <header className="mb-6 flex items-end justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Tours</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Master tours Prime owns. Each business can attach its own variant
-            with a custom name and prices, but the capacity and timeslots are
-            shared.
+            Every tour Prime runs. A business can sell one under its own name
+            and prices, but the capacity and departure times stay shared.
           </p>
         </div>
         <Link
@@ -58,7 +61,8 @@ async function OwnerToursList() {
 
       {error && (
         <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-          {error.message}
+          Could not load tours. Refresh the page, and tell Prime if it keeps
+          happening.
         </p>
       )}
 
@@ -81,10 +85,10 @@ async function OwnerToursList() {
                       <p className="truncate font-medium">{t.name}</p>
                       <p className="text-xs text-muted-foreground">
                         Capacity {t.capacity} ·{" "}
-                        {t.tour_timeslots?.length ?? 0} timeslot
+                        {t.tour_timeslots?.length ?? 0} departure time
                         {(t.tour_timeslots?.length ?? 0) === 1 ? "" : "s"} ·{" "}
-                        {t.business_tours?.length ?? 0} business variant
-                        {(t.business_tours?.length ?? 0) === 1 ? "" : "s"}
+                        {t.business_tours?.length ?? 0} business
+                        {(t.business_tours?.length ?? 0) === 1 ? "" : "es"}
                         {!t.is_active && " · inactive"}
                       </p>
                     </div>
@@ -130,6 +134,8 @@ async function ManagerToursList({ businessId }: { businessId: string }) {
     .eq("business_id", businessId)
     .order("name", { ascending: true });
 
+  if (error) console.error("[tours] manager list fetch error:", error);
+
   type Row = {
     id: string;
     name: string;
@@ -151,7 +157,8 @@ async function ManagerToursList({ businessId }: { businessId: string }) {
 
       {error && (
         <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-          {error.message}
+          Could not load tours. Refresh the page, and tell Prime if it keeps
+          happening.
         </p>
       )}
 

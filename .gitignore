@@ -46,3 +46,4 @@ dbo-bookings-*.csv
 # sales rows. Customer data, never commit it.
 scripts/__pycache__/
 scripts/_data/
+supabase/.temp/

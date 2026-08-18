@@ -77,7 +77,8 @@ async function OwnerEditTourView({ tourId }: { tourId: string }) {
             {tour.name}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Master tour. Capacity and timeslots are shared with every business.
+            Capacity and departure times are shared by every business selling
+            this tour.
           </p>
         </div>
         <Link

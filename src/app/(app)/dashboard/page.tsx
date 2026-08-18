@@ -83,7 +83,7 @@ export default async function DashboardPage({
           {noBusinesses && (
             <OnboardingCta
               title="Add your first business"
-              description="Prime owns the master account. Add at least one business so we can attach tours and bookings to it."
+              description="Add the first business so its tours and bookings have a home."
               ctaLabel="Add business"
               href="/admin/businesses/new"
             />
@@ -91,7 +91,7 @@ export default async function DashboardPage({
           {!noBusinesses && noTours && (
             <OnboardingCta
               title="Add your first tour"
-              description="A tour is the scheduled experience a business sells. Set its pax tiers and base price, then bookings can start coming in."
+              description="A tour is what a business sells. Set its departure times and prices, then bookings can start coming in."
               ctaLabel="Add tour"
               href="/admin/tours/new"
             />
@@ -112,12 +112,6 @@ export default async function DashboardPage({
       <div className="mt-6">
         <MonthChart data={monthly} />
       </div>
-
-      <p className="mt-10 text-xs text-muted-foreground">
-        <Link href="/dashboard/debug" className="underline">
-          Account debug info
-        </Link>
-      </p>
     </div>
   );
 }

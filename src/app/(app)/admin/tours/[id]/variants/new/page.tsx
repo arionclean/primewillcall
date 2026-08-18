@@ -36,17 +36,17 @@ export default async function NewVariantPage({
       <div>
         <header className="mb-6">
           <h1 className="text-2xl font-semibold tracking-tight">
-            Add variant
+            Add a business
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            For master tour: {tour.name}
+            For the tour: {tour.name}
           </p>
         </header>
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
             <p className="text-sm text-muted-foreground">
-              Every business already has a variant of this tour, or no
-              businesses exist yet.
+              Every business already sells this tour, or no businesses exist
+              yet.
             </p>
             <Link
               href={`/admin/tours/${id}`}
@@ -63,9 +63,9 @@ export default async function NewVariantPage({
   return (
     <div>
       <header className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Add variant</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Add a business</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          For master tour:{" "}
+          For the tour:{" "}
           <span className="font-medium text-foreground">{tour.name}</span>
         </p>
       </header>

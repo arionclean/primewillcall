@@ -118,7 +118,7 @@ function pctChange(a: number, b: number): number | null {
 
 function DeltaBadge({ value }: { value: number | null }) {
   if (value === null)
-    return <span className="text-xs text-muted-foreground">—</span>;
+    return <span className="text-xs text-muted-foreground">-</span>;
   return (
     <Badge tone={value >= 0 ? "success" : "danger"}>
       {value > 0 ? "+" : ""}
@@ -704,8 +704,8 @@ export function MonthlyComparison({
 
           {view === "cumulative" && (
             <p className="mt-4 text-xs text-muted-foreground">
-              Lines show the running total through each day (month-to-date
-              pacing). The table figures stay daily.
+              Lines show the running total through each day, so you can see
+              which month is ahead. The figures below stay daily.
             </p>
           )}
         </div>

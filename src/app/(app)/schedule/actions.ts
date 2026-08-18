@@ -11,33 +11,30 @@ export type CreateBookingState = {
   savedBookingId?: string;
 };
 
-type PaxLine = {
-  tier_id: string;
-  label: string;
-  qty: number;
-  unit_price_cents: number;
-  line_total_cents: number;
-};
-
-function nyLocalToUtcIso(yyyyMmDd: string, hhmm: string): string {
-  const [y, m, d] = yyyyMmDd.split("-").map(Number);
-  const parts = hhmm.split(":").map(Number);
-  const hh = parts[0] ?? 0;
-  const mm = parts[1] ?? 0;
-  const candidate = new Date(Date.UTC(y, m - 1, d, hh, mm, 0));
-  const tzLabel =
-    new Intl.DateTimeFormat("en-US", {
-      timeZone: "America/New_York",
-      timeZoneName: "shortOffset",
-      hour: "2-digit",
-      hour12: false,
-    })
-      .formatToParts(candidate)
-      .find((p) => p.type === "timeZoneName")?.value ?? "GMT+0";
-  const m2 = tzLabel.match(/GMT([+-])(\d{1,2})(?::?(\d{2}))?/);
-  const sign = m2?.[1] === "-" ? -1 : 1;
-  const offMin = sign * (Number(m2?.[2] ?? 0) * 60 + Number(m2?.[3] ?? 0));
-  return new Date(candidate.getTime() - offMin * 60_000).toISOString();
+/**
+ * Turn a create_booking() failure into something a staff member can act on. The
+ * function raises a short stable token; RLS denials arrive as 42501 the same as
+ * they did when the inserts were inline.
+ */
+function bookingErrorMessage(err: { code?: string; message?: string }): string {
+  if (err.code === "42501" || /row-level security/i.test(err.message ?? "")) {
+    return "You don't have permission to create bookings.";
+  }
+  const token = (err.message ?? "").trim();
+  switch (true) {
+    case token.includes("tour_not_available"):
+      return "This tour is not active.";
+    case token.includes("bad_slot"):
+      return "That timeslot is no longer available.";
+    case token.includes("slot_closed"):
+      return "That time is closed for the selected date.";
+    case token.includes("no_prices"):
+      return "This tour has no prices set up yet.";
+    case token.includes("no_guests"):
+      return "Add at least one guest.";
+    default:
+      return err.message || "Failed to save booking.";
+  }
 }
 
 export async function createBookingAction(
@@ -160,25 +157,21 @@ export async function createBookingAction(
     }
   }
 
-  // Authoritative tier prices.
+  // Quantities only. The prices, the breakdown, the slot duration and the UTC
+  // timestamps all come from the create_booking() function, so nothing the browser
+  // posts can move a price. See supabase/migrations/20260816120000_create_booking_rpc.sql.
   const { data: tiers, error: tiersErr } = await supabase
     .from("tour_pax_tiers")
-    .select("id, label, price_cents, sort_order")
-    .eq("business_tour_id", business_tour_id)
-    .order("sort_order", { ascending: true });
+    .select("id")
+    .eq("business_tour_id", business_tour_id);
   if (tiersErr) {
     return { error: tiersErr.message };
   }
   if (!tiers || tiers.length === 0) {
-    return { error: "This tour has no pax tiers configured." };
+    return { error: "This tour has no prices set up yet." };
   }
 
-  // Build pax breakdown.
-  const breakdown: PaxLine[] = [];
-  let total_cents = 0;
-  let pax_adult = 0;
-  let pax_child = 0;
-  let pax_infant = 0;
+  const pax: Record<string, number> = {};
   let totalQty = 0;
   for (const tier of tiers) {
     const raw = formData.get(`pax_${tier.id}`);
@@ -189,20 +182,8 @@ export async function createBookingAction(
       continue;
     }
     if (qty === 0) continue;
-    const line_total_cents = qty * tier.price_cents;
-    total_cents += line_total_cents;
+    pax[tier.id] = qty;
     totalQty += qty;
-    breakdown.push({
-      tier_id: tier.id,
-      label: tier.label,
-      qty,
-      unit_price_cents: tier.price_cents,
-      line_total_cents,
-    });
-    const lower = tier.label.toLowerCase();
-    if (lower === "adult") pax_adult += qty;
-    else if (lower === "child") pax_child += qty;
-    else if (lower === "infant") pax_infant += qty;
   }
 
   if (Object.keys(fieldErrors).length > 0) {
@@ -216,6 +197,7 @@ export async function createBookingAction(
   // the only thing the client can't tamper with. A value here is a deliberate
   // desk-side adjustment (discount, cash deal), so the breakdown keeps the list
   // prices and only the charged total moves.
+  let totalOverrideCents: number | null = null;
   const totalOverrideRaw = String(formData.get("total_override") ?? "").trim();
   if (totalOverrideRaw) {
     const cleaned = totalOverrideRaw.replace(/[$,\s]/g, "");
@@ -228,66 +210,31 @@ export async function createBookingAction(
     if (cents > 100_000_00) {
       return { fieldErrors: { total_override: "That price is too high." } };
     }
-    total_cents = cents;
+    totalOverrideCents = cents;
   }
 
-  // Compute times.
-  const startsAtIso = nyLocalToUtcIso(date, slotStart);
-  const endsAtIso = new Date(
-    new Date(startsAtIso).getTime() + slotDuration * 60_000,
-  ).toISOString();
-
-  // Insert customer.
-  const { data: customerRow, error: custErr } = await supabase
-    .from("customers")
-    .insert({
-      business_id: btRow.business_id,
-      full_name: customer_full_name,
-      email: customer_email,
-      phone: customer_phone,
-    })
-    .select("id")
-    .single();
-  if (custErr || !customerRow) {
-    const msg = custErr?.message ?? "Failed to save customer.";
-    if (
-      custErr?.code === "42501" ||
-      /row-level security/i.test(custErr?.message ?? "")
-    ) {
-      return { error: "You don't have permission to add customers." };
-    }
-    return { error: msg };
-  }
-
-  // Insert booking.
-  const { data: bookingRow, error: bookingErr } = await supabase
-    .from("bookings")
-    .insert({
-      business_id: btRow.business_id,
-      business_tour_id: btRow.id,
-      customer_id: customerRow.id,
-      starts_at: startsAtIso,
-      ends_at: endsAtIso,
-      status: "confirmed",
-      total_cents,
-      currency: "usd",
-      notes,
-      created_by_staff_id: staff.id,
-      pax_adult,
-      pax_child,
-      pax_infant,
-      tour_pax_breakdown: breakdown,
-    })
-    .select("id, public_token")
-    .single();
-  if (bookingErr || !bookingRow) {
-    if (
-      bookingErr?.code === "42501" ||
-      /row-level security/i.test(bookingErr?.message ?? "")
-    ) {
-      return { error: "You don't have permission to create bookings." };
-    }
-    return { error: bookingErr?.message ?? "Failed to save booking." };
+  // Customer + booking in one transaction: a failure on the booking no longer
+  // leaves an orphan customer behind.
+  const { error: rpcErr } = await supabase.rpc("create_booking", {
+    p_business_tour_id: business_tour_id,
+    p_date: date,
+    p_slot_start: slotStart,
+    p_customer_name: customer_full_name,
+    p_pricing: "tiers",
+    p_pax: pax,
+    p_customer_email: customer_email ?? undefined,
+    p_customer_phone: customer_phone ?? undefined,
+    p_notes: notes ?? undefined,
+    p_status: "confirmed",
+    p_total_override_cents: totalOverrideCents ?? undefined,
+    p_created_by_staff_id: staff.id,
+    // Staff may deliberately sell a departure that is closed or inactive on the
+    // public board (a phone booking), so neither guard applies here.
+    p_respect_closures: false,
+    p_active_slots_only: false,
+  });
+  if (rpcErr) {
+    return { error: bookingErrorMessage(rpcErr) };
   }
 
   // Messaging automations are NOT fired here anymore. They run from a single

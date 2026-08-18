@@ -130,8 +130,11 @@ export async function refundTransaction(
     revalidatePath("/admin/payments");
     return { ok: true };
   } catch (err) {
+    // Stripe's own wording carries charge ids and API terms, so it stays in
+    // the log and the manager gets one line they can act on.
+    console.error("[payments] card refund failed:", err);
     return {
-      error: err instanceof Error ? err.message : "Refund failed.",
+      error: "The refund did not go through. Try again, or check Stripe.",
     };
   }
 }
@@ -201,7 +204,10 @@ export async function refundCashSale(
       refunded_by: staff.id,
     })
     .eq("id", saleId);
-  if (error) return { error: error.message };
+  if (error) {
+    console.error("[payments] cash refund failed:", error);
+    return { error: "Could not record the refund. Try again." };
+  }
 
   revalidatePath("/admin/payments");
   revalidatePath("/caja");
@@ -275,7 +281,10 @@ export async function moveSaleSource(
         source_moved_by: staff.id,
       })
       .eq("id", saleId);
-    if (error) return { error: error.message };
+    if (error) {
+      console.error("[payments] move sale failed:", error);
+      return { error: "Could not move the sale. Try again." };
+    }
   } else {
     const { data: sale } = await admin
       .from("stripe_transactions")
@@ -297,7 +306,10 @@ export async function moveSaleSource(
         source_moved_by: staff.id,
       })
       .eq("id", saleId);
-    if (error) return { error: error.message };
+    if (error) {
+      console.error("[payments] move sale failed:", error);
+      return { error: "Could not move the sale. Try again." };
+    }
   }
 
   revalidatePath("/admin/payments");

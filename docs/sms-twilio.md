@@ -51,11 +51,11 @@ On `SmsStatus == "received"` it:
 
 | Xano | This repo |
 |---|---|
-| `communication/send sms v2` (Twilio REST call) | [src/lib/sms/twilio.ts](../src/lib/sms/twilio.ts) `sendTwilioSms` |
-| `send sms telnyxs` + `add to message logs` | [src/lib/sms/messages.ts](../src/lib/sms/messages.ts) `sendSms` (US-only, opt-out aware, logs to `sms_messages`) |
-| `City tour campaign_v1` booking trigger | `sendBookingConfirmationSms` in the same module; call it after creating a booking |
-| `POST sms/v1` (auth send) | [src/app/api/sms/send/route.ts](../src/app/api/sms/send/route.ts) (Supabase staff token) |
-| `POST receive/sms_respose_twilio` | [src/app/api/webhooks/twilio/sms/route.ts](../src/app/api/webhooks/twilio/sms/route.ts) |
+| `communication/send sms v2` (Twilio REST call) | [supabase/functions/_shared/sms.ts](../supabase/functions/_shared/sms.ts) `sendTwilioSms` |
+| `send sms telnyxs` + `add to message logs` | [supabase/functions/_shared/sms.ts](../supabase/functions/_shared/sms.ts) `sendSms` (US-only, opt-out aware, logs to `sms_messages`) |
+| `City tour campaign_v1` booking trigger | the `on_native_booking_created` DB trigger -> [run-booking-automations](../supabase/functions/run-booking-automations/index.ts) (enqueue) -> [dispatch-scheduled-messages](../supabase/functions/dispatch-scheduled-messages/index.ts) (send, hourly cap) |
+| `POST sms/v1` (auth send) | [sms-send](../supabase/functions/sms-send/index.ts) edge function (JWT on, resolves the caller's staff row) |
+| `POST receive/sms_respose_twilio` | [twilio-inbound-sms](../supabase/functions/twilio-inbound-sms/index.ts) edge function (JWT off, X-Twilio-Signature is the auth) |
 | `message_historial` table + contact linking | `sms_messages` table ([migration](../supabase/migrations/20260707170000_sms_messaging.sql)), auto-linked to `customers` by phone, with `business_id`/`booking_id`/`sent_by_staff_id` following the `whatsapp_messages` house style |
 | STOP handling in `analyze inbound message_v2` | `sms_opt_outs` table + keyword handling in the webhook |
 
@@ -91,7 +91,7 @@ without touching it:
   reply handling keep working unchanged. Set the var to `""` at final cutover.
 - **Outbound:** chat sends go straight to the Twilio REST API (tag `chat`); Xano is
   not involved.
-- **History:** Twilio is the shared source of truth. `POST /api/sms/sync` pulls both
+- **History:** Twilio is the shared source of truth. The `sms-sync` edge function pulls both
   directions from the Twilio Messages API (incremental, deduped by `twilio_sid`), so
   Xano-sent messages also appear in threads. The page runs a sync on load.
 - **Live updates:** Supabase Realtime on `sms_messages` inserts (publication added in
@@ -110,8 +110,12 @@ interpreted by Xano as a rating.
 
 1. Apply the migration `20260707170000_sms_messaging.sql` to the Supabase project
    (`qbnizuhozzwkiitfkjee`).
-2. Set the env vars from [.env.example](../.env.example) (Twilio SID/token/from number,
-   `SUPABASE_SERVICE_ROLE_KEY`, `TWILIO_WEBHOOK_BASE_URL`, `XANO_SMS_FORWARD_URL`).
+2. Set the Supabase function secrets (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`,
+   `TWILIO_FROM_NUMBER`, `XANO_SMS_FORWARD_URL`, `APP_URL`). Sending and history sync no
+   longer touch Vercel; it keeps the Twilio SID/token only for the inbound route (until
+   that is repointed) and for the WhatsApp template list on `/admin/messaging`.
 3. In the Twilio console, point the number's Messaging webhook ("A message comes in") to
-   `https://<app-domain>/api/webhooks/twilio/sms` (HTTP POST). With forwarding enabled
-   this is safe to do while Xano is still live; reverting is one console change.
+   `https://qbnizuhozzwkiitfkjee.supabase.co/functions/v1/twilio-inbound-sms` (HTTP POST).
+   With forwarding enabled this is safe to do while Xano is still live; reverting is one
+   console change. The signature is computed over this exact URL, so it must match
+   character for character (override with the `TWILIO_WEBHOOK_URL` secret if it ever differs).

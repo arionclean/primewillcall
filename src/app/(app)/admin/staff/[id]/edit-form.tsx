@@ -257,8 +257,8 @@ export function EditStaffForm({
                 className="h-4 w-4 accent-primary"
               />
               {isActive
-                ? "Active — they can sign in."
-                : "Inactive — they cannot sign in."}
+                ? "Active. They can sign in."
+                : "Inactive. They cannot sign in."}
             </label>
           </Field>
 
@@ -391,9 +391,9 @@ export function EditStaffForm({
         <CardContent className="space-y-3 py-6">
           <h2 className="text-sm font-semibold">Danger zone</h2>
           <p className="text-xs text-muted-foreground">
-            Deleting a team member removes their login and disconnects them
-            from the platform. Past bookings they created or checked in stay
-            in place but lose the link.
+            Deleting a team member removes their login for good. The bookings
+            they made or checked in are kept, but will no longer show who
+            handled them.
           </p>
           {deleteError && (
             <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">

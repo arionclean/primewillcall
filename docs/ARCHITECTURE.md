@@ -26,7 +26,6 @@ All app screens live in the `(app)` route group so they share the shell and auth
 | Path | Who | Notes |
 | --- | --- | --- |
 | `/dashboard` | all | KPIs, today's bookings (realtime), tours snapshot, onboarding CTAs |
-| `/dashboard/debug` | all | "what the server sees" for the session |
 | `/bookings` | all | date-scoped list, privacy mode, tour filter, search, edit modal |
 | `/schedule` | all (RLS gates writes) | new-booking form |
 | `/admin/tours` | owner + manager | owner sees master tours; manager sees only their tours |
