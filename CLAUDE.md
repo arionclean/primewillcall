@@ -207,8 +207,12 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
 - **RLS denial looks like "no rows" or a 42501 error, not a crash.** If a write
   silently does nothing or a list is empty for a role that should see data, check the
   policy in `docs/DATABASE.md` and confirm `current_staff()` returns what you expect.
-- Test accounts (dev Supabase): owner `alegarcialuis98@gmail.com`; manager
-  `skymanager@gmail.com` (Miami Skyline Cruises); check-in `kiosk1@gmail.com`.
+- Test accounts (dev Supabase): owner `sky@gmail.com` (was
+  `alegarcialuis98@gmail.com`); manager `skymanager@gmail.com` (Miami Skyline
+  Cruises); check-in `kiosk1@gmail.com`. The owner address is not a mailbox Prime
+  controls, so password resets and auth mail do not reach anyone here. The dashboard
+  user panel only offers emailed recovery, so set an owner password with the Auth
+  admin API (`PUT /auth/v1/admin/users/<id>` with the service role key) instead.
 
 ## Adding a feature (checklist)
 
