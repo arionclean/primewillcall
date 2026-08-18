@@ -46,3 +46,7 @@ dbo-bookings-*.csv
 # sales rows. Customer data, never commit it.
 scripts/__pycache__/
 scripts/_data/
+
+# Supabase CLI local link state (machine-specific, not shared)
+supabase/.temp/project-ref
+supabase/.temp/pooler-url
