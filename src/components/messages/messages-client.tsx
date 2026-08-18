@@ -72,6 +72,17 @@ function counterpartOf(message: ThreadMessage): string {
   return message.direction === "inbound" ? message.from_phone : message.to_phone;
 }
 
+const WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/** "23h 12m" / "45m" / "a few seconds", for the time left in the 24h window. */
+function formatRemaining(ms: number): string {
+  const minutes = Math.floor(ms / 60000);
+  if (minutes < 1) return "a few seconds";
+  const hours = Math.floor(minutes / 60);
+  if (hours < 1) return `${minutes}m`;
+  return `${hours}h ${minutes % 60}m`;
+}
+
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleString([], {
     month: "short",
@@ -92,6 +103,7 @@ export function MessagesClient() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [sendAs, setSendAs] = useState<Channel>("sms");
   const [activeName, setActiveName] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
   const [sending, setSending] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -122,15 +134,22 @@ export function MessagesClient() {
     () => messages.some((message) => message.channel === "whatsapp"),
     [messages],
   );
-  const whatsappWindowOpen = useMemo(() => {
-    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-    return messages.some(
-      (message) =>
-        message.channel === "whatsapp" &&
-        message.direction === "inbound" &&
-        new Date(message.created_at).getTime() > cutoff,
-    );
-  }, [messages]);
+  /** When the 24 hours started, and how much of it is left right now. */
+  const whatsappWindow = useMemo(() => {
+    const lastInbound = messages.reduce<number | null>((latest, message) => {
+      if (message.channel !== "whatsapp" || message.direction !== "inbound") return latest;
+      const at = new Date(message.created_at).getTime();
+      return latest === null || at > latest ? at : latest;
+    }, null);
+    if (lastInbound === null) return { open: false, remainingMs: 0, closesAt: null as Date | null };
+    const remainingMs = lastInbound + WINDOW_MS - now;
+    return {
+      open: remainingMs > 0,
+      remainingMs,
+      closesAt: new Date(lastInbound + WINDOW_MS),
+    };
+  }, [messages, now]);
+  const whatsappWindowOpen = whatsappWindow.open;
   const threadHasSms = useMemo(
     () => messages.some((message) => message.channel === "sms"),
     [messages],
@@ -287,6 +306,12 @@ export function MessagesClient() {
     threadEndRef.current?.scrollIntoView({ block: "end" });
   }, [messages]);
 
+  // The window closes on its own, so the countdown has to move without a reload.
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+
   async function sendMessage(to: string, body: string): Promise<boolean> {
     if (!body.trim()) {
       return false;
@@ -431,11 +456,23 @@ export function MessagesClient() {
               ) : null}
               {threadHasSms ? <Badge>SMS</Badge> : null}
               {canOfferWhatsapp ? (
-                <Badge tone={whatsappWindowOpen ? "success" : "neutral"}>WhatsApp</Badge>
+                <Badge tone={whatsappWindowOpen ? "success" : "neutral"}>
+                  {whatsappWindowOpen ? (
+                    <>
+                      <span
+                        aria-hidden
+                        className="size-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400"
+                      />
+                      WhatsApp open, {formatRemaining(whatsappWindow.remainingMs)} left
+                    </>
+                  ) : (
+                    "WhatsApp closed"
+                  )}
+                </Badge>
               ) : null}
               {canOfferWhatsapp && !whatsappWindowOpen ? (
                 <span className="text-xs text-muted-foreground">
-                  WhatsApp replies are closed until they message again
+                  They have to message again before you can reply on WhatsApp
                 </span>
               ) : null}
             </header>
@@ -494,6 +531,12 @@ export function MessagesClient() {
                 <p className="mb-2 text-xs text-muted-foreground">
                   The 24 hour WhatsApp window has closed, so a typed reply cannot be sent.
                   Use SMS, or wait for them to message again.
+                </p>
+              ) : null}
+              {sendAs === "whatsapp" && whatsappWindowOpen && whatsappWindow.closesAt ? (
+                <p className="mb-2 text-xs text-muted-foreground">
+                  You can reply freely for another {formatRemaining(whatsappWindow.remainingMs)},
+                  until {formatTime(whatsappWindow.closesAt.toISOString())}.
                 </p>
               ) : null}
               <div className="flex gap-2">
