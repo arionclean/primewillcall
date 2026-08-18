@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { AppShell } from "@/components/app/app-shell";
 import type { SidebarBadges } from "@/components/app/app-sidebar";
 import { getCurrentStaff, staffCapabilities } from "@/lib/auth";
+import { QueryProvider } from "@/lib/query/provider";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 export default async function AppLayout({
@@ -33,14 +34,16 @@ export default async function AppLayout({
   }
 
   return (
-    <AppShell
-      role={staff.role}
-      fullName={staff.full_name}
-      canCreateBookings={staffCapabilities(staff).canCreateBookings}
-      businessId={staff.business_id}
-      badges={badges}
-    >
-      {children}
-    </AppShell>
+    <QueryProvider>
+      <AppShell
+        role={staff.role}
+        fullName={staff.full_name}
+        canCreateBookings={staffCapabilities(staff).canCreateBookings}
+        businessId={staff.business_id}
+        badges={badges}
+      >
+        {children}
+      </AppShell>
+    </QueryProvider>
   );
 }

@@ -13,6 +13,7 @@ import {
   useTransition,
 } from "react";
 import { createPortal } from "react-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Check,
   ChevronDown,
@@ -35,6 +36,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { DateField } from "@/components/ui/date-field";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { Textarea } from "@/components/ui/textarea";
+import { queryKeys } from "@/lib/query/keys";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -633,7 +635,49 @@ export function BookingsList({
   const searchParams = useSearchParams();
   const focusedBookingId = searchParams.get("booking")?.trim() ?? "";
 
-  const [bookings, setBookings] = useState<BookingRow[]>(initial);
+  const queryClient = useQueryClient();
+  const bookingsKey = useMemo(
+    () => queryKeys.bookings(rangeStartUtc, rangeEndUtcExclusive),
+    [rangeStartUtc, rangeEndUtcExclusive],
+  );
+
+  // The rows live in the shared cache now, not component state, so coming back
+  // to this screen paints them immediately instead of waiting on a read. The
+  // server props seed the cache the first time a day is opened; after that the
+  // cache wins and revalidates behind you.
+  const { data: bookings } = useQuery({
+    queryKey: bookingsKey,
+    queryFn: async () => {
+      const supabase = getSupabaseBrowserClient();
+      const { data, error } = await supabase
+        .from("bookings")
+        .select(BOOKING_SELECT)
+        .gte("starts_at", rangeStartUtc)
+        .lt("starts_at", rangeEndUtcExclusive)
+        .order("starts_at", { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as unknown as BookingRow[];
+    },
+    initialData: initial,
+    // These rows decide whether a guest boards, so never serve them without
+    // checking. The cached copy paints instantly while the check runs.
+    staleTime: 0,
+  });
+
+  /**
+   * Drop-in replacement for the old `useState` setter, so every optimistic
+   * update below (check-in, edit, peek, delete) works unchanged while the data
+   * itself moved into the cache.
+   */
+  const setBookings = useCallback(
+    (updater: BookingRow[] | ((prev: BookingRow[]) => BookingRow[])) => {
+      queryClient.setQueryData<BookingRow[]>(bookingsKey, (prev) => {
+        const current = prev ?? [];
+        return typeof updater === "function" ? updater(current) : updater;
+      });
+    },
+    [queryClient, bookingsKey],
+  );
   const [privacyOn, setPrivacyOn] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -663,11 +707,6 @@ export function BookingsList({
   const openNotePanelRef = useRef<HTMLDivElement | null>(null);
   const openNoteTriggerRef = useRef<HTMLElement | null>(null);
 
-  // Reset local state when the server-fetched window changes.
-  useEffect(() => {
-    setBookings(initial);
-  }, [initial]);
-
   // Hydrate privacy toggle from localStorage (mount only, avoids hydration mismatch).
   useEffect(() => {
     try {
@@ -690,50 +729,93 @@ export function BookingsList({
     });
   }
 
-  const refresh = useCallback(async () => {
-    const supabase = getSupabaseBrowserClient();
-    const { data, error } = await supabase
-      .from("bookings")
-      .select(BOOKING_SELECT)
-      .gte("starts_at", rangeStartUtc)
-      .lt("starts_at", rangeEndUtcExclusive)
-      .order("starts_at", { ascending: true });
-
-    if (error) {
-      console.error("[bookings] refresh failed:", error);
-      return;
-    }
-    setBookings((data ?? []) as unknown as BookingRow[]);
-  }, [rangeStartUtc, rangeEndUtcExclusive]);
-
   useEffect(() => {
     const supabase = getSupabaseBrowserClient();
 
-    // Re-sync on mount. The rows arrive as server props, and with the Router
-    // Cache on those props can be up to 30s old when you navigate back to this
-    // screen. One read here guarantees the list is never stale, and it also
-    // covers the gap between the server render and the subscription going live.
-    void refresh();
+    const refetch = () =>
+      startTransition(() => {
+        void queryClient.invalidateQueries({ queryKey: bookingsKey });
+      });
 
     // Non-owners only react to their own business's changes, so an unrelated
-    // business updating a booking never triggers a refetch here.
+    // business updating a booking never wakes this screen.
     const changes = {
       event: "*",
       schema: "public",
       table: "bookings",
       ...(businessId ? { filter: `business_id=eq.${businessId}` } : {}),
     } as const;
+
+    const inLoadedDay = (iso: unknown) => {
+      if (typeof iso !== "string") return false;
+      const t = new Date(iso).getTime();
+      return (
+        t >= new Date(rangeStartUtc).getTime() &&
+        t < new Date(rangeEndUtcExclusive).getTime()
+      );
+    };
+
     const channel = supabase
       .channel("bookings-list")
-      .on("postgres_changes", changes, () =>
-        startTransition(() => void refresh()),
-      )
+      .on("postgres_changes", changes, (payload) => {
+        // A change event carries the flat bookings row, never the joined tour
+        // or customer this list renders. So anything expressible against a row
+        // we already hold is applied in place, with no network and no flicker,
+        // and only the cases that genuinely need the joins fall back to a read.
+        // That matters most during boarding: a busy departure is a stream of
+        // check-ins, and every one of them used to refetch the whole day.
+        if (payload.eventType === "DELETE") {
+          const goneId = (payload.old as { id?: string })?.id;
+          if (!goneId) return refetch();
+          setBookings((prev) => prev.filter((b) => b.id !== goneId));
+          return;
+        }
+
+        const row = payload.new as Partial<BookingRow> & { id?: string };
+        if (!row.id) return refetch();
+
+        const known = queryClient
+          .getQueryData<BookingRow[]>(bookingsKey)
+          ?.find((b) => b.id === row.id);
+
+        // Rescheduled off this day: drop it. Nothing to fetch, it is not ours
+        // any more.
+        if (!inLoadedDay(row.starts_at)) {
+          if (known) setBookings((prev) => prev.filter((b) => b.id !== row.id));
+          return;
+        }
+
+        // New to this day, or pointed at a different tour or customer: the
+        // joined names would be wrong, so read it properly.
+        if (
+          !known ||
+          (row.business_tour_id !== undefined &&
+            row.business_tour_id !== known.business_tour_id) ||
+          (row.customer_id !== undefined && row.customer_id !== known.customer_id)
+        ) {
+          return refetch();
+        }
+
+        // The common case: a scalar change on a row we already have. Check-in,
+        // peek, a note, a status, a pax count.
+        setBookings((prev) =>
+          prev.map((b) => (b.id === row.id ? { ...b, ...row } : b)),
+        );
+      })
       .subscribe();
 
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [refresh, businessId]);
+  }, [
+    queryClient,
+    bookingsKey,
+    businessId,
+    rangeStartUtc,
+    rangeEndUtcExclusive,
+    setBookings,
+    startTransition,
+  ]);
 
   // ── Tour filter ────────────────────────────────────────────────────────────
 
@@ -878,7 +960,7 @@ export function BookingsList({
       }
       setBusyId(null);
     },
-    [],
+    [setBookings],
   );
 
   // ── "Add to Peek" toggle (optimistic) ──────────────────────────────────────
@@ -911,7 +993,7 @@ export function BookingsList({
       }
       setBusyId(null);
     },
-    [],
+    [setBookings],
   );
 
   // ── Groupon "redeemed" toggle (owner only, optimistic) ─────────────────────
@@ -951,7 +1033,7 @@ export function BookingsList({
       }
       setBusyId(null);
     },
-    [],
+    [setBookings],
   );
 
   // ── Note popover placement (ported) ────────────────────────────────────────

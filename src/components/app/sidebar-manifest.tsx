@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { ChevronDown } from "lucide-react";
@@ -12,6 +13,7 @@ import {
   parseLocalYmd,
   todayLocalIso,
 } from "@/lib/dates";
+import { queryKeys } from "@/lib/query/keys";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type ManifestRow = {
@@ -54,27 +56,38 @@ const slotIdFormatter = new Intl.DateTimeFormat("en-US", {
 export function SidebarManifest({ businessId }: { businessId: string | null }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [rows, setRows] = useState<ManifestRow[] | null>(null);
   const [collapsed, setCollapsed] = useState(false);
+  const queryClient = useQueryClient();
 
   const today = todayLocalIso();
   const date =
     (pathname === "/bookings" && parseLocalYmd(searchParams.get("date"))) ||
     today;
 
-  const load = useCallback(async () => {
-    const supabase = getSupabaseBrowserClient();
-    const range = getLocalDateRange(date);
-    const { data, error } = await supabase.rpc("bookings_checkin_manifest", {
-      p_start: range.startUtc,
-      p_end: range.endUtcExclusive,
-    });
-    if (!error) setRows((data as ManifestRow[] | null) ?? []);
-  }, [date]);
+  // Memoised: this is a useEffect dependency, and a fresh array every render
+  // would tear down and re-open the Realtime channel on every render.
+  const manifestKey = useMemo(() => queryKeys.manifest(date), [date]);
+
+  // The counts are aggregated in the database, so unlike the bookings list
+  // there is nothing to patch in place: any change means asking again. What the
+  // cache buys here is that a departure's worth of check-ins arriving at once
+  // collapses into one in-flight request instead of one per guest.
+  const { data: rows } = useQuery({
+    queryKey: manifestKey,
+    queryFn: async () => {
+      const supabase = getSupabaseBrowserClient();
+      const range = getLocalDateRange(date);
+      const { data, error } = await supabase.rpc("bookings_checkin_manifest", {
+        p_start: range.startUtc,
+        p_end: range.endUtcExclusive,
+      });
+      if (error) throw error;
+      return (data as ManifestRow[] | null) ?? [];
+    },
+    staleTime: 0,
+  });
 
   useEffect(() => {
-    void load();
-
     // Refresh whenever a visible booking changes (check-in, new booking,
     // cancellation). Filtered to this desk's own business, the same way the
     // bookings list does it, so another business's traffic never re-runs the
@@ -90,15 +103,15 @@ export function SidebarManifest({ businessId }: { businessId: string | null }) {
           table: "bookings",
           ...(businessId ? { filter: `business_id=eq.${businessId}` } : {}),
         },
-        () => void load(),
+        () => void queryClient.invalidateQueries({ queryKey: manifestKey }),
       )
       .subscribe();
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [load, businessId]);
+  }, [queryClient, manifestKey, businessId]);
 
-  if (rows === null) return null; // still loading; keep the sidebar quiet
+  if (!rows) return null; // still loading; keep the sidebar quiet
 
   const paxTotal = rows.reduce((sum, r) => sum + r.total_pax, 0);
   const checkedTotal = rows.reduce(
