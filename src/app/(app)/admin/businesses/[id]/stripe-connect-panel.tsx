@@ -126,12 +126,12 @@ export function StripeConnectPanel({
     (!business.stripe_charges_enabled || business.stripe_requirements_due > 0);
   const busy = isPending || !paymentsConfigured;
 
-  // `account` means Stripe bills this business directly and Prime pays nothing.
-  // The `application*` values mean Prime is billed Stripe's fees for the account.
+  // `account` is the one fees.payer value where Stripe bills the business and Prime
+  // pays no Connect fee. Anything else, NULL included, is an account created before
+  // this change: every one of those bills Prime, so they all get the same offer to
+  // move. NULL happens whenever Stripe has not been read for the account yet, which
+  // includes accounts the current API key cannot reach at all.
   const feeFree = business.stripe_fees_payer === "account";
-  const platformBilled =
-    business.stripe_fees_payer !== null &&
-    business.stripe_fees_payer.startsWith("application");
   const legacyAccounts = business.stripe_account_id_legacy ?? [];
 
   function run(action: () => Promise<PaymentsActionResult>) {
@@ -273,35 +273,25 @@ export function StripeConnectPanel({
         <div className="space-y-3 rounded-lg border bg-muted/30 px-4 py-3">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-medium">Stripe pricing</span>
-            {feeFree && <Badge tone="success">Prime pays no Stripe fees</Badge>}
-            {platformBilled && (
-              <Badge tone="warning">Prime is billed Stripe&apos;s fees</Badge>
-            )}
-            {!feeFree && !platformBilled && (
-              <Badge tone="neutral">Not checked yet</Badge>
+            {feeFree ? (
+              <Badge tone="success">Prime pays no Stripe fees</Badge>
+            ) : (
+              <Badge tone="warning">Old account</Badge>
             )}
           </div>
 
-          {feeFree && (
+          {feeFree ? (
             <p className="text-xs text-muted-foreground">
               Stripe bills this business directly. Prime pays nothing per payout or per
               month for it, and still collects the platform fee below.
             </p>
-          )}
-
-          {platformBilled && (
+          ) : (
             <p className="text-xs text-muted-foreground">
-              This is an older account, so Stripe bills Prime for it: 0.25% of
-              everything paid out plus $2 in any month it pays out. A replacement
-              account removes both charges and looks identical to the business (same
-              Stripe dashboard, same onboarding). The business re-confirms its details
-              once, then you switch it over here.
-            </p>
-          )}
-
-          {!feeFree && !platformBilled && (
-            <p className="text-xs text-muted-foreground">
-              Use Refresh to check which pricing this account is on.
+              This account predates the new setup, so Stripe bills Prime for it: 0.25%
+              of everything paid out plus $2 in any month it pays out. A new account
+              removes both charges and looks the same to the business (same Stripe
+              dashboard, same onboarding). The business confirms its details once, then
+              you switch it over here. Nothing changes for them until you do.
             </p>
           )}
 
@@ -356,14 +346,15 @@ export function StripeConnectPanel({
               </div>
             </div>
           ) : (
-            platformBilled && (
+            !feeFree && (
               <Button
                 type="button"
                 size="sm"
                 disabled={busy}
                 onClick={() => run(() => startFeeFreeMigration(business.id))}
               >
-                Create replacement account
+                Create the new account
+                <ExternalLink />
               </Button>
             )
           )}

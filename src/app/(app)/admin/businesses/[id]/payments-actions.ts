@@ -59,15 +59,24 @@ async function requireBusinessAccess(
 }
 
 function stripeMessage(err: unknown): string {
-  if (
+  const raw =
     err &&
     typeof err === "object" &&
     "message" in err &&
     typeof (err as { message: unknown }).message === "string"
-  ) {
-    return (err as { message: string }).message;
+      ? (err as { message: string }).message
+      : null;
+
+  // A test key cannot open a live connected account (or the reverse), and Stripe
+  // reports that as a wall of key characters. Every Xano-era account was created in
+  // live mode, so this is exactly what the owner hits on a test deploy. Say what it
+  // means, and point at the path that still works: those accounts are being replaced
+  // anyway, and creating the new one does not touch the old account.
+  if (raw && /does not have access to account|Application access may have been revoked/i.test(raw)) {
+    return "Stripe will not open this account with the key this app is running on. It was created under Prime's other Stripe mode, so its status cannot be read or changed from here. Creating the new account for this business still works.";
   }
-  return "Stripe request failed.";
+
+  return raw ?? "Stripe request failed.";
 }
 
 /** Create the connected account if missing, then return an onboarding link. */
