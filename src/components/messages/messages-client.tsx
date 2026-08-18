@@ -74,15 +74,6 @@ function counterpartOf(message: ThreadMessage): string {
 
 const WINDOW_MS = 24 * 60 * 60 * 1000;
 
-/** "23h 12m" / "45m" / "a few seconds", for the time left in the 24h window. */
-function formatRemaining(ms: number): string {
-  const minutes = Math.floor(ms / 60000);
-  if (minutes < 1) return "a few seconds";
-  const hours = Math.floor(minutes / 60);
-  if (hours < 1) return `${minutes}m`;
-  return `${hours}h ${minutes % 60}m`;
-}
-
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleString([], {
     month: "short",
@@ -134,22 +125,18 @@ export function MessagesClient() {
     () => messages.some((message) => message.channel === "whatsapp"),
     [messages],
   );
-  /** When the 24 hours started, and how much of it is left right now. */
-  const whatsappWindow = useMemo(() => {
-    const lastInbound = messages.reduce<number | null>((latest, message) => {
-      if (message.channel !== "whatsapp" || message.direction !== "inbound") return latest;
-      const at = new Date(message.created_at).getTime();
-      return latest === null || at > latest ? at : latest;
-    }, null);
-    if (lastInbound === null) return { open: false, remainingMs: 0, closesAt: null as Date | null };
-    const remainingMs = lastInbound + WINDOW_MS - now;
-    return {
-      open: remainingMs > 0,
-      remainingMs,
-      closesAt: new Date(lastInbound + WINDOW_MS),
-    };
+  // Green means a typed reply is allowed. `now` is a state value on a one minute
+  // tick, not Date.now() read during render, so the badge goes grey by itself
+  // when the window expires on a tab that has been open all day.
+  const whatsappWindowOpen = useMemo(() => {
+    const cutoff = now - WINDOW_MS;
+    return messages.some(
+      (message) =>
+        message.channel === "whatsapp" &&
+        message.direction === "inbound" &&
+        new Date(message.created_at).getTime() > cutoff,
+    );
   }, [messages, now]);
-  const whatsappWindowOpen = whatsappWindow.open;
   const threadHasSms = useMemo(
     () => messages.some((message) => message.channel === "sms"),
     [messages],
@@ -456,24 +443,16 @@ export function MessagesClient() {
               ) : null}
               {threadHasSms ? <Badge>SMS</Badge> : null}
               {canOfferWhatsapp ? (
-                <Badge tone={whatsappWindowOpen ? "success" : "neutral"}>
-                  {whatsappWindowOpen ? (
-                    <>
-                      <span
-                        aria-hidden
-                        className="size-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400"
-                      />
-                      WhatsApp open, {formatRemaining(whatsappWindow.remainingMs)} left
-                    </>
-                  ) : (
-                    "WhatsApp closed"
-                  )}
+                <Badge
+                  tone={whatsappWindowOpen ? "success" : "neutral"}
+                  title={
+                    whatsappWindowOpen
+                      ? "You can reply freely on WhatsApp"
+                      : "They have to message again before you can reply on WhatsApp"
+                  }
+                >
+                  WhatsApp
                 </Badge>
-              ) : null}
-              {canOfferWhatsapp && !whatsappWindowOpen ? (
-                <span className="text-xs text-muted-foreground">
-                  They have to message again before you can reply on WhatsApp
-                </span>
               ) : null}
             </header>
             <div className="flex-1 space-y-3 overflow-y-auto px-6 py-4">
@@ -531,12 +510,6 @@ export function MessagesClient() {
                 <p className="mb-2 text-xs text-muted-foreground">
                   The 24 hour WhatsApp window has closed, so a typed reply cannot be sent.
                   Use SMS, or wait for them to message again.
-                </p>
-              ) : null}
-              {sendAs === "whatsapp" && whatsappWindowOpen && whatsappWindow.closesAt ? (
-                <p className="mb-2 text-xs text-muted-foreground">
-                  You can reply freely for another {formatRemaining(whatsappWindow.remainingMs)},
-                  until {formatTime(whatsappWindow.closesAt.toISOString())}.
                 </p>
               ) : null}
               <div className="flex gap-2">
