@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { getCurrentStaff } from "@/lib/auth";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 export type UpdateGrouponFeesState = {
@@ -31,16 +32,8 @@ export async function updateGrouponFeesAction(
 ): Promise<UpdateGrouponFeesState> {
   const supabase = await getSupabaseServerClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { user, staff: current } = await getCurrentStaff();
   if (!user) return { error: "Not signed in." };
-
-  const { data: current } = await supabase
-    .from("staff")
-    .select("role, is_active")
-    .eq("user_id", user.id)
-    .maybeSingle();
   if (!current || !current.is_active || current.role !== "owner") {
     return { error: "Only the owner can change Groupon fees." };
   }

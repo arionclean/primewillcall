@@ -152,6 +152,15 @@ src/app/_archive, src/components/_archive   legacy Bubble pages, kept as referen
   the button never resizes. Do NOT use it for **optimistic toggles** (the check-in
   checkbox, `/availability` slot buttons): those flip local state instantly and a second
   click is a legitimate opposite action, not a duplicate.
+- **Live screens**: anything staff watch (bookings, messages, payments, caja) updates
+  over a Realtime `postgres_changes` subscription, never a manual reload. For a
+  server-rendered screen use `useLiveRefresh` (`lib/realtime/use-live-refresh.ts`): it
+  subscribes for the signal and lets `router.refresh()` fetch the answer, so the query
+  stays in Postgres. Screens holding rows in client state subscribe directly and patch
+  that state. A new live table must be added to the `supabase_realtime` publication in a
+  migration, and set `REPLICA IDENTITY FULL` if any subscriber uses a `filter:` (a DELETE
+  otherwise carries only the primary key and never matches). RLS scopes the stream; the
+  filter is an efficiency, not a boundary. See "Realtime" in `docs/DATABASE.md`.
 - **Dates**: `DateField` opens the native calendar and blocks manual typing. Booking
   times come from the tour's configured `tour_timeslots`, never a free time input.
 - **Timezone**: business time is `America/New_York`. Convert local date + slot time to

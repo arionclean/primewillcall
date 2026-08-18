@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
-import { staffCapabilities } from "@/lib/auth";
+import { getCurrentStaff, staffCapabilities } from "@/lib/auth";
 import {
   BUSINESS_TZ,
   getLocalDateRange,
@@ -26,21 +26,11 @@ export default async function BookingsPage({
 }: {
   searchParams: Promise<{ date?: string }>;
 }) {
-  const supabase = await getSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { user, staff } = await getCurrentStaff();
   if (!user) redirect("/login?next=/bookings");
-
-  const { data: staff } = await supabase
-    .from("staff")
-    .select(
-      "id, role, business_id, is_active, can_create_bookings, can_edit_bookings, can_check_in, can_delete_bookings, can_add_to_peek",
-    )
-    .eq("user_id", user.id)
-    .maybeSingle();
-
   if (!staff || !staff.is_active) redirect("/dashboard");
+
+  const supabase = await getSupabaseServerClient();
 
   const caps = staffCapabilities(staff);
 

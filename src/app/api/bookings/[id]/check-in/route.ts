@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { getCurrentStaff } from "@/lib/auth";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function POST(
@@ -9,24 +10,12 @@ export async function POST(
   const { id } = await ctx.params;
   const supabase = await getSupabaseServerClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Identity + the calling staff row (needed to stamp checked_in_by_staff_id).
+  const { user, staff } = await getCurrentStaff();
   if (!user) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
-
-  // Find the calling staff row so we can stamp checked_in_by_staff_id.
-  const { data: staff, error: staffErr } = await supabase
-    .from("staff")
-    .select("id, role")
-    .eq("user_id", user.id)
-    .eq("is_active", true)
-    .maybeSingle();
-  if (staffErr) {
-    return NextResponse.json({ error: staffErr.message }, { status: 500 });
-  }
-  if (!staff) {
+  if (!staff || !staff.is_active) {
     return NextResponse.json(
       { error: "Your account isn't set up yet. Ask Prime to add you to the team." },
       { status: 403 },

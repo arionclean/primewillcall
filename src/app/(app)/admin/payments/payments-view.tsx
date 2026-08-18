@@ -20,6 +20,7 @@ import {
   nyDateISO,
   shiftDayISO,
 } from "@/lib/dashboard/queries";
+import { useLiveRefresh } from "@/lib/realtime/use-live-refresh";
 import type { Database } from "@/lib/supabase/database.types";
 
 import { moveSaleSource, refundCashSale, refundTransaction } from "./actions";
@@ -295,6 +296,18 @@ export function PaymentsView({
   const [source, setSource] = useState(filters.source ?? "");
   const [q, setQ] = useState(filters.q);
   const [isPending, startTransition] = useTransition();
+
+  // Live ledger. Card sales arrive as an INSERT from the Stripe webhook, and a
+  // refund arrives as an UPDATE to the same row (amount_refunded / status), so
+  // both events matter. Cash sales come straight from the tablets. Before this
+  // the page only redrew after your own refund, which meant a desk selling all
+  // evening looked idle to everyone else. RLS scopes the stream: an owner is
+  // sent every business, a manager only their own.
+  useLiveRefresh("payments-ledger", [
+    { table: "stripe_transactions" },
+    { table: "stripe_refunds" },
+    { table: "cash_sales" },
+  ]);
 
   // Refund dialog state. `refundFor` doubles as the open/closed flag; it holds
   // a card charge or a cash sale, which refund through different actions.

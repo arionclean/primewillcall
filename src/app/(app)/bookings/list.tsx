@@ -708,6 +708,13 @@ export function BookingsList({
 
   useEffect(() => {
     const supabase = getSupabaseBrowserClient();
+
+    // Re-sync on mount. The rows arrive as server props, and with the Router
+    // Cache on those props can be up to 30s old when you navigate back to this
+    // screen. One read here guarantees the list is never stale, and it also
+    // covers the gap between the server render and the subscription going live.
+    void refresh();
+
     // Non-owners only react to their own business's changes, so an unrelated
     // business updating a booking never triggers a refetch here.
     const changes = {

@@ -5,18 +5,28 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
 /**
  * The signed-in user plus their staff row, fetched once per request.
  *
- * Wrapped in React `cache()` so the (app) layout and the page it renders share
- * a single `getUser()` + staff round-trip on a full page load, instead of each
- * doing their own (they run in the same server render). Pages that also need a
- * Supabase client for data still create one; that part is cheap (it just reads
- * cookies), the network round-trips are what this dedupes.
+ * Identity comes from `getClaims()`, not `getUser()`. `getUser()` is an HTTPS
+ * round-trip to the Supabase Auth server on every call; `getClaims()` verifies
+ * the access token locally against the project's public signing key (this
+ * project signs with ES256), so it costs microseconds and no network. That
+ * matters because this runs on the (app) layout for every single navigation.
+ * If the token cannot be verified locally, auth-js falls back to the network
+ * call on its own, so this is no less strict than before.
+ *
+ * Wrapped in React `cache()` so the layout, the nested layout and the page all
+ * share one staff round-trip per request instead of each doing their own. Every
+ * server component and action that needs the current staff row should call this
+ * rather than rolling its own `getUser()` + staff select.
  */
 export const getCurrentStaff = cache(async () => {
   const supabase = await getSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { user: null, staff: null };
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const claims = claimsData?.claims;
+  if (!claims?.sub) return { user: null, staff: null };
+
+  // Only the id and email are ever read downstream, so the full auth user
+  // record (the thing the extra round-trip bought) is not needed.
+  const user = { id: claims.sub, email: claims.email ?? null };
 
   const { data: staff } = await supabase
     .from("staff")

@@ -3,21 +3,11 @@ import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { getCurrentStaff } from "@/lib/auth";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 export default async function ToursListPage() {
-  const supabase = await getSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const { data: current } = user
-    ? await supabase
-        .from("staff")
-        .select("role, business_id")
-        .eq("user_id", user.id)
-        .maybeSingle()
-    : { data: null };
+  const { staff: current } = await getCurrentStaff();
 
   if (current?.role === "business_manager" && current.business_id) {
     return <ManagerToursList businessId={current.business_id} />;

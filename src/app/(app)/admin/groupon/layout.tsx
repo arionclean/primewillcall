@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { getCurrentStaff } from "@/lib/auth";
 
 /**
  * Owner-only gate for /admin/groupon/*. Managers and check-in staff get bounced
@@ -12,17 +12,8 @@ export default async function GrouponAdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = await getSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { user, staff } = await getCurrentStaff();
   if (!user) redirect("/login?next=/admin/groupon");
-
-  const { data: staff } = await supabase
-    .from("staff")
-    .select("role, is_active")
-    .eq("user_id", user.id)
-    .maybeSingle();
 
   if (!staff || !staff.is_active || staff.role !== "owner") {
     redirect("/dashboard");

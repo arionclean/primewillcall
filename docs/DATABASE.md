@@ -411,6 +411,36 @@ When something returns no rows or a write silently fails, it is almost always RL
 Verify the caller's role/business by querying `current_staff()` and compare against the
 policy.
 
+## Realtime
+
+Screens that staff watch (bookings, messages, the payments ledger, a kiosk's caja)
+update over a Realtime `postgres_changes` subscription instead of a reload. Two things
+have to be true in the database for that to work.
+
+**Published tables.** Postgres only emits changes for tables in the `supabase_realtime`
+publication. Currently: `bookings`, `kiosks`, `sms_messages`, `whatsapp_messages`,
+`stripe_transactions`, `stripe_refunds`, `cash_sales`. A new live screen needs its table
+added in a migration, or the client subscribes to silence.
+
+**Replica identity.** `bookings`, `stripe_transactions`, `stripe_refunds` and
+`cash_sales` are `REPLICA IDENTITY FULL`. At the default identity a DELETE writes only
+the primary key to the WAL, which is not enough to match a subscription filter such as
+`business_id=eq.<id>`, so filtered subscribers never hear about deletions. That was a
+real bug: managers and check-in staff kept showing a booking another desk had deleted,
+while owners (who subscribe unfiltered) saw it go. INSERT and UPDATE were never
+affected, their payloads are complete either way.
+
+**Scoping is RLS, same as a read.** A subscription runs the table's SELECT policy per
+subscriber, so an owner streams every business, a manager only their own, a kiosk only
+its own. Client-side `filter:` arguments are an efficiency (they stop one business's
+traffic from waking another's screen), never a security boundary.
+
+**On the client**, prefer `useLiveRefresh` (`src/lib/realtime/use-live-refresh.ts`) for
+server-rendered screens: it subscribes for the signal and lets `router.refresh()` fetch
+the answer, so the query stays in Postgres and there is no second copy of the filter and
+paging logic in the browser. Screens that hold their rows in client state (the bookings
+list, messages) subscribe directly and patch their own state.
+
 ## Conventions
 
 - UUID primary keys (`gen_random_uuid()`); `bigint identity` only for `audit_log`.

@@ -7,6 +7,7 @@ import {
   getStripeClient,
 } from "@/lib/stripe/server";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getCurrentStaff } from "@/lib/auth";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 /**
@@ -32,20 +33,11 @@ export async function POST(
   const { id } = await ctx.params;
   const supabase = await getSupabaseServerClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { user, staff } = await getCurrentStaff();
   if (!user) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
-
-  const { data: staff } = await supabase
-    .from("staff")
-    .select("role, is_active")
-    .eq("user_id", user.id)
-    .eq("is_active", true)
-    .maybeSingle();
-  if (!staff) {
+  if (!staff || !staff.is_active) {
     return NextResponse.json({ error: "No active staff row" }, { status: 403 });
   }
   if (staff.role === "check_in") {

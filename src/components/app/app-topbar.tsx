@@ -25,6 +25,7 @@ type AppTopbarProps = {
   role: StaffRole;
   fullName: string;
   canCreateBookings: boolean;
+  businessId: string | null;
   badges?: SidebarBadges;
 };
 
@@ -32,6 +33,7 @@ export function AppTopbar({
   role,
   fullName,
   canCreateBookings,
+  businessId,
   badges,
 }: AppTopbarProps) {
   return (
@@ -41,6 +43,7 @@ export function AppTopbar({
           <MobileNav
             role={role}
             canCreateBookings={canCreateBookings}
+            businessId={businessId}
             badges={badges}
           />
           <Link

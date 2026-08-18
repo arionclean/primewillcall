@@ -51,7 +51,7 @@ const slotIdFormatter = new Intl.DateTimeFormat("en-US", {
  * RLS-scoped to the staffer's assigned tours) and refreshes live as
  * check-ins and bookings change.
  */
-export function SidebarManifest() {
+export function SidebarManifest({ businessId }: { businessId: string | null }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [rows, setRows] = useState<ManifestRow[] | null>(null);
@@ -75,21 +75,28 @@ export function SidebarManifest() {
   useEffect(() => {
     void load();
 
-    // Refresh whenever any visible booking changes (check-in, new booking,
-    // cancellation). RLS already limits the subscription to rows we can see.
+    // Refresh whenever a visible booking changes (check-in, new booking,
+    // cancellation). Filtered to this desk's own business, the same way the
+    // bookings list does it, so another business's traffic never re-runs the
+    // manifest RPC here. RLS is still the boundary; the filter is the saving.
     const supabase = getSupabaseBrowserClient();
     const channel = supabase
       .channel("sidebar-manifest")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "bookings" },
+        {
+          event: "*",
+          schema: "public",
+          table: "bookings",
+          ...(businessId ? { filter: `business_id=eq.${businessId}` } : {}),
+        },
         () => void load(),
       )
       .subscribe();
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [load]);
+  }, [load, businessId]);
 
   if (rows === null) return null; // still loading; keep the sidebar quiet
 

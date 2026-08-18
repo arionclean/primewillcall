@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { getCurrentStaff } from "@/lib/auth";
 
 /**
  * Nested layout for everything under /admin/. Requires an active staff row.
@@ -15,17 +15,8 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = await getSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { user, staff } = await getCurrentStaff();
   if (!user) redirect("/login?next=/admin");
-
-  const { data: staff } = await supabase
-    .from("staff")
-    .select("id, role, is_active")
-    .eq("user_id", user.id)
-    .maybeSingle();
 
   if (!staff || !staff.is_active) {
     redirect("/dashboard");

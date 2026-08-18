@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { createWhatsappTemplate } from "@/lib/sms/twilio-content";
+import { getCurrentStaff } from "@/lib/auth";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 export type MessagingActionState = {
@@ -30,16 +31,9 @@ async function requireOwner(): Promise<
   { ok: true; supabase: SupabaseClient } | { ok: false; error: string }
 > {
   const supabase = (await getSupabaseServerClient()) as unknown as SupabaseClient;
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: "Not signed in." };
 
-  const { data: current } = await supabase
-    .from("staff")
-    .select("role, is_active")
-    .eq("user_id", user.id)
-    .maybeSingle();
+  const { user, staff: current } = await getCurrentStaff();
+  if (!user) return { ok: false, error: "Not signed in." };
   if (!current || !current.is_active || current.role !== "owner") {
     return { ok: false, error: "Only the owner can change messaging settings." };
   }

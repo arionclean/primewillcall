@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { getCurrentStaff } from "@/lib/auth";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 export type UpdateManagerTourState = {
@@ -26,16 +27,8 @@ export async function updateManagerTourAction(
 ): Promise<UpdateManagerTourState> {
   const supabase = await getSupabaseServerClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { user, staff: current } = await getCurrentStaff();
   if (!user) return { error: "Not signed in." };
-
-  const { data: current } = await supabase
-    .from("staff")
-    .select("role, business_id")
-    .eq("user_id", user.id)
-    .maybeSingle();
 
   if (
     !current ||

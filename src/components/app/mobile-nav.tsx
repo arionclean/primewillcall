@@ -22,10 +22,12 @@ type StaffRole = Database["public"]["Enums"]["staff_role"];
 export function MobileNav({
   role,
   canCreateBookings,
+  businessId,
   badges,
 }: {
   role: StaffRole;
   canCreateBookings: boolean;
+  businessId: string | null;
   badges?: SidebarBadges;
 }) {
   const [open, setOpen] = useState(false);
@@ -87,7 +89,7 @@ export function MobileNav({
                 />
                 {role === "check_in" && (
                   <Suspense fallback={null}>
-                    <SidebarManifest />
+                    <SidebarManifest businessId={businessId} />
                   </Suspense>
                 )}
               </div>

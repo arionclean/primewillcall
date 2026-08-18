@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { getCurrentStaff } from "@/lib/auth";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 import { EditTourForm } from "./edit-form";
@@ -14,19 +15,7 @@ export default async function EditTourPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const supabase = await getSupabaseServerClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const { data: current } = user
-    ? await supabase
-        .from("staff")
-        .select("role, business_id")
-        .eq("user_id", user.id)
-        .maybeSingle()
-    : { data: null };
+  const { staff: current } = await getCurrentStaff();
 
   if (current?.role === "business_manager" && current.business_id) {
     return (

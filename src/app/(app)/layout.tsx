@@ -37,6 +37,7 @@ export default async function AppLayout({
       role={staff.role}
       fullName={staff.full_name}
       canCreateBookings={staffCapabilities(staff).canCreateBookings}
+      businessId={staff.business_id}
       badges={badges}
     >
       {children}

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { formatCentsExact, shiftDayISO } from "@/lib/dashboard/queries";
+import { useLiveRefresh } from "@/lib/realtime/use-live-refresh";
 
 const NY_TZ = "America/New_York";
 
@@ -58,6 +59,7 @@ export function CajaView({
   today,
   items,
   totals,
+  kioskSlug,
   kioskLabel,
   notice,
 }: {
@@ -65,16 +67,33 @@ export function CajaView({
   today: string;
   items: CajaItem[];
   totals: Totals;
+  kioskSlug?: string | null;
   kioskLabel?: string | null;
   notice?: string | null;
 }) {
   const router = useRouter();
 
+  const isToday = day === today;
+
+  // The drawer has to move as it sells. Filtered to this kiosk's own sales the
+  // same way the page queries them (cash_sales.kiosk_slug, and the kiosk slug
+  // is what stripe_transactions.source holds for a card sale), so one desk's
+  // takings never redraw another's screen. Only today can still change, so a
+  // past day subscribes to nothing.
+  useLiveRefresh(
+    `caja-${kioskSlug ?? "none"}`,
+    kioskSlug && isToday
+      ? [
+          { table: "cash_sales", filter: `kiosk_slug=eq.${kioskSlug}` },
+          { table: "stripe_transactions", filter: `source=eq.${kioskSlug}` },
+        ]
+      : [],
+  );
+
   const cardNetCents = totals.cardGrossCents - totals.cardRefundedCents;
   const madeCents = totals.cashReceivedCents + cardNetCents;
   const salesCount = totals.cashCount + totals.cardCount;
 
-  const isToday = day === today;
   const go = (d: string) => router.push(`/caja?date=${d}`);
 
   return (

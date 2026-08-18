@@ -177,6 +177,7 @@ export default async function CajaPage({
       day={day}
       today={nyDateISO()}
       items={items}
+      kioskSlug={kioskSlug}
       kioskLabel={staff.full_name}
       totals={{
         cashReceivedCents,

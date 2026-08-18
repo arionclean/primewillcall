@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { getCurrentStaff } from "@/lib/auth";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 export type CreateBookingState = {
@@ -46,16 +47,8 @@ export async function createBookingAction(
 ): Promise<CreateBookingState> {
   const supabase = await getSupabaseServerClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { user, staff } = await getCurrentStaff();
   if (!user) return { error: "Not signed in." };
-
-  const { data: staff } = await supabase
-    .from("staff")
-    .select("id, role, business_id, is_active, can_create_bookings")
-    .eq("user_id", user.id)
-    .maybeSingle();
   if (!staff || !staff.is_active) {
     return { error: "Your account isn't set up to create bookings." };
   }

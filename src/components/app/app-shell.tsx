@@ -13,6 +13,7 @@ type AppShellProps = {
   role: StaffRole;
   fullName: string;
   canCreateBookings: boolean;
+  businessId: string | null;
   badges?: SidebarBadges;
   children: React.ReactNode;
 };
@@ -21,6 +22,7 @@ export function AppShell({
   role,
   fullName,
   canCreateBookings,
+  businessId,
   badges,
   children,
 }: AppShellProps) {
@@ -30,6 +32,7 @@ export function AppShell({
         role={role}
         fullName={fullName}
         canCreateBookings={canCreateBookings}
+        businessId={businessId}
         badges={badges}
       />
       <div className="mx-auto grid w-full max-w-7xl gap-6 px-6 py-8 md:grid-cols-[200px_1fr]">
@@ -43,7 +46,7 @@ export function AppShell({
           {role === "check_in" && (
             // Suspense: SidebarManifest reads the URL via useSearchParams.
             <Suspense fallback={null}>
-              <SidebarManifest />
+              <SidebarManifest businessId={businessId} />
             </Suspense>
           )}
         </aside>

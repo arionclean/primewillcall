@@ -1,0 +1,14 @@
+-- Make booking DELETEs reach filtered subscribers.
+--
+-- bookings has been in the realtime publication since the first RLS migration,
+-- but at the default replica identity a DELETE only writes the primary key to
+-- the WAL. The bookings list subscribes with `business_id=eq.<id>` for everyone
+-- except the owner (so one business's traffic never wakes another's screen), and
+-- a filter cannot match a payload that carries nothing but an id. The result:
+-- managers and check-in staff never saw a booking deleted on another desk, the
+-- row just sat there until they reloaded. Owners did see it, because they
+-- subscribe unfiltered, which is why this was easy to miss.
+--
+-- FULL puts the whole old row in the WAL, so the filter has a business_id to
+-- match on. INSERT and UPDATE were never affected (their payloads are complete).
+ALTER TABLE public.bookings REPLICA IDENTITY FULL;

@@ -6,7 +6,9 @@ import type { Database } from "@/lib/supabase/database.types";
  * Session refresh + route gating.
  *
  * - Refreshes the Supabase auth cookie on every matched request so server components
- *   downstream see a fresh session.
+ *   downstream see a fresh session. The refresh happens inside the Supabase
+ *   client (it reads the cookies and writes back any rotated ones), not in the
+ *   identity check below.
  * - If the user is NOT signed in and they hit a protected route, redirect to /login.
  * - If the user IS signed in and they hit /login, send them to /dashboard.
  *
@@ -39,9 +41,14 @@ export async function middleware(request: NextRequest) {
     },
   });
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // `getClaims()` verifies the access token locally against the project's
+  // public signing key (ES256), so the gate below costs no network round-trip.
+  // `getUser()` called the Auth server on every matched request, including
+  // every client-side navigation, which was the single biggest fixed cost in
+  // the app. auth-js falls back to the network call by itself if the token
+  // cannot be verified locally, so this is not a weaker check.
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const user = claimsData?.claims?.sub ? claimsData.claims : null;
 
   const pathname = request.nextUrl.pathname;
   const isLoginRoute = pathname === "/login" || pathname.startsWith("/login/");

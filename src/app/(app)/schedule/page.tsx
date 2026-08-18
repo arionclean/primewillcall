@@ -4,28 +4,19 @@ import { redirect } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { getCurrentStaff } from "@/lib/auth";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 import { ScheduleForm, type ScheduleFormTour } from "./form";
 
 export default async function SchedulePage() {
-  const supabase = await getSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { user, staff } = await getCurrentStaff();
   if (!user) redirect("/login?next=/schedule");
-
-  const { data: staff } = await supabase
-    .from("staff")
-    .select(
-      "id, full_name, role, business_id, is_active, can_create_bookings",
-    )
-    .eq("user_id", user.id)
-    .maybeSingle();
-
   if (!staff || !staff.is_active) {
     redirect("/dashboard");
   }
+
+  const supabase = await getSupabaseServerClient();
 
   const role = staff.role;
   const businessId = staff.business_id;
