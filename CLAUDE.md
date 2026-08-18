@@ -349,14 +349,18 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   `stripe_transactions` / `stripe_refunds` /
   `stripe_events`; and the public `/gp` Groupon checkout now creates a real Checkout Session
   (with a graceful manual-collection fallback when a business is not yet onboarded). Shared
-  client + fee helpers in `src/lib/stripe/server.ts`. `STRIPE_SECRET_KEY` (Prime's PLATFORM
-  key) is needed in **both** places, because the Stripe logic is split: Vercel runs the admin
-  server actions (account setup, refunds, payment links) and Supabase runs `stripe-webhook`
-  and `gp-book`. Vercel additionally needs `STRIPE_PLATFORM_FEE_BPS` and `NEXT_PUBLIC_APP_URL`;
-  the two webhook signing secrets (`STRIPE_WEBHOOK_SECRET`, `STRIPE_WEBHOOK_SECRET_CONNECTED`)
-  live only as Supabase function secrets. A test key on one side and a live key on the other
-  is the failure that reads "the provided key does not have access to account acct_...", since
-  a test key cannot open a live connected account. See `docs/DATABASE.md` "Payments (Stripe)".
+  **Stripe runs entirely in Supabase.** Four functions: `stripe-webhook` (Stripe calls it),
+  `gp-book` (public checkout), `stripe-connect` (connected-account management, from the
+  Payments panel), and `payments` (card + cash refunds, move-sale, booking payment links).
+  The last two are called from the browser with the staff member's own JWT, which
+  `requireStaff` turns into their staff row before any role check. Vercel holds **no Stripe
+  key at all**: `src/lib/stripe/server.ts`, the Connect server actions, the payments server
+  actions and the payment-link route are deleted. Supabase secrets: `STRIPE_SECRET_KEY`
+  (Prime's PLATFORM key), `STRIPE_WEBHOOK_SECRET`, `STRIPE_WEBHOOK_SECRET_CONNECTED`,
+  `STRIPE_PLATFORM_FEE_BPS`, `APP_URL` (onboarding return + checkout redirect links), and
+  `REFUND_PIN`. A test key against a live connected account is the failure that reads "the
+  provided key does not have access to account acct_...". See `docs/DATABASE.md`
+  "Payments (Stripe)".
   Also built: the **`/admin/payments`** transactions dashboard (owner + business_manager;
   check_in redirected out) with a date-range + owner business filter and DB-aggregated
   totals via the `stripe_payments_summary` RPC; a **refund** action

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Link2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 /**
  * "Payment link" action for the booking edit modal: asks the server to mint a
@@ -44,16 +45,23 @@ export function PaymentLinkButton({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/bookings/${bookingId}/payment-link`, {
-        method: "POST",
-      });
-      const body = (await res.json()) as { url?: string; error?: string };
-      if (!res.ok || !body.url) {
-        setError(body.error ?? "Could not create a link.");
+      // Was a fetch to /api/bookings/<id>/payment-link, which never existed: the
+      // route lived at /bookings/<id>/payment-link, so this button 404'd. It is an
+      // edge function now, addressed by name, so the paths cannot drift again.
+      const { data, error: err } = await getSupabaseBrowserClient()
+        .functions.invoke<{ url?: string }>("payments", {
+          body: { action: "payment_link", id: bookingId },
+        });
+      if (err || !data?.url) {
+        const response = (err as { context?: Response } | null)?.context;
+        const payload = (await response?.json?.().catch(() => null)) as
+          | { error?: string }
+          | null;
+        setError(payload?.error ?? "Could not create a link.");
         return;
       }
-      setUrl(body.url);
-      void copy(body.url);
+      setUrl(data.url);
+      void copy(data.url);
     } catch {
       setError("Could not reach the server.");
     } finally {

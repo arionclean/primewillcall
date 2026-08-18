@@ -22,7 +22,26 @@ import {
 } from "@/lib/dashboard/queries";
 import type { Database } from "@/lib/supabase/database.types";
 
-import { moveSaleSource, refundCashSale, refundTransaction } from "./actions";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+
+/**
+ * Call the `payments` edge function. Refunds, moves and payment links all run in
+ * Supabase now, where the Stripe key and the refund passcode live. `invoke`
+ * attaches the signed-in staff member's token, which the function turns back into
+ * their staff row and re-checks the role against.
+ *
+ * On a non-2xx the SDK hands back an error whose `context` is the raw Response,
+ * so read the body from there to recover the function's own message.
+ */
+async function invokePayments(
+  body: Record<string, unknown>,
+): Promise<{ error: string | null }> {
+  const { error } = await getSupabaseBrowserClient().functions.invoke("payments", { body });
+  if (!error) return { error: null };
+  const response = (error as { context?: Response }).context;
+  const payload = (await response?.json?.().catch(() => null)) as { error?: string } | null;
+  return { error: payload?.error ?? error.message };
+}
 
 type StaffRole = Database["public"]["Enums"]["staff_role"];
 
@@ -109,7 +128,6 @@ function sourceLabel(source: string | null): string | null {
 
 type PaymentsViewProps = {
   role: StaffRole;
-  paymentsConfigured: boolean;
   items: FeedItem[];
   summary: Summary;
   kiosks: string[];
@@ -274,7 +292,6 @@ function saleAmounts(item: FeedItem): { amount: number; refunded: number } {
 
 export function PaymentsView({
   role,
-  paymentsConfigured,
   items,
   summary,
   kiosks,
@@ -400,7 +417,13 @@ export function PaymentsView({
     const { kind, id } = moveFor;
     const pin = movePin.trim();
     startTransition(async () => {
-      const res = await moveSaleSource(kind, id, moveTarget, pin);
+      const res = await invokePayments({
+        action: "move_sale",
+        kind,
+        id,
+        next_source: moveTarget,
+        pin,
+      });
       if (res.error) {
         setMoveError(res.error);
         return;
@@ -434,9 +457,12 @@ export function PaymentsView({
     const id = refundFor.id;
     const isCash = refundFor.kind === "cash";
     startTransition(async () => {
-      const res = isCash
-        ? await refundCashSale(id, cents, pin)
-        : await refundTransaction(id, cents, pin);
+      const res = await invokePayments({
+        action: isCash ? "refund_cash" : "refund_card",
+        id,
+        amount_cents: cents,
+        pin,
+      });
       if (res.error) {
         setRefundError(res.error);
         return;
@@ -678,8 +704,10 @@ export function PaymentsView({
                 const badge = statusBadge(txn);
                 const card = cardLabel(txn);
                 const customer = customerLabel(txn);
+                // No "is Stripe configured" gate here any more: the key lives in
+                // Supabase, so Vercel cannot see it. An unconfigured platform is
+                // reported by the function when the refund is actually attempted.
                 const refundable =
-                  paymentsConfigured &&
                   txn.object_type === "charge" &&
                   txn.status !== "disputed" &&
                   txn.amount - (txn.amount_refunded ?? 0) > 0;
