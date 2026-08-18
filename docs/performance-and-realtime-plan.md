@@ -225,7 +225,7 @@ no-op in development (`next/dist/client/components/app-router.js`: "Don't prefet
 development"). Hovering Analytics fetched it once with no click; the click then navigated
 with zero further network.
 
-### Phase 6. Infrastructure check  (DONE: there is a mismatch, decision pending)
+### Phase 6. Infrastructure check  (DONE: option 1 taken)
 
 They do not match.
 
@@ -247,7 +247,22 @@ makes several. Three options:
    with real risk. It is also far cheaper now, before go-live, than after.
 3. **Leave it.** Defensible only if 2 is planned for cutover anyway.
 
-This is a call for the platform owner, not a code change, so nothing was done.
+**Option 1 was taken.** `vercel.json` pins the functions to `pdx1`:
+
+```json
+{ "regions": ["pdx1"] }
+```
+
+`vercel.json` is strict JSON and cannot carry a comment, so the reasoning lives here: the
+functions sit next to the database because query latency is paid several times per
+request while the browser hop is paid once. Undo by deleting the file (the default is
+`iad1`), or replace it with `us-east-1` region codes if the database is ever moved east.
+
+Note this does not move middleware, which runs on Vercel's edge network everywhere. That
+is fine: since Phase 1 the middleware verifies the token locally and makes no database
+call. It fetches the project's JWKS once per cold instance (cached in a module-level map
+with a TTL inside auth-js, and served from Supabase's own edge cache), not once per
+request.
 
 ---
 

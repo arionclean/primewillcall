@@ -189,6 +189,11 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
 - Dev server: `npm run dev` (port 3000). In the Claude app, use the preview
   (`.claude/launch.json` is configured). Only one process can hold port 3000 at a time;
   do not run `npm run dev` in a terminal and the preview at the same time.
+- **Deploy regions**: `vercel.json` pins serverless functions to `pdx1` (Portland) to sit
+  next to the Supabase project in `us-west-2`. A page makes several queries and pays the
+  round trip on each, so being near the database beats being near the browser. Middleware
+  is unaffected (it runs on the edge everywhere and makes no database call). If the
+  Supabase project is ever moved to `us-east-1`, change or delete this file.
 - Always keep it green: `npx tsc --noEmit` (0 errors) and `npm run lint` (0 warnings)
   before considering a change done.
 - There is no debug screen in the app: nothing internal (auth ids, roles, raw errors)
