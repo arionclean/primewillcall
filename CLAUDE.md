@@ -251,8 +251,10 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   (list + submit for approval). The sender `+17868226594` posts incoming messages to
   `twilio-inbound-sms`, set through the Messaging v2 Senders API (the console's sender
   form will not save without a public "Profile about" and was 404ing anyway).
-  **Not live**: no `messaging_rules` row uses the WhatsApp channel yet, and the staff
-  Messages screen is still SMS-only. See [`docs/whatsapp.md`](docs/whatsapp.md).
+  The staff Messages screen is one thread per person across both channels, fed by the
+  `messaging_conversations` (searchable, keyset paged) and `messaging_thread` RPCs.
+  **Not live**: the `WhatsApp booking confirmation` rule is switched off until Meta
+  approves the general template. See [`docs/whatsapp.md`](docs/whatsapp.md).
 - **Review automation** (post-tour rating funnel) is built and deployed but
   **switched OFF**: 3h after a tour ends the customer is texted for a 1-5 rating;
   a 5 gets the Google review link (plus one 24h nudge if never clicked), a 1-4 gets

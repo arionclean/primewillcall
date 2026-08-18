@@ -6,7 +6,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { formatUsPhoneDisplay, maskUsPhoneInput, normalizeUsPhone } from "@/lib/sms/format";
+import { formatUsPhoneDisplay, normalizeUsPhone } from "@/lib/sms/format";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type Channel = "sms" | "whatsapp";
@@ -24,6 +24,7 @@ interface ThreadMessage {
 
 interface Conversation {
   counterpart: string;
+  customer_name: string | null;
   last_body: string;
   last_direction: "inbound" | "outbound";
   last_at: string;
@@ -40,6 +41,9 @@ function getMessagingClient(): SupabaseClient {
 }
 
 const CHANNEL_LABEL: Record<Channel, string> = { sms: "SMS", whatsapp: "WhatsApp" };
+
+/** One screenful at a time. The rest arrives as the list is scrolled. */
+const PAGE_SIZE = 50;
 
 /**
  * Call one of the messaging edge functions. Sending and history sync live in
@@ -82,20 +86,25 @@ export function MessagesClient() {
   const [active, setActive] = useState<string | null>(null);
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
   const [draft, setDraft] = useState("");
-  const [newPhone, setNewPhone] = useState("");
+  const [search, setSearch] = useState("");
+  const [query, setQuery] = useState("");
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [sendAs, setSendAs] = useState<Channel>("sms");
+  const [activeName, setActiveName] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const activeRef = useRef<string | null>(null);
   activeRef.current = active;
+  const queryRef = useRef("");
+  queryRef.current = query;
   const threadEndRef = useRef<HTMLDivElement | null>(null);
 
-  const activeConversation = useMemo(
-    () => conversations.find((conversation) => conversation.counterpart === active) ?? null,
-    [conversations, active],
-  );
+  // A search term that is really a phone number doubles as "message this person",
+  // so there is no second input to explain.
+  const typedPhone = useMemo(() => normalizeUsPhone(search), [search]);
 
   // A thread that has used both channels labels every bubble; a single-channel
   // thread says it once in the header instead of repeating it on every message.
@@ -105,24 +114,95 @@ export function MessagesClient() {
   }, [messages]);
 
   // WhatsApp free-form is only legal inside the 24-hour window the customer's
-  // reply opens. Offer the channel only to people who have used it, and let the
-  // composer send only while that window is open.
-  const canOfferWhatsapp = activeConversation?.has_whatsapp ?? false;
-  const whatsappWindowOpen = activeConversation?.whatsapp_window_open ?? false;
+  // reply opens. Read both facts off the thread itself rather than off the
+  // conversation row: searching or paging can filter that row out of the
+  // sidebar, and an open thread must not change what it lets you send just
+  // because the list next to it was filtered.
+  const canOfferWhatsapp = useMemo(
+    () => messages.some((message) => message.channel === "whatsapp"),
+    [messages],
+  );
+  const whatsappWindowOpen = useMemo(() => {
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    return messages.some(
+      (message) =>
+        message.channel === "whatsapp" &&
+        message.direction === "inbound" &&
+        new Date(message.created_at).getTime() > cutoff,
+    );
+  }, [messages]);
+  const threadHasSms = useMemo(
+    () => messages.some((message) => message.channel === "sms"),
+    [messages],
+  );
   const blockedByWindow = sendAs === "whatsapp" && !whatsappWindowOpen;
 
-  const loadConversations = useCallback(async () => {
-    const { data, error: rpcError } = await getMessagingClient().rpc("messaging_conversations");
-    if (rpcError) {
-      console.error("[messages] conversations load failed:", rpcError);
-      setError("Could not load conversations. Try again.");
-      return;
-    }
-    setConversations((data as Conversation[]) ?? []);
-  }, []);
+  /** Fetch one page. `before` is the oldest last_at already held (keyset paging). */
+  const fetchPage = useCallback(
+    async (before: string | null, term: string): Promise<Conversation[] | null> => {
+      const { data, error: rpcError } = await getMessagingClient().rpc("messaging_conversations", {
+        p_limit: PAGE_SIZE,
+        p_before: before,
+        p_search: term.trim() || null,
+      });
+      if (rpcError) {
+        console.error("[messages] conversations load failed:", rpcError);
+        setError("Could not load conversations. Try again.");
+        return null;
+      }
+      return (data as Conversation[]) ?? [];
+    },
+    [],
+  );
 
-  const openThread = useCallback(async (counterpart: string) => {
+  /**
+   * Reload the newest page and keep whatever else is already on screen. Used on
+   * first paint and whenever a message arrives, so a live update never throws
+   * away the pages someone scrolled to.
+   */
+  const loadConversations = useCallback(async () => {
+    const page = await fetchPage(null, queryRef.current);
+    if (!page) return;
+    setConversations((current) => {
+      const merged = new Map(current.map((row) => [row.counterpart, row]));
+      for (const row of page) merged.set(row.counterpart, row);
+      return [...merged.values()].sort((a, b) => (a.last_at < b.last_at ? 1 : -1));
+    });
+    if (page.length < PAGE_SIZE) setHasMore(false);
+  }, [fetchPage]);
+
+  /** Replace the list: a new search term invalidates every loaded page. */
+  const resetConversations = useCallback(
+    async (term: string) => {
+      const page = await fetchPage(null, term);
+      if (!page) return;
+      setConversations(page);
+      setHasMore(page.length === PAGE_SIZE);
+    },
+    [fetchPage],
+  );
+
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore || conversations.length === 0) return;
+    setLoadingMore(true);
+    try {
+      const oldest = conversations[conversations.length - 1].last_at;
+      const page = await fetchPage(oldest, queryRef.current);
+      if (!page) return;
+      setConversations((current) => {
+        const merged = new Map(current.map((row) => [row.counterpart, row]));
+        for (const row of page) merged.set(row.counterpart, row);
+        return [...merged.values()].sort((a, b) => (a.last_at < b.last_at ? 1 : -1));
+      });
+      if (page.length < PAGE_SIZE) setHasMore(false);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [conversations, fetchPage, hasMore, loadingMore]);
+
+  const openThread = useCallback(async (counterpart: string, name?: string | null) => {
     setActive(counterpart);
+    if (name !== undefined) setActiveName(name);
     const { data, error: rpcError } = await getMessagingClient().rpc("messaging_thread", {
       p_counterpart: counterpart,
     });
@@ -162,6 +242,16 @@ export function MessagesClient() {
     loadConversations();
     runSync();
   }, [loadConversations, runSync]);
+
+  // Let typing settle before querying, so a name is one round trip, not six.
+  useEffect(() => {
+    const timer = setTimeout(() => setQuery(search), 250);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
+    resetConversations(query);
+  }, [query, resetConversations]);
 
   // Live updates for new messages on either channel (inbound via the Twilio
   // webhook, outbound via our own sends).
@@ -235,15 +325,10 @@ export function MessagesClient() {
     }
   }
 
-  async function handleStartConversation() {
-    const normalized = normalizeUsPhone(newPhone);
-    if (!normalized) {
-      setError("Enter a valid US phone number");
-      return;
-    }
-    setNewPhone("");
+  async function handleStartConversation(phone: string) {
+    setSearch("");
     setError(null);
-    await openThread(normalized);
+    await openThread(phone, null);
   }
 
   return (
@@ -254,22 +339,40 @@ export function MessagesClient() {
             <h1 className="text-lg font-semibold">Messages</h1>
             {syncing ? <span className="text-xs text-muted-foreground">Syncing...</span> : null}
           </div>
-          <div className="flex gap-2">
-            <Input
-              type="tel"
-              placeholder="(305) 555-0123"
-              value={newPhone}
-              onChange={(event) => setNewPhone(maskUsPhoneInput(event.target.value))}
-            />
-            <Button size="sm" variant="outline" onClick={handleStartConversation}>
-              New
+          <Input
+            type="search"
+            placeholder="Search a name or number"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+          {typedPhone && !conversations.some((row) => row.counterpart === typedPhone) ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full"
+              onClick={() => handleStartConversation(typedPhone)}
+            >
+              Start a conversation with {formatUsPhoneDisplay(typedPhone)}
             </Button>
-          </div>
+          ) : null}
         </div>
-        <div className="flex-1 overflow-y-auto">
+        <div
+          className="flex-1 overflow-y-auto"
+          onScroll={(event) => {
+            const el = event.currentTarget;
+            // Start the next page before the scrollbar actually bottoms out.
+            if (el.scrollHeight - el.scrollTop - el.clientHeight < 240) {
+              loadMore();
+            }
+          }}
+        >
           {conversations.length === 0 ? (
             <p className="p-4 text-sm text-muted-foreground">
-              {syncing ? "Loading conversations..." : "No conversations yet."}
+              {syncing
+                ? "Loading conversations..."
+                : query
+                  ? "No conversations match that search."
+                  : "No conversations yet."}
             </p>
           ) : (
             conversations
@@ -278,14 +381,14 @@ export function MessagesClient() {
               .map((conversation) => (
                 <button
                   key={conversation.counterpart}
-                  onClick={() => openThread(conversation.counterpart)}
+                  onClick={() => openThread(conversation.counterpart, conversation.customer_name)}
                   className={`block w-full border-b border-border px-4 py-3 text-left hover:bg-muted/50 ${
                     active === conversation.counterpart ? "bg-muted" : ""
                   }`}
                 >
                   <div className="flex items-baseline justify-between gap-2">
-                    <span className="text-sm font-medium">
-                      {formatUsPhoneDisplay(conversation.counterpart)}
+                    <span className="truncate text-sm font-medium">
+                      {conversation.customer_name ?? formatUsPhoneDisplay(conversation.counterpart)}
                     </span>
                     <span className="shrink-0 text-xs text-muted-foreground">
                       {formatTime(conversation.last_at)}
@@ -306,6 +409,11 @@ export function MessagesClient() {
                 </button>
               ))
           )}
+          {conversations.length > 0 ? (
+            <p className="p-3 text-center text-xs text-muted-foreground">
+              {loadingMore ? "Loading more..." : hasMore ? "" : "End of conversations"}
+            </p>
+          ) : null}
         </div>
       </aside>
 
@@ -313,8 +421,15 @@ export function MessagesClient() {
         {active ? (
           <>
             <header className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-6 py-4">
-              <h2 className="text-base font-semibold">{formatUsPhoneDisplay(active)}</h2>
-              {activeConversation?.has_sms ? <Badge>SMS</Badge> : null}
+              <h2 className="text-base font-semibold">
+                {activeName ?? formatUsPhoneDisplay(active)}
+              </h2>
+              {activeName ? (
+                <span className="text-sm text-muted-foreground">
+                  {formatUsPhoneDisplay(active)}
+                </span>
+              ) : null}
+              {threadHasSms ? <Badge>SMS</Badge> : null}
               {canOfferWhatsapp ? (
                 <Badge tone={whatsappWindowOpen ? "success" : "neutral"}>WhatsApp</Badge>
               ) : null}

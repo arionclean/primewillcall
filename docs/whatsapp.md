@@ -54,15 +54,29 @@ sender form refuses to save until the public "Profile about" is filled in, and i
 call was returning 404 regardless. The API updates the webhook alone and leaves the
 public profile untouched, which is what we want.
 
+## The staff Messages screen
+
+One thread per person, both channels, ordered by time. The merge is two SECURITY
+INVOKER functions, `messaging_conversations` (newest first, keyset paged, searchable
+by name or number) and `messaging_thread`, so RLS still scopes each table and the
+browser never pulls both and stitches them together.
+
+The composer offers WhatsApp only to people who have used it, defaults to the channel
+of their last inbound message, and refuses a typed WhatsApp reply once the window
+closes. Both facts are read off the open thread, not off the conversation row: search
+or paging can filter that row out of the sidebar, and a thread must not change what it
+lets you send because the list beside it was filtered.
+
+A template send stores the template's own text with the variables filled in, fetched
+from Twilio and cached per isolate. Storing the content sid and a JSON blob put
+internal plumbing in front of staff in a customer conversation.
+
 ## Not live yet
 
-The plumbing is deployed, tested and receiving. What is missing is surface:
-
-1. **No automation uses WhatsApp.** Every `messaging_rules` row is `channel = 'sms'`.
-   One approved template exists (`key_west_confirmation`).
-2. **The staff Messages screen is SMS-only.** It reads `sms_messages` and calls
-   `sms-send`. Sending WhatsApp by hand means merging the two tables into one thread
-   view, which is a UI change, not a plumbing one.
+1. **No automation uses WhatsApp yet.** The `WhatsApp booking confirmation` rule
+   exists and matches every product, but is switched off until Meta approves
+   `booking_confirmation_general`. Only `key_west_confirmation` is approved today, and
+   its text is fixed Key West copy, so it cannot serve as the general confirmation.
 
 ## Testing it
 
