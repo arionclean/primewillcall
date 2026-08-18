@@ -797,7 +797,7 @@ export type Database = {
         Row: {
           automation_id: string
           body: string | null
-          business_tour_id: string | null
+          business_tour_ids: string[] | null
           channel: string
           created_at: string
           delay_minutes: number
@@ -813,7 +813,7 @@ export type Database = {
         Insert: {
           automation_id?: string
           body?: string | null
-          business_tour_id?: string | null
+          business_tour_ids?: string[] | null
           channel: string
           created_at?: string
           delay_minutes?: number
@@ -829,7 +829,7 @@ export type Database = {
         Update: {
           automation_id?: string
           body?: string | null
-          business_tour_id?: string | null
+          business_tour_ids?: string[] | null
           channel?: string
           created_at?: string
           delay_minutes?: number
@@ -842,15 +842,7 @@ export type Database = {
           whatsapp_content_sid?: string | null
           whatsapp_variables?: Json | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "messaging_rules_business_tour_id_fkey"
-            columns: ["business_tour_id"]
-            isOneToOne: false
-            referencedRelation: "business_tours"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       messaging_settings: {
         Row: {
