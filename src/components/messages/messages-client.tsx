@@ -68,6 +68,22 @@ async function invokeMessagingFunction<T>(
   return { data: (payload as T) ?? null, error: payload?.reason ?? payload?.error ?? error.message };
 }
 
+/**
+ * Send-as chip styling. WhatsApp carries the same green as its badge while the
+ * window is open and goes grey when it closes, so the composer and the header
+ * never disagree about whether a typed reply will go through.
+ */
+function channelChipClass(channel: Channel, selected: boolean, windowOpen: boolean): string {
+  if (channel === "whatsapp" && windowOpen) {
+    return selected
+      ? "border-emerald-500 bg-emerald-500/15 text-emerald-700 dark:border-emerald-500 dark:text-emerald-300"
+      : "border-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-900 dark:text-emerald-300 dark:hover:bg-emerald-950/40";
+  }
+  return selected
+    ? "border-primary bg-primary/10 text-primary"
+    : "border-border text-muted-foreground hover:bg-muted/50";
+}
+
 function counterpartOf(message: ThreadMessage): string {
   return message.direction === "inbound" ? message.from_phone : message.to_phone;
 }
@@ -495,11 +511,16 @@ export function MessagesClient() {
                       key={channel}
                       type="button"
                       onClick={() => setSendAs(channel)}
-                      className={`rounded-full border px-3 py-1 text-xs font-medium ${
-                        sendAs === channel
-                          ? "border-primary bg-primary/10 text-primary"
-                          : "border-border text-muted-foreground hover:bg-muted/50"
-                      }`}
+                      title={
+                        channel === "whatsapp" && !whatsappWindowOpen
+                          ? "They have to message again before you can reply on WhatsApp"
+                          : undefined
+                      }
+                      className={`rounded-full border px-3 py-1 text-xs font-medium ${channelChipClass(
+                        channel,
+                        sendAs === channel,
+                        whatsappWindowOpen,
+                      )}`}
                     >
                       {CHANNEL_LABEL[channel]}
                     </button>
