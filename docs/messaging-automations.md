@@ -13,9 +13,16 @@ An **automation** is a **trigger** plus one or more **actions**:
   (added in `20260712120000_messaging_rules_automation_id.sql`; backfilled by the old
   trigger+product grouping). Creating a message with no `automation_id` starts a new
   automation (the column default mints a fresh id); "Add action" passes the existing id.
-- **Trigger**: `trigger_event` (only `new_booking` today) + `business_tour_id` (the
-  product, `null` = any product). Shared across an automation's rows; changing the product
-  moves them all (scoped by `automation_id`, so it never merges two automations).
+- **Trigger**: `trigger_event` (only `new_booking` today) + `business_tour_ids` (a
+  `uuid[]` of products; `null` or empty = any product). Multi-select, so one automation can
+  cover three products and skip the rest, which the old single `business_tour_id` column
+  could not express (replaced in `20260818120000_messaging_rules_multi_product.sql`, which
+  backfilled each single id into a one-element array). Shared across an automation's rows;
+  changing the products moves them all (scoped by `automation_id`, so it never merges two
+  automations). Matching happens in code, not in the query: "empty set OR contains this
+  product" does not express cleanly as a PostgREST array filter, and the rule set is a
+  handful of rows. An array carries no foreign key, so a deleted product leaves a dead id
+  behind; it simply stops matching, and the picker only renders ids it can still resolve.
 - **Action**: a single `messaging_rules` row (a message). Each has a `channel`
   (`sms` / `whatsapp`), the body or WhatsApp template, `only_first_contact`, `is_active`,
   and `delay_minutes`. Messages have no user-facing name; the row's `name` is auto-derived

@@ -2,7 +2,7 @@
 
 import { Fragment, useMemo, useOptimistic, useState, useTransition } from "react";
 import { useActionState } from "react";
-import { ChevronDown, Clock, Plus, Repeat, Trash2, Zap } from "lucide-react";
+import { Check, ChevronDown, Clock, Plus, Repeat, Trash2, Zap } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,7 +30,9 @@ import {
   TRIGGERS,
   UNIT_FACTOR,
   decomposeDelay,
+  groupByBusiness,
   humanizeMinutes,
+  productLabel,
   renderPreview,
   triggerLabel,
   type Channel,
@@ -62,48 +64,176 @@ function TriggerSelect({ value, onChange }: { value: string; onChange?: (v: stri
   );
 }
 
-function ProductOptions({ products }: { products: ProductOption[] }) {
+/**
+ * Which products a trigger fires for. Multi-select, because an automation
+ * usually covers some of the catalogue and must skip the rest. "Any product" is
+ * simply the empty selection, so picking it clears the others.
+ */
+function ProductPicker({
+  value,
+  products,
+  pending,
+  onChange,
+}: {
+  value: string[];
+  products: ProductOption[];
+  pending?: boolean;
+  onChange: (next: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = new Set(value);
+  const groups = groupByBusiness(products);
+
+  // Rebuild from the catalogue order so the stored list never depends on the
+  // order the owner happened to click in.
+  const commit = (next: Set<string>) =>
+    onChange(products.filter((product) => next.has(product.id)).map((product) => product.id));
+
+  const toggle = (id: string) => {
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    commit(next);
+  };
+
+  // Businesses sell the same tours, so "everything from this business" is a
+  // common pick and tedious one product at a time.
+  const toggleBusiness = (group: { products: ProductOption[] }, allOn: boolean) => {
+    const next = new Set(selected);
+    for (const product of group.products) {
+      if (allOn) next.delete(product.id);
+      else next.add(product.id);
+    }
+    commit(next);
+  };
+
+  const row = "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted";
+
   return (
-    <>
-      <option value="">Any product</option>
-      {products.map((product) => (
-        <option key={product.id} value={product.id}>
-          {product.name} ({product.businessName})
-        </option>
-      ))}
-    </>
+    <span
+      className="relative inline-block"
+      onKeyDown={(event) => {
+        if (event.key === "Escape") setOpen(false);
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        disabled={pending}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label="Trigger products"
+        className={cn(
+          "flex h-9 max-w-full items-center gap-1.5 rounded-md border bg-background px-3 text-sm",
+          "hover:bg-muted disabled:cursor-not-allowed",
+          pending && "opacity-60",
+        )}
+      >
+        <span className="truncate">{productLabel(value, products)}</span>
+        <ChevronDown size={16} className="shrink-0 text-muted-foreground" aria-hidden />
+      </button>
+
+      {open ? (
+        <>
+          {/* Click-away target. Cheaper and more predictable than a document listener. */}
+          <span className="fixed inset-0 z-10" onClick={() => setOpen(false)} aria-hidden />
+          <div
+            role="listbox"
+            aria-multiselectable
+            className="absolute left-0 z-20 mt-1 max-h-80 w-80 overflow-y-auto rounded-lg border bg-background p-1 shadow-lg"
+          >
+            <button
+              type="button"
+              role="option"
+              aria-selected={value.length === 0}
+              className={row}
+              onClick={() => {
+                onChange([]);
+                setOpen(false);
+              }}
+            >
+              <Check
+                size={16}
+                className={cn("shrink-0", value.length === 0 ? "opacity-100" : "opacity-0")}
+                aria-hidden
+              />
+              Any product
+            </button>
+            <span className="my-1 block h-px bg-border" />
+            {groups.map((group) => {
+              const allOn = group.products.every((product) => selected.has(product.id));
+              return (
+                <div key={group.businessName} className="pb-1">
+                  <div className="flex items-center gap-2 px-2 pb-1 pt-2">
+                    <p className="min-w-0 flex-1 truncate text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      {group.businessName}
+                    </p>
+                    <button
+                      type="button"
+                      className="shrink-0 text-xs font-medium text-muted-foreground hover:text-foreground"
+                      onClick={() => toggleBusiness(group, allOn)}
+                    >
+                      {allOn ? "Clear" : "Select all"}
+                    </button>
+                  </div>
+                  {group.products.map((product) => (
+                    <button
+                      key={product.id}
+                      type="button"
+                      role="option"
+                      aria-selected={selected.has(product.id)}
+                      className={row}
+                      onClick={() => toggle(product.id)}
+                    >
+                      <Check
+                        size={16}
+                        className={cn(
+                          "shrink-0",
+                          selected.has(product.id) ? "opacity-100" : "opacity-0",
+                        )}
+                        aria-hidden
+                      />
+                      <span className="truncate">{product.name}</span>
+                    </button>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        </>
+      ) : null}
+    </span>
   );
 }
 
 /** Product picker on an existing automation: saves on change, no submit button. */
-function TriggerProductSelect({
+function TriggerProductPicker({
   automationId,
-  businessTourId,
+  businessTourIds,
   products,
 }: {
   automationId: string;
-  businessTourId: string | null;
+  businessTourIds: string[] | null;
   products: ProductOption[];
 }) {
   const [pending, startTransition] = useTransition();
+  const [optimisticIds, setOptimisticIds] = useOptimistic(businessTourIds ?? []);
+
   return (
-    <Select
-      defaultValue={businessTourId ?? ""}
-      disabled={pending}
-      onChange={(event) => {
-        const next = event.target.value;
+    <ProductPicker
+      value={optimisticIds}
+      products={products}
+      pending={pending}
+      onChange={(next) => {
         startTransition(async () => {
+          setOptimisticIds(next);
           const fd = new FormData();
           fd.set("automation_id", automationId);
-          fd.set("automation_product_new", next);
+          fd.set("automation_product_new", next.join(","));
           await updateAutomationProductAction(fd);
         });
       }}
-      className={cn("h-9 w-auto max-w-full", pending && "opacity-60")}
-      aria-label="Trigger product"
-    >
-      <ProductOptions products={products} />
-    </Select>
+    />
   );
 }
 
@@ -466,7 +596,7 @@ function ActionPicker({
 function NewMessageStep({
   automationId,
   triggerEvent,
-  businessTourId,
+  businessTourIds,
   waTemplates,
   initial,
   baseDelay = 0,
@@ -476,7 +606,7 @@ function NewMessageStep({
   /** Existing automation to add to; omit to start a brand-new automation. */
   automationId?: string;
   triggerEvent: string;
-  businessTourId: string | null;
+  businessTourIds: string[] | null;
   waTemplates: WaTemplateOption[];
   initial: ActionChoice;
   baseDelay?: number;
@@ -500,7 +630,7 @@ function NewMessageStep({
           action={createMessageAction}
           hiddenFields={{
             trigger_event: triggerEvent,
-            business_tour_id: businessTourId ?? "",
+            business_tour_ids: (businessTourIds ?? []).join(","),
             ...(automationId ? { automation_id: automationId } : {}),
           }}
           draft={{ ...EMPTY_DRAFT, channel: initial.channel }}
@@ -534,7 +664,7 @@ function StepsLabel() {
 function AutomationCard({
   automationId,
   triggerEvent,
-  businessTourId,
+  businessTourIds,
   steps,
   products,
   waTemplates,
@@ -543,7 +673,7 @@ function AutomationCard({
 }: {
   automationId: string;
   triggerEvent: string;
-  businessTourId: string | null;
+  businessTourIds: string[] | null;
   steps: RuleRow[];
   products: ProductOption[];
   waTemplates: WaTemplateOption[];
@@ -581,9 +711,9 @@ function AutomationCard({
               <span className="font-medium">When</span>
               <TriggerSelect value={triggerEvent} />
               <span className="font-medium">for</span>
-              <TriggerProductSelect
+              <TriggerProductPicker
                 automationId={automationId}
-                businessTourId={businessTourId}
+                businessTourIds={businessTourIds}
                 products={products}
               />
             </div>
@@ -615,7 +745,7 @@ function AutomationCard({
             <NewMessageStep
               automationId={automationId}
               triggerEvent={triggerEvent}
-              businessTourId={businessTourId}
+              businessTourIds={businessTourIds}
               waTemplates={waTemplates}
               initial={newAction}
               baseDelay={lastDelay}
@@ -656,7 +786,7 @@ function NewAutomationCard({
   onClose: () => void;
 }) {
   const [trigger, setTrigger] = useState<string>(TRIGGERS[0].value);
-  const [productId, setProductId] = useState("");
+  const [productIds, setProductIds] = useState<string[]>([]);
   const [firstAction, setFirstAction] = useState<ActionChoice | null>(null);
 
   return (
@@ -674,14 +804,7 @@ function NewAutomationCard({
               <span className="font-medium">When</span>
               <TriggerSelect value={trigger} onChange={setTrigger} />
               <span className="font-medium">for</span>
-              <Select
-                value={productId}
-                onChange={(event) => setProductId(event.target.value)}
-                className="h-9 w-auto max-w-full"
-                aria-label="Trigger product"
-              >
-                <ProductOptions products={products} />
-              </Select>
+              <ProductPicker value={productIds} products={products} onChange={setProductIds} />
             </div>
           </FlowStep>
 
@@ -690,7 +813,7 @@ function NewAutomationCard({
           {firstAction ? (
             <NewMessageStep
               triggerEvent={trigger}
-              businessTourId={productId || null}
+              businessTourIds={productIds}
               waTemplates={waTemplates}
               initial={firstAction}
               submitLabel="Create automation"
@@ -728,7 +851,12 @@ export function MessagingRules({
   const groups = useMemo(() => {
     const map = new Map<
       string,
-      { automationId: string; triggerEvent: string; businessTourId: string | null; steps: RuleRow[] }
+      {
+        automationId: string;
+        triggerEvent: string;
+        businessTourIds: string[] | null;
+        steps: RuleRow[];
+      }
     >();
     for (const rule of rules) {
       let group = map.get(rule.automation_id);
@@ -736,7 +864,7 @@ export function MessagingRules({
         group = {
           automationId: rule.automation_id,
           triggerEvent: rule.trigger_event,
-          businessTourId: rule.business_tour_id,
+          businessTourIds: rule.business_tour_ids,
           steps: [],
         };
         map.set(rule.automation_id, group);
@@ -764,7 +892,7 @@ export function MessagingRules({
             key={group.automationId}
             automationId={group.automationId}
             triggerEvent={group.triggerEvent}
-            businessTourId={group.businessTourId}
+            businessTourIds={group.businessTourIds}
             steps={group.steps}
             products={products}
             waTemplates={waTemplates}
