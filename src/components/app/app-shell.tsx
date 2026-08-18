@@ -2,7 +2,7 @@ import { Suspense } from "react";
 
 import type { Database } from "@/lib/supabase/database.types";
 
-import { AppSidebar, type SidebarBadges } from "./app-sidebar";
+import { AppSidebar } from "./app-sidebar";
 import { AppTopbar } from "./app-topbar";
 import { GlobalSearch } from "./global-search";
 import { SidebarManifest } from "./sidebar-manifest";
@@ -14,7 +14,6 @@ type AppShellProps = {
   fullName: string;
   canCreateBookings: boolean;
   businessId: string | null;
-  badges?: SidebarBadges;
   children: React.ReactNode;
 };
 
@@ -23,7 +22,6 @@ export function AppShell({
   fullName,
   canCreateBookings,
   businessId,
-  badges,
   children,
 }: AppShellProps) {
   return (
@@ -33,7 +31,6 @@ export function AppShell({
         fullName={fullName}
         canCreateBookings={canCreateBookings}
         businessId={businessId}
-        badges={badges}
       />
       <div className="mx-auto grid w-full max-w-7xl gap-6 px-6 py-8 md:grid-cols-[200px_1fr]">
         <aside className="hidden space-y-4 md:sticky md:top-6 md:block md:self-start">
@@ -41,8 +38,7 @@ export function AppShell({
           <AppSidebar
             role={role}
             canCreateBookings={canCreateBookings}
-            badges={badges}
-          />
+              />
           {role === "check_in" && (
             // Suspense: SidebarManifest reads the URL via useSearchParams.
             <Suspense fallback={null}>

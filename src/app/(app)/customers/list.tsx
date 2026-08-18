@@ -8,7 +8,9 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
-export const CUSTOMERS_PAGE = 50;
+import { CUSTOMERS_PAGE } from "./constants";
+
+export { CUSTOMERS_PAGE };
 
 export type CustomerRow = {
   id: string;

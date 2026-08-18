@@ -3,7 +3,8 @@ import { redirect } from "next/navigation";
 import { getCurrentStaff } from "@/lib/auth";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
-import { CustomersList, type CustomerRow, CUSTOMERS_PAGE } from "./list";
+import { CUSTOMERS_PAGE } from "./constants";
+import { CustomersList, type CustomerRow } from "./list";
 
 /**
  * Customers. A searchable directory of guests, scoped by RLS (owner = all

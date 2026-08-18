@@ -7,7 +7,7 @@ import { Menu, X } from "lucide-react";
 
 import type { Database } from "@/lib/supabase/database.types";
 
-import { AppSidebar, type SidebarBadges } from "./app-sidebar";
+import { AppSidebar } from "./app-sidebar";
 import { GlobalSearch } from "./global-search";
 import { SidebarManifest } from "./sidebar-manifest";
 
@@ -23,12 +23,10 @@ export function MobileNav({
   role,
   canCreateBookings,
   businessId,
-  badges,
 }: {
   role: StaffRole;
   canCreateBookings: boolean;
   businessId: string | null;
-  badges?: SidebarBadges;
 }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
@@ -84,7 +82,6 @@ export function MobileNav({
                 <AppSidebar
                   role={role}
                   canCreateBookings={canCreateBookings}
-                  badges={badges}
                   onNavigate={() => setOpen(false)}
                 />
                 {role === "check_in" && (

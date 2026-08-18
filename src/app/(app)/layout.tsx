@@ -1,10 +1,8 @@
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app/app-shell";
-import type { SidebarBadges } from "@/components/app/app-sidebar";
 import { getCurrentStaff, staffCapabilities } from "@/lib/auth";
 import { QueryProvider } from "@/lib/query/provider";
-import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 export default async function AppLayout({
   children,
@@ -20,19 +18,6 @@ export default async function AppLayout({
     return <>{children}</>;
   }
 
-  // Outstanding work for the sidebar. Only the owner sees /admin/unmatched, so
-  // only they pay for the lookup, and it is a database-side COUNT (head: true)
-  // rather than fetching the rows.
-  const badges: SidebarBadges = {};
-  if (staff.role === "owner") {
-    const supabase = await getSupabaseServerClient();
-    const { count } = await supabase
-      .from("email_match_queue")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "urgent");
-    badges.unmatched = count ?? 0;
-  }
-
   return (
     <QueryProvider>
       <AppShell
@@ -40,7 +25,6 @@ export default async function AppLayout({
         fullName={staff.full_name}
         canCreateBookings={staffCapabilities(staff).canCreateBookings}
         businessId={staff.business_id}
-        badges={badges}
       >
         {children}
       </AppShell>
