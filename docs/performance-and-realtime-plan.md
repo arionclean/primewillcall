@@ -201,21 +201,53 @@ driven end to end because it requires a kiosk login.
 Messages needed no work. It already subscribed to `sms_messages` INSERTs and patches its
 own state, inbound and outbound.
 
-### Phase 5. Paint before the data lands
+### Phase 5. Paint before the data lands  (DONE)
 
 Pages currently `await` everything before rendering anything.
 
-- Wrap the slow part of `dashboard/page.tsx`, `admin/payments/page.tsx` and
-  `bookings/page.tsx` in `<Suspense>` so the header, filters and range picker paint
-  instantly and only the table streams in.
-- `src/components/app/app-sidebar.tsx:221` : prefetch on hover, so the payload is
-  already in flight before the click lands.
+Done for `dashboard/page.tsx` (three boundaries: today's counts, the tour tallies, the
+month rollup) and `bookings/page.tsx` (header paints, the joined bookings read and the
+tour variants stream, keyed by date so changing days shows a skeleton rather than
+yesterday's rows). Siblings render concurrently, so splitting costs no parallelism.
 
-### Phase 6. Infrastructure check (five minutes, possibly free speed)
+`admin/payments/page.tsx` was left alone on purpose. Its header, summary cards and
+filters all live inside the `PaymentsView` client component, so there is nothing the
+page can paint early without splitting that component first. `loading.tsx` already
+covers the wait. Worth doing if `PaymentsView` is ever broken up for another reason.
 
-Confirm the Vercel function region matches the Supabase project region
-(`qbnizuhozzwkiitfkjee`). If they are apart, every query silently pays 100ms or more,
-and there are three to six queries per click.
+Sidebar links now prefetch on hover (`app-sidebar.tsx`). Viewport prefetch was the wrong
+tool: these routes are dynamic, so Next only prefetches the loading skeleton, and asking
+for the real payload on all fourteen links would render fourteen pages every time the
+sidebar mounts.
+
+**Verified against a production build**, because `router.prefetch()` is a deliberate
+no-op in development (`next/dist/client/components/app-router.js`: "Don't prefetch during
+development"). Hovering Analytics fetched it once with no click; the click then navigated
+with zero further network.
+
+### Phase 6. Infrastructure check  (DONE: there is a mismatch, decision pending)
+
+They do not match.
+
+| | Region |
+|---|---|
+| Vercel functions | `iad1`, Washington DC (confirmed from the `x-vercel-id` header on primewillcall.vercel.app) |
+| Supabase project | `us-west-2`, Oregon |
+| The business and its staff | Miami |
+
+So every database query crosses the continent and back, roughly 60 to 70ms, and a page
+makes several. Three options:
+
+1. **Pin the functions to `pdx1`** (Portland, next to the database). One `vercel.json`.
+   Queries drop to a couple of ms; the browser hop from Miami gets ~50ms longer, but that
+   is paid once per request while the query cost is paid per query. Reversible in a line.
+2. **Move the Supabase project to `us-east-1`** and leave Vercel in `iad1`. The best
+   end state: close to the database *and* close to the staff. It is a project migration
+   (new project, restore, re-point keys, webhooks and edge functions), so it is real work
+   with real risk. It is also far cheaper now, before go-live, than after.
+3. **Leave it.** Defensible only if 2 is planned for cutover anyway.
+
+This is a call for the platform owner, not a code change, so nothing was done.
 
 ---
 
