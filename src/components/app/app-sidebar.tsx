@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useCallback, useRef } from "react";
 import {
   LayoutDashboard,
   CalendarCheck,
@@ -184,6 +185,24 @@ export function AppSidebar({
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  // Prefetch on intent, not on sight. These routes are dynamic, so Next's
+  // viewport prefetch only fetches the loading skeleton, and asking it to fetch
+  // the real payload for all fourteen links would render fourteen pages on the
+  // server every time the sidebar appears. Hovering is the honest signal that
+  // one of them is about to be clicked, and it buys most of the round-trip back
+  // (the pointer takes a beat to travel and press). Each href is prefetched at
+  // most once per mount.
+  const prefetched = useRef(new Set<string>());
+  const prefetch = useCallback(
+    (href: string) => {
+      if (prefetched.current.has(href)) return;
+      prefetched.current.add(href);
+      router.prefetch(href);
+    },
+    [router],
+  );
 
   return (
     <nav aria-label="Primary" className="flex flex-col gap-5 text-sm">
@@ -221,6 +240,10 @@ export function AppSidebar({
                 <Link
                   key={it.href}
                   href={it.href}
+                  prefetch={false}
+                  onMouseEnter={() => prefetch(it.href)}
+                  onFocus={() => prefetch(it.href)}
+                  onTouchStart={() => prefetch(it.href)}
                   onClick={onNavigate}
                   className={cn(
                     "flex items-center gap-2.5 rounded-md px-3 py-2 transition",

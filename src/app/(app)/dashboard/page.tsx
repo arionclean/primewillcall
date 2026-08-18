@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { Suspense } from "react";
 
 import { KpiStrip } from "@/components/dashboard/kpi-strip";
 import { MonthChart } from "@/components/dashboard/month-chart";
@@ -29,7 +30,6 @@ export default async function DashboardPage({
     return <UnlinkedAccount email={user.email ?? ""} />;
   }
 
-  const supabase = await getSupabaseServerClient();
   const range = getTodayRange();
 
   // Check-in desk staff work out of the Bookings page (the sidebar Manifest
@@ -45,20 +45,11 @@ export default async function DashboardPage({
   ) ?? `${todayLocalIso(BUSINESS_TZ).slice(0, 7)}-01`;
   const [chartYear, chartMonth] = monthYmd.split("-").map(Number);
 
-  // Bigger fetches in parallel.
-  const [kpis, byTour, monthly, businessesProbe, toursProbe] =
-    await Promise.all([
-      getTodayKpis(supabase, range),
-      getTodayByTour(supabase, range),
-      getMonthlyGuests(supabase, chartYear, chartMonth, BUSINESS_TZ),
-      supabase.from("businesses").select("id", { count: "exact", head: true }),
-      supabase.from("tours").select("id", { count: "exact", head: true }),
-    ]);
-
-  const businessesCount = businessesProbe.count ?? 0;
-  const noBusinesses = businessesCount === 0;
-  const noTours = (toursProbe.count ?? 0) === 0;
-
+  // Everything below the header is streamed. The title, the date and the
+  // + Booking button need no database at all, so they paint the moment the
+  // request lands instead of waiting on the slowest query on the page (the
+  // month rollup). Each boundary runs its own queries, and siblings render
+  // concurrently, so nothing is serialized by the split.
   return (
     <div>
       <header className="flex flex-wrap items-end justify-between gap-3">
@@ -78,41 +69,107 @@ export default async function DashboardPage({
         </div>
       </header>
 
-      {staff.role === "owner" && (noBusinesses || noTours) && (
-        <div className="mt-6 grid gap-3 sm:grid-cols-2">
-          {noBusinesses && (
-            <OnboardingCta
-              title="Add your first business"
-              description="Add the first business so its tours and bookings have a home."
-              ctaLabel="Add business"
-              href="/admin/businesses/new"
-            />
-          )}
-          {!noBusinesses && noTours && (
-            <OnboardingCta
-              title="Add your first tour"
-              description="A tour is what a business sells. Set its departure times and prices, then bookings can start coming in."
-              ctaLabel="Add tour"
-              href="/admin/tours/new"
-            />
-          )}
-        </div>
+      {staff.role === "owner" && (
+        // No fallback: an onboarding prompt that flashes a placeholder before
+        // deciding it has nothing to say is worse than arriving a beat late.
+        <Suspense fallback={null}>
+          <OnboardingChecks />
+        </Suspense>
       )}
 
+      <Suspense fallback={<TodaySkeleton />}>
+        <TodayPanels range={range} />
+      </Suspense>
+
+      <Suspense fallback={<ChartSkeleton />}>
+        <MonthPanel year={chartYear} month={chartMonth} />
+      </Suspense>
+    </div>
+  );
+}
+
+async function TodayPanels({
+  range,
+}: {
+  range: ReturnType<typeof getTodayRange>;
+}) {
+  const supabase = await getSupabaseServerClient();
+  const [kpis, byTour] = await Promise.all([
+    getTodayKpis(supabase, range),
+    getTodayByTour(supabase, range),
+  ]);
+
+  return (
+    <>
       <div className="mt-6">
         <KpiStrip kpis={kpis} />
       </div>
-
       {byTour.length > 0 && (
         <div className="mt-4">
           <TourTallyStrip tallies={byTour} />
         </div>
       )}
+    </>
+  );
+}
 
-      <div className="mt-6">
-        <MonthChart data={monthly} />
-      </div>
+async function MonthPanel({ year, month }: { year: number; month: number }) {
+  const supabase = await getSupabaseServerClient();
+  const monthly = await getMonthlyGuests(supabase, year, month, BUSINESS_TZ);
+  return (
+    <div className="mt-6">
+      <MonthChart data={monthly} />
     </div>
+  );
+}
+
+/** Owner-only nudge while the platform is still empty. Two head counts. */
+async function OnboardingChecks() {
+  const supabase = await getSupabaseServerClient();
+  const [businessesProbe, toursProbe] = await Promise.all([
+    supabase.from("businesses").select("id", { count: "exact", head: true }),
+    supabase.from("tours").select("id", { count: "exact", head: true }),
+  ]);
+
+  const noBusinesses = (businessesProbe.count ?? 0) === 0;
+  const noTours = (toursProbe.count ?? 0) === 0;
+  if (!noBusinesses && !noTours) return null;
+
+  return (
+    <div className="mt-6 grid gap-3 sm:grid-cols-2">
+      {noBusinesses && (
+        <OnboardingCta
+          title="Add your first business"
+          description="Add the first business so its tours and bookings have a home."
+          ctaLabel="Add business"
+          href="/admin/businesses/new"
+        />
+      )}
+      {!noBusinesses && noTours && (
+        <OnboardingCta
+          title="Add your first tour"
+          description="A tour is what a business sells. Set its departure times and prices, then bookings can start coming in."
+          ctaLabel="Add tour"
+          href="/admin/tours/new"
+        />
+      )}
+    </div>
+  );
+}
+
+function TodaySkeleton() {
+  return (
+    <div className="mt-6 grid animate-pulse gap-3 sm:grid-cols-2 lg:grid-cols-3" aria-hidden>
+      {Array.from({ length: 3 }).map((_, i) => (
+        <div key={i} className="h-24 rounded-xl border bg-muted/40" />
+      ))}
+    </div>
+  );
+}
+
+function ChartSkeleton() {
+  return (
+    <div className="mt-6 h-72 animate-pulse rounded-xl border bg-muted/30" aria-hidden />
   );
 }
 

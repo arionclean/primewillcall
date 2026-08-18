@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { Suspense } from "react";
 
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { getCurrentStaff, staffCapabilities } from "@/lib/auth";
+import type { Database } from "@/lib/supabase/database.types";
 import {
   BUSINESS_TZ,
   getLocalDateRange,
@@ -15,6 +17,8 @@ import {
 import { BookingsList, type BookingRow, type TourOption } from "./list";
 
 const DEFAULT_TIMEZONE = BUSINESS_TZ;
+
+type StaffRole = Database["public"]["Enums"]["staff_role"];
 
 /**
  * Bookings list page. Mirrors the dashboard's today view but lets the operator
@@ -30,13 +34,76 @@ export default async function BookingsPage({
   if (!user) redirect("/login?next=/bookings");
   if (!staff || !staff.is_active) redirect("/dashboard");
 
-  const supabase = await getSupabaseServerClient();
-
   const caps = staffCapabilities(staff);
 
   const { date: dateParam } = await searchParams;
   const dateIso = parseLocalYmd(dateParam) ?? todayLocalIso(DEFAULT_TIMEZONE);
   const range = getLocalDateRange(dateIso, DEFAULT_TIMEZONE);
+
+  const friendlyLabel = new Intl.DateTimeFormat("en-US", {
+    timeZone: DEFAULT_TIMEZONE,
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(range.startUtc));
+
+  // The header needs no database, so it paints straight away and the list
+  // streams in behind it. The two reads in BookingsPanel are the heaviest on
+  // the screen (a joined bookings select, plus every tour variant with its
+  // tiers and timeslots), and making the whole page wait on them is what turned
+  // every date change into a blank pause. Keyed by date so switching days shows
+  // the skeleton again rather than the previous day's rows.
+  return (
+    <div>
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Bookings</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Bookings for the selected date. {friendlyLabel}.
+          </p>
+        </div>
+        {caps.canCreateBookings ? (
+          <div className="flex items-center gap-2">
+            <Link
+              href="/schedule"
+              className={cn(buttonVariants({ variant: "default" }))}
+            >
+              + Booking
+            </Link>
+          </div>
+        ) : null}
+      </header>
+
+      <div className="mt-6">
+        <Suspense key={dateIso} fallback={<ListSkeleton />}>
+          <BookingsPanel
+            dateIso={dateIso}
+            range={range}
+            role={staff.role}
+            caps={caps}
+            businessId={staff.business_id}
+          />
+        </Suspense>
+      </div>
+    </div>
+  );
+}
+
+async function BookingsPanel({
+  dateIso,
+  range,
+  role,
+  caps,
+  businessId,
+}: {
+  dateIso: string;
+  range: ReturnType<typeof getLocalDateRange>;
+  role: StaffRole;
+  caps: ReturnType<typeof staffCapabilities>;
+  businessId: string | null;
+}) {
+  const supabase = await getSupabaseServerClient();
 
   const { data, error } = await supabase
     .from("bookings")
@@ -90,10 +157,10 @@ export default async function BookingsPage({
     )
     .order("name", { ascending: true });
 
-  if (staff.role !== "owner") {
+  if (role !== "owner") {
     tourQuery = tourQuery.eq(
       "business_id",
-      staff.business_id ?? "00000000-0000-0000-0000-000000000000",
+      businessId ?? "00000000-0000-0000-0000-000000000000",
     );
   }
 
@@ -151,47 +218,25 @@ export default async function BookingsPage({
         })),
     }));
 
-  const friendlyLabel = new Intl.DateTimeFormat("en-US", {
-    timeZone: DEFAULT_TIMEZONE,
-    weekday: "long",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(new Date(range.startUtc));
-
   return (
-    <div>
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Bookings</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Bookings for the selected date. {friendlyLabel}.
-          </p>
-        </div>
-        {caps.canCreateBookings ? (
-          <div className="flex items-center gap-2">
-            <Link
-              href="/schedule"
-              className={cn(buttonVariants({ variant: "default" }))}
-            >
-              + Booking
-            </Link>
-          </div>
-        ) : null}
-      </header>
+    <BookingsList
+      initial={bookings}
+      tours={tourOptions}
+      date={dateIso}
+      role={role}
+      caps={caps}
+      businessId={businessId}
+      rangeStartUtc={range.startUtc}
+      rangeEndUtcExclusive={range.endUtcExclusive}
+    />
+  );
+}
 
-      <div className="mt-6">
-        <BookingsList
-          initial={bookings}
-          tours={tourOptions}
-          date={dateIso}
-          role={staff.role}
-          caps={caps}
-          businessId={staff.business_id}
-          rangeStartUtc={range.startUtc}
-          rangeEndUtcExclusive={range.endUtcExclusive}
-        />
-      </div>
+function ListSkeleton() {
+  return (
+    <div className="animate-pulse space-y-3" aria-hidden>
+      <div className="h-10 w-full max-w-md rounded-md bg-muted/60" />
+      <div className="h-72 rounded-xl border bg-muted/30" />
     </div>
   );
 }
