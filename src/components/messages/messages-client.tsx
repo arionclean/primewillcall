@@ -6,7 +6,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { formatUsPhoneDisplay, normalizeUsPhone } from "@/lib/sms/format";
+import { formatUsPhoneDisplay, normalizeUsPhone } from "@/lib/phone";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type Channel = "sms" | "whatsapp";

@@ -13,6 +13,7 @@ import {
   useTransition,
 } from "react";
 import { createPortal } from "react-dom";
+import { formatUsPhoneDisplay } from "@/lib/phone";
 import {
   Check,
   ChevronDown,
@@ -319,14 +320,6 @@ function maskPhone(raw: string): string {
   const digits = raw.replace(/\D/g, "");
   const last4 = digits.slice(-4).padStart(4, "0");
   return `ooo ooo ${last4}`;
-}
-
-function formatPhone(raw: string): string {
-  const digits = raw.replace(/\D/g, "");
-  if (digits.length === 10) {
-    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
-  }
-  return raw;
 }
 
 function describePax(b: Pick<BookingRow, "pax_adult" | "pax_child" | "pax_infant">): string {
@@ -1340,7 +1333,7 @@ function BookingRowItem({
   const displayPhone = phoneRaw
     ? privacyOn
       ? maskPhone(phoneRaw)
-      : formatPhone(phoneRaw)
+      : formatUsPhoneDisplay(phoneRaw)
     : "";
 
   const tourName =

@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-import { normalizeUsPhone } from "@/lib/sms/format";
+import { normalizeUsPhone } from "@/lib/phone";
 
 const TWILIO_API_BASE = "https://api.twilio.com/2010-04-01";
 

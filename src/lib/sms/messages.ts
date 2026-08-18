@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { normalizeUsPhone } from "@/lib/sms/format";
+import { normalizeUsPhone } from "@/lib/phone";
 import { getTwilioFromNumber, sendTwilioSms } from "@/lib/sms/twilio";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 

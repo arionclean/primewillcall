@@ -8,9 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { BUSINESS_TZ } from "@/lib/dates";
 import { formatPax } from "@/lib/dashboard/queries";
+import { formatUsPhoneDisplay } from "@/lib/phone";
 import { cn } from "@/lib/utils";
-
-import { formatPhone } from "../list";
 
 type BookingRow = {
   id: string;
@@ -112,7 +111,7 @@ export default async function CustomerDetailPage({
           {customer.full_name}
         </h1>
         <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
-          <span>{formatPhone(customer.phone)}</span>
+          <span>{formatUsPhoneDisplay(customer.phone, "-")}</span>
           {customer.email && <span>{customer.email}</span>}
           {customer.business?.name && <span>{customer.business.name}</span>}
         </div>

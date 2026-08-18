@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { formatUsPhoneDisplay } from "@/lib/phone";
 
 import { BookingNotFound, BookingView, type PublicBooking } from "./booking-view";
 
@@ -38,12 +39,6 @@ function paxDetail(adult: number, child: number, infant: number): string {
   if (child > 0) parts.push(`${child} ${child === 1 ? "child" : "children"}`);
   if (infant > 0) parts.push(`${infant} ${infant === 1 ? "infant" : "infants"}`);
   return parts.join(", ");
-}
-
-function formatPhoneDisplay(digits: string): string {
-  const d = digits.replace(/\D/g, "").replace(/^1(?=\d{10}$)/, "");
-  if (d.length !== 10) return digits;
-  return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
 }
 
 function phoneTel(digits: string): string {
@@ -115,7 +110,7 @@ export default async function PublicBookingPage({
     mapsUrl,
     instructions: tour?.instructions ?? null,
     supportEmail: data.business?.contact_email ?? null,
-    supportPhoneDisplay: phone ? formatPhoneDisplay(phone) : null,
+    supportPhoneDisplay: phone ? formatUsPhoneDisplay(phone) : null,
     supportPhoneTel: phone ? phoneTel(phone) : null,
   };
 
