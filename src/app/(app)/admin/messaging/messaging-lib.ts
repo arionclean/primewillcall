@@ -8,7 +8,8 @@ export type RuleRow = {
   name: string;
   automation_id: string;
   trigger_event: string;
-  business_tour_id: string | null;
+  /** Products the automation fires for. Null or empty = any product. */
+  business_tour_ids: string[] | null;
   channel: "sms" | "whatsapp";
   body: string | null;
   whatsapp_content_sid: string | null;
@@ -31,6 +32,42 @@ export type WaTemplateOption = {
   status: string;
   rejectionReason?: string | null;
 };
+
+/**
+ * Products grouped under their business. Every business sells its own copy of
+ * the same tours, so a flat list is twenty rows of near-duplicates ("Jet Ski",
+ * "Jet Ski", ...) that can only be told apart by a suffix. Grouped, the
+ * business is said once as a heading and each product is named once.
+ */
+export function groupByBusiness(
+  products: ProductOption[],
+): { businessName: string; products: ProductOption[] }[] {
+  const groups = new Map<string, ProductOption[]>();
+  for (const product of products) {
+    const list = groups.get(product.businessName);
+    if (list) list.push(product);
+    else groups.set(product.businessName, [product]);
+  }
+  return [...groups.entries()]
+    .map(([businessName, list]) => ({
+      businessName,
+      products: [...list].sort((a, b) => a.name.localeCompare(b.name)),
+    }))
+    .sort((a, b) => a.businessName.localeCompare(b.businessName));
+}
+
+/**
+ * How a trigger's product set reads in the UI. Ids whose product no longer
+ * exists are ignored: the column is an array, so it cannot carry a foreign key
+ * that would clean up after a deleted product.
+ */
+export function productLabel(ids: string[] | null, products: ProductOption[]): string {
+  const known = (ids ?? []).filter((id) => products.some((product) => product.id === id));
+  if (known.length === 0) return "Any product";
+  if (known.length > 1) return `${known.length} products`;
+  const only = products.find((product) => product.id === known[0]);
+  return only ? `${only.name} (${only.businessName})` : "Any product";
+}
 
 export const STATUS_TONE: Record<string, "success" | "warning" | "danger"> = {
   approved: "success",

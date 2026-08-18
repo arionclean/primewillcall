@@ -12,6 +12,7 @@
 // dispatcher uses). SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY are auto-injected.
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { toE164 } from "../_shared/phone.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -49,6 +50,7 @@ interface Rule {
   whatsapp_variables: Record<string, string> | null;
   only_first_contact: boolean;
   delay_minutes: number;
+  business_tour_ids: string[] | null;
 }
 
 Deno.serve(async (req) => {
@@ -97,7 +99,9 @@ Deno.serve(async (req) => {
 
   const customer = booking.customer as { full_name: string | null; phone: string | null } | null;
   const product = booking.product as { name: string | null } | null;
-  const toPhone = (customer?.phone ?? "").trim();
+  // customers.phone is digits only; everything downstream (Twilio, sms_messages,
+  // sms_opt_outs) speaks E.164, so convert once here and queue the E.164 form.
+  const toPhone = toE164(customer?.phone);
   if (!toPhone) return Response.json({ skipped: "no customer phone" });
 
   const base = (settings.booking_link_base ?? "https://bked.io/booking").replace(/\/+$/, "");
@@ -108,15 +112,25 @@ Deno.serve(async (req) => {
     booking_date: nyDate(booking.starts_at),
   };
 
-  // Active rules for this booking's product (or "any product").
+  // Active rules for this trigger. An automation names a SET of products
+  // (business_tour_ids), and an empty set means "any product". That "empty or
+  // contains" test does not express cleanly as a PostgREST filter on an array
+  // column, so the match happens here instead: the rule set is a handful of
+  // rows, so filtering in memory costs nothing.
   const { data: ruleData, error: ruleErr } = await db
     .from("messaging_rules")
-    .select("id, channel, body, whatsapp_content_sid, whatsapp_variables, only_first_contact, delay_minutes")
+    .select(
+      "id, channel, body, whatsapp_content_sid, whatsapp_variables, only_first_contact, " +
+        "delay_minutes, business_tour_ids",
+    )
     .eq("trigger_event", "new_booking")
-    .eq("is_active", true)
-    .or(`business_tour_id.eq.${booking.business_tour_id},business_tour_id.is.null`);
+    .eq("is_active", true);
   if (ruleErr) return Response.json({ error: ruleErr.message }, { status: 500 });
-  const rules = (ruleData ?? []) as Rule[];
+  const productId = booking.business_tour_id as string | null;
+  const rules = ((ruleData ?? []) as Rule[]).filter((rule) => {
+    const ids = rule.business_tour_ids ?? [];
+    return ids.length === 0 || (productId !== null && ids.includes(productId));
+  });
   if (rules.length === 0) return Response.json({ enqueued: 0 });
 
   // One lookup for all "first contact only" rules.
