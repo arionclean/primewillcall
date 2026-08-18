@@ -676,7 +676,7 @@ export function PaymentsView({
                             <Button
                               type="button"
                               size="sm"
-                              variant="destructive"
+                              variant="outline"
                               onClick={() => openRefund(item)}
                             >
                               Refund
@@ -758,7 +758,7 @@ export function PaymentsView({
                           <Button
                             type="button"
                             size="sm"
-                            variant="destructive"
+                            variant="outline"
                             onClick={() => openRefund(txn)}
                           >
                             Refund
