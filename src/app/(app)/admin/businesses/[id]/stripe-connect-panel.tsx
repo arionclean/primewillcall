@@ -1,11 +1,11 @@
 "use client";
 
-import { CreditCard, ExternalLink, RefreshCw, RotateCcw } from "lucide-react";
+import { CreditCard, ExternalLink, RefreshCw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, useTransition } from "react";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -162,13 +162,10 @@ export function StripeConnectPanel({
     (!business.stripe_charges_enabled || business.stripe_requirements_due > 0);
   const busy = isPending || configured === false;
 
-  // `account` is the one fees.payer value where Stripe bills the business and Prime
-  // pays no Connect fee. Anything else, NULL included, is an account created before
-  // this change: every one of those bills Prime, so they all get the same offer to
-  // move. NULL happens whenever Stripe has not been read for the account yet, which
-  // includes accounts the current API key cannot reach at all.
-  const feeFree = business.stripe_fees_payer === "account";
-  const legacyAccounts = business.stripe_account_id_legacy ?? [];
+  // True once the business is on the new account setup. Anything else, NULL
+  // included, is an account created before it, and gets offered the move. NULL just
+  // means Stripe has not been read for the account yet.
+  const onNewSetup = business.stripe_fees_payer === "account";
 
   /**
    * Read Stripe's view of this business: is the platform usable, and is a switch
@@ -213,16 +210,9 @@ export function StripeConnectPanel({
 
   function confirmSwitch() {
     const ok = window.confirm(
-      "Switch this business to the new account? Every new payment will settle there from now on. Payments already taken on the old account stay there, and refunds for them keep working.",
+      "Switch this business to the new account? Every new payment will settle there from now on. Payments already taken, and refunds for them, are not affected.",
     );
     if (ok) run({ action: "switch_over" });
-  }
-
-  function confirmSwitchBack(accountId: string) {
-    const ok = window.confirm(
-      "Send payments back to the previous account? New payments will settle there again.",
-    );
-    if (ok) run({ action: "switch_back", account_id: accountId });
   }
 
   // Bootstrap: ask the function what it can do and whether a switch is pending.
@@ -270,17 +260,30 @@ export function StripeConnectPanel({
                 <ExternalLink />
               </Button>
             )}
-            {business.stripe_details_submitted && (
-              <Button
-                type="button"
-                variant="outline"
-                disabled={busy}
-                onClick={() => run({ action: "login_link" })}
-              >
-                Open Stripe dashboard
-                <ExternalLink />
-              </Button>
-            )}
+            {business.stripe_details_submitted &&
+              (onNewSetup ? (
+                // Accounts on the new setup use the full Stripe Dashboard, which has
+                // no platform-minted login link: the business signs in themselves.
+                <a
+                  href="https://dashboard.stripe.com"
+                  target="_blank"
+                  rel="noreferrer"
+                  className={buttonVariants({ variant: "outline" })}
+                >
+                  Open Stripe dashboard
+                  <ExternalLink />
+                </a>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => run({ action: "login_link" })}
+                >
+                  Open Stripe dashboard
+                  <ExternalLink />
+                </Button>
+              ))}
             <Button
               type="button"
               variant="ghost"
@@ -327,44 +330,15 @@ export function StripeConnectPanel({
         </p>
       )}
 
-      {connected && (
-        <div className="space-y-3 rounded-lg border bg-muted/30 px-4 py-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-medium">Stripe pricing</span>
-            {feeFree ? (
-              <Badge tone="success">Prime pays no Stripe fees</Badge>
-            ) : (
-              <Badge tone="warning">Old account</Badge>
-            )}
-          </div>
-
-          {feeFree ? (
-            <p className="text-xs text-muted-foreground">
-              Stripe bills this business directly. Prime pays nothing per payout or per
-              month for it.
-            </p>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              This account predates the new setup, so Stripe bills Prime for it: 0.25%
-              of everything paid out plus $2 in any month it pays out. A new account
-              removes both charges and looks the same to the business (same Stripe
-              dashboard, same onboarding). The business confirms its details once, then
-              you switch it over here. Nothing changes for them until you do.
-            </p>
-          )}
-
+      {connected && !onNewSetup && (
+        <div className="space-y-2 rounded-lg border bg-muted/30 px-4 py-3">
           {pending ? (
-            <div className="space-y-2 rounded-md border bg-background px-3 py-3">
+            <>
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-medium">Replacement account</span>
+                <span className="text-sm font-medium">New account</span>
                 <Badge tone={pending.chargesEnabled ? "success" : "neutral"}>
-                  {pending.chargesEnabled ? "Ready to switch" : "Onboarding"}
+                  {pending.chargesEnabled ? "Ready to switch" : "Setting up"}
                 </Badge>
-                {pending.requirementsDue > 0 && (
-                  <Badge tone="danger">
-                    {pending.requirementsDue} still needed
-                  </Badge>
-                )}
               </div>
               <p className="text-xs text-muted-foreground">
                 It takes no payments until you switch over. Nothing changes for the
@@ -386,7 +360,7 @@ export function StripeConnectPanel({
                   disabled={busy}
                   onClick={() => run({ action: "onboarding_link", target: "pending" })}
                 >
-                  Continue onboarding
+                  Continue setup
                   <ExternalLink />
                 </Button>
                 <Button
@@ -399,46 +373,27 @@ export function StripeConnectPanel({
                   Discard
                 </Button>
               </div>
-            </div>
+            </>
           ) : (
-            !feeFree && (
+            <>
+              <p className="text-xs text-muted-foreground">
+                Move this business to a new Stripe account. They confirm their details
+                once, then you switch it over. Nothing changes for them until you do.
+              </p>
               <Button
                 type="button"
                 size="sm"
                 disabled={busy}
                 onClick={() => run({ action: "start_migration" })}
               >
-                Create the new account
+                Set up a new account
                 <ExternalLink />
               </Button>
-            )
-          )}
-
-          {legacyAccounts.length > 0 && (
-            <div className="space-y-2 border-t pt-3">
-              <p className="text-xs text-muted-foreground">
-                Replaced {legacyAccounts.length === 1 ? "account" : "accounts"}. Leave
-                {legacyAccounts.length === 1 ? " it" : " them"} open on Stripe until the
-                remaining balance pays out.
-              </p>
-              {legacyAccounts.map((id, i) => (
-                <Button
-                  key={id}
-                  type="button"
-                  size="xs"
-                  variant="ghost"
-                  disabled={busy}
-                  onClick={() => confirmSwitchBack(id)}
-                >
-                  <RotateCcw />
-                  Send payments back to the previous account
-                  {legacyAccounts.length > 1 ? ` ${i + 1}` : ""}
-                </Button>
-              ))}
-            </div>
+            </>
           )}
         </div>
       )}
+
     </div>
   );
 }
