@@ -140,7 +140,7 @@ export async function createTourAction(
       .select("id");
     if (variantsErr) {
       return {
-        error: `Tour saved but variants failed to create: ${variantsErr.message}`,
+        error: `Tour saved, but assigning it to the businesses failed: ${variantsErr.message}`,
       };
     }
     const tierRows = (variants ?? []).flatMap((v) => [
@@ -154,7 +154,7 @@ export async function createTourAction(
         .insert(tierRows);
       if (tiersErr) {
         return {
-          error: `Variants created but default pax tiers failed: ${tiersErr.message}`,
+          error: `Businesses assigned, but the default prices failed to save: ${tiersErr.message}`,
         };
       }
     }

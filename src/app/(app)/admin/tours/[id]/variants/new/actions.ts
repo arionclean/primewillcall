@@ -86,7 +86,7 @@ export async function createVariantAction(
     if (vErr.code === "23505") {
       return {
         fieldErrors: {
-          business_id: "This business already has a variant of this tour.",
+          business_id: "This business already sells this tour.",
         },
       };
     }
@@ -104,7 +104,7 @@ export async function createVariantAction(
   const { error: tErr } = await supabase.from("tour_pax_tiers").insert(rows);
   if (tErr) {
     return {
-      error: `Variant created but pax tiers failed to save: ${tErr.message}`,
+      error: `Business added, but the prices failed to save: ${tErr.message}`,
     };
   }
 

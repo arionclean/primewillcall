@@ -205,7 +205,7 @@ export async function deleteTourAction(
     if (error.code === "23503") {
       return {
         error:
-          "This tour has business variants or bookings attached. Remove those first, then try again.",
+          "This tour is still assigned to a business, or it has bookings. Remove those first, then try again.",
       };
     }
     return { error: error.message };
