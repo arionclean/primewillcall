@@ -146,37 +146,16 @@ async function handleEvent(event: Stripe.Event): Promise<void> {
 
       await sb.from("businesses").update(status).eq("stripe_account_id", account.id);
 
-      // A business being moved to a new account has that account parked in
-      // stripe_account_id_pending, taking nothing, until Stripe enables charges on
-      // it. Stripe tells us the moment that happens, so promote it here instead of
-      // asking someone to watch for it and press a button. Gated on charges_enabled,
-      // so the business never points at an account that cannot take money. The old
-      // id is kept: its balance still has to pay out, and refunds of charges it took
-      // are routed by stripe_transactions.connected_account_id.
-      if (account.charges_enabled) {
-        const { data: moving } = await sb
-          .from("businesses")
-          .select("id, stripe_account_id, stripe_account_id_legacy")
-          .eq("stripe_account_id_pending", account.id)
-          .maybeSingle();
-        if (moving) {
-          const legacy = [...(moving.stripe_account_id_legacy ?? [])];
-          if (moving.stripe_account_id && !legacy.includes(moving.stripe_account_id)) {
-            legacy.push(moving.stripe_account_id);
-          }
-          await sb
-            .from("businesses")
-            .update({
-              stripe_account_id: account.id,
-              stripe_account_id_pending: null,
-              stripe_account_id_legacy: legacy,
-              stripe_fees_payer: account.controller?.fees?.payer ?? null,
-              ...status,
-            })
-            .eq("id", moving.id);
-          console.log(`[stripe-webhook] business ${moving.id} switched to ${account.id}`);
-        }
-      }
+      // The new account is NOT promoted here, even once Stripe enables charges.
+      //
+      // Switching a business's account moves its Terminal Locations and registered
+      // readers out from under it: those belong to the account, so a kiosk whose
+      // location was created on the old one starts failing with "No such location"
+      // the moment the switch lands. That is what happened to Miami Skyline Cruises
+      // when this promoted automatically, and a live kiosk stopped taking cards.
+      //
+      // So a pending account stays pending until the Terminal side is dealt with.
+      // Promotion is a deliberate act now, not a webhook side effect.
       return;
     }
     default:
