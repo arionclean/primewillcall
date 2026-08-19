@@ -39,19 +39,26 @@ export function appBaseUrl(): string {
 /**
  * Controller properties for every NEW connected account.
  *
- * Do NOT go back to `type: "express"`. That shorthand assigns
- * `controller.fees.payer = "application_express"`, which bills Stripe's Connect
- * fees ($2 per monthly active account + 0.25% of payout volume) to PRIME. Spelling
- * the controller out instead gives the business the same Express dashboard and the
- * same Stripe-run onboarding, while Stripe collects its fees from the business and
- * charges the platform nothing. Prime's `application_fee_amount` is unaffected.
+ * `fees.payer: "account"` is the whole point: Stripe bills its fees to the
+ * business, so Prime pays no Connect fee ($2 per monthly active account + 0.25%
+ * of payout volume). Do NOT go back to `type: "express"`, which assigns
+ * `fees.payer = "application_express"` and puts all of that on Prime.
  *
- * `losses.payments: "stripe"` also moves negative-balance liability off Prime,
- * which is what Stripe recommends for direct charges.
+ * The dashboard MUST be `full` here. An Express dashboard cannot be combined with
+ * a business that pays its own fees: Stripe rejects the account outright with
+ * "When stripe_dashboard[type]=express, your platform must collect fees and be
+ * liable for negative balances". Express and fee-free are mutually exclusive, so
+ * a fee-free business gets the full Stripe dashboard at dashboard.stripe.com
+ * instead of the Express one. Stripe still runs onboarding and still carries
+ * negative-balance liability (`losses.payments: "stripe"`), and Prime's
+ * `application_fee_amount` is unaffected.
+ *
+ * One consequence for callers: `accounts.createLoginLink` only works on Express
+ * accounts, so it must not be called for accounts created this way.
  */
 export function connectControllerParams(): Stripe.AccountCreateParams.Controller {
   return {
-    stripe_dashboard: { type: "express" },
+    stripe_dashboard: { type: "full" },
     fees: { payer: "account" },
     losses: { payments: "stripe" },
     requirement_collection: "stripe",
