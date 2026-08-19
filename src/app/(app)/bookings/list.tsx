@@ -43,6 +43,7 @@ import { cn } from "@/lib/utils";
 import { PaymentLinkButton } from "./payment-link-button";
 
 const PRIVACY_KEY = "pwc.bookings.privacy";
+const TOUR_FILTER_KEY = "pwc.bookings.tours";
 const TZ = "America/New_York";
 
 const slotTimeFormatter = new Intl.DateTimeFormat("en-US", {
@@ -717,6 +718,29 @@ export function BookingsList({
     }
   }, []);
 
+  /**
+   * Restore the tour filter. The bookings page renders this list under a
+   * <Suspense key={date}>, so picking another date tears the subtree down and
+   * builds it again: plain useState comes back empty and the filter looked
+   * like it forgot itself. Privacy above survives a date change for the same
+   * reason, so the filter is stored the same way.
+   */
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(TOUR_FILTER_KEY);
+      if (!stored) return;
+      const parsed: unknown = JSON.parse(stored);
+      if (!Array.isArray(parsed)) return;
+      // Keep only tours this staff member can still see. A tour that was
+      // turned off (or belongs to a business they no longer work for) would
+      // otherwise filter the list down to nothing with nothing to explain it.
+      const known = new Set(tours.map((t) => t.id));
+      setSelectedTourIds(parsed.filter((id) => known.has(id)));
+    } catch {
+      // ignore
+    }
+  }, [tours]);
+
   function togglePrivacy() {
     setPrivacyOn((prev) => {
       const next = !prev;
@@ -867,6 +891,11 @@ export function BookingsList({
   function applyFilter() {
     setSelectedTourIds(draftTourIds);
     setIsFilterOpen(false);
+    try {
+      window.localStorage.setItem(TOUR_FILTER_KEY, JSON.stringify(draftTourIds));
+    } catch {
+      // ignore
+    }
   }
 
   function toggleDraftGroup(ids: string[]) {
