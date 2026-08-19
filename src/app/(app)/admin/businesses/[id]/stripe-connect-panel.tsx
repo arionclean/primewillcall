@@ -145,17 +145,13 @@ export function StripeConnectPanel({
   // "not switched on" at someone whose platform is configured fine.
   const [configured, setConfigured] = useState<boolean | null>(null);
 
-  const connected = Boolean(business.stripe_account_id);
+  const connected = business.stripe_fees_payer === "account";
   const status = accountStatus(business);
   const needsAttention =
     connected &&
     (!business.stripe_charges_enabled || business.stripe_requirements_due > 0);
   const busy = isPending || configured === false;
 
-  // True once the business is on the new account setup. Anything else, NULL
-  // included, is an account created before it, and gets offered the move. NULL just
-  // means Stripe has not been read for the account yet.
-  const onNewSetup = business.stripe_fees_payer === "account";
 
   /**
    * Read Stripe's view of this business: is the platform usable, and is a switch
@@ -258,18 +254,16 @@ export function StripeConnectPanel({
           <span className="flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
             <CreditCard className="size-5" />
           </span>
-          <div className="space-y-1">
-            <p className="text-sm font-medium">Accept payments with Stripe</p>
-            <p className="mx-auto max-w-sm text-xs text-muted-foreground">
-              Stripe collects the business details, verifies them, and pays out to
-              their bank. It takes a few minutes and all of it happens on Stripe.
-            </p>
-          </div>
+          <p className="text-sm font-medium">Accept payments with Stripe</p>
           <Button
             type="button"
             size="lg"
             disabled={busy}
-            onClick={() => run({ action: "create" })}
+            onClick={() =>
+              run({
+                action: business.stripe_account_id ? "start_migration" : "create",
+              })
+            }
           >
             Set up payments with Stripe
             <ExternalLink />
@@ -286,24 +280,6 @@ export function StripeConnectPanel({
         <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
           {notice}
         </p>
-      )}
-
-      {connected && !onNewSetup && (
-        <div className="rounded-lg border bg-muted/30 px-4 py-3">
-          {/* One button for the whole move. It creates the new account, or reopens
-              the setup Stripe left half-finished, and the switch happens by itself
-              once Stripe enables charges (see account.updated in stripe-webhook).
-              Nothing here for anyone to decide or remember to come back and press. */}
-          <Button
-            type="button"
-            size="sm"
-            disabled={busy}
-            onClick={() => run({ action: "start_migration" })}
-          >
-            Set up a new account
-            <ExternalLink />
-          </Button>
-        </div>
       )}
 
     </div>
