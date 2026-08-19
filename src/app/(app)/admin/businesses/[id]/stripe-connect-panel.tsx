@@ -4,7 +4,6 @@ import { CreditCard, ExternalLink, RefreshCw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, useTransition } from "react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -30,7 +29,6 @@ type ConnectResponse = {
   url?: string;
   ok?: true;
   configured?: boolean;
-  pending?: PendingAccount | null;
 };
 
 /**
@@ -68,13 +66,6 @@ type BusinessPaymentsFields = {
   stripe_account_id_pending: string | null;
   stripe_account_id_legacy: string[];
   stripe_fees_payer: string | null;
-};
-
-type PendingAccount = {
-  id: string;
-  chargesEnabled: boolean;
-  detailsSubmitted: boolean;
-  requirementsDue: number;
 };
 
 type StripeConnectPanelProps = {
@@ -153,7 +144,6 @@ export function StripeConnectPanel({
   // null while the first status call is in flight, so the panel does not flash
   // "not switched on" at someone whose platform is configured fine.
   const [configured, setConfigured] = useState<boolean | null>(null);
-  const [pending, setPending] = useState<PendingAccount | null>(null);
 
   const connected = Boolean(business.stripe_account_id);
   const status = accountStatus(business);
@@ -184,7 +174,6 @@ export function StripeConnectPanel({
       return;
     }
     setConfigured(data.configured ?? false);
-    setPending(data.pending ?? null);
   }, [business.id]);
 
   function run(request: ConnectRequest) {
@@ -206,13 +195,6 @@ export function StripeConnectPanel({
         router.refresh();
       }
     });
-  }
-
-  function confirmSwitch() {
-    const ok = window.confirm(
-      "Switch this business to the new account? Every new payment will settle there from now on. Payments already taken, and refunds for them, are not affected.",
-    );
-    if (ok) run({ action: "switch_over" });
   }
 
   // Bootstrap: ask the function what it can do and whether a switch is pending.
@@ -257,19 +239,6 @@ export function StripeConnectPanel({
                 onClick={() => run({ action: "onboarding_link" })}
               >
                 Finish setup on Stripe
-                <ExternalLink />
-              </Button>
-            )}
-            {/* Only the older accounts have a Stripe dashboard to open. Accounts on
-                the new setup have none by design, and createLoginLink would error. */}
-            {business.stripe_details_submitted && !onNewSetup && (
-              <Button
-                type="button"
-                variant="outline"
-                disabled={busy}
-                onClick={() => run({ action: "login_link" })}
-              >
-                Open Stripe dashboard
                 <ExternalLink />
               </Button>
             )}
@@ -320,56 +289,20 @@ export function StripeConnectPanel({
       )}
 
       {connected && !onNewSetup && (
-        <div className="space-y-2 rounded-lg border bg-muted/30 px-4 py-3">
-          {pending ? (
-            <>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-medium">New account</span>
-                <Badge tone={pending.chargesEnabled ? "success" : "neutral"}>
-                  {pending.chargesEnabled ? "Ready to switch" : "Setting up"}
-                </Badge>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={busy || !pending.chargesEnabled}
-                  onClick={confirmSwitch}
-                >
-                  Switch over
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => run({ action: "onboarding_link", target: "pending" })}
-                >
-                  Continue setup
-                  <ExternalLink />
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  disabled={busy}
-                  onClick={() => run({ action: "cancel_migration" })}
-                >
-                  Discard
-                </Button>
-              </div>
-            </>
-          ) : (
-            <Button
-              type="button"
-              size="sm"
-              disabled={busy}
-              onClick={() => run({ action: "start_migration" })}
-            >
-              Set up a new account
-              <ExternalLink />
-            </Button>
-          )}
+        <div className="rounded-lg border bg-muted/30 px-4 py-3">
+          {/* One button for the whole move. It creates the new account, or reopens
+              the setup Stripe left half-finished, and the switch happens by itself
+              once Stripe enables charges (see account.updated in stripe-webhook).
+              Nothing here for anyone to decide or remember to come back and press. */}
+          <Button
+            type="button"
+            size="sm"
+            disabled={busy}
+            onClick={() => run({ action: "start_migration" })}
+          >
+            Set up a new account
+            <ExternalLink />
+          </Button>
         </div>
       )}
 
