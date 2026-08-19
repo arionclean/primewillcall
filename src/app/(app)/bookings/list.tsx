@@ -830,15 +830,34 @@ export function BookingsList({
     [selectedTourIds],
   );
 
+  /**
+   * One filter row per tour name, not one per business that sells it. Two
+   * businesses selling the same tour are two rows in the database but one
+   * product to whoever is reading this list, and listing the name twice just
+   * read as the list repeating itself. The group keeps every id behind that
+   * name, so the booking filter below still matches on business_tour_id and a
+   * grouped row covers both businesses' bookings.
+   */
+  const tourGroups = useMemo(() => {
+    const map = new Map<string, { name: string; ids: string[] }>();
+    for (const t of tours) {
+      const name = t.name || t.masterTourName || "Unnamed tour";
+      const group = map.get(name);
+      if (group) group.ids.push(t.id);
+      else map.set(name, { name, ids: [t.id] });
+    }
+    return [...map.values()];
+  }, [tours]);
+
   const tourFilterLabel = useMemo(() => {
     if (tours.length === 0) return "No tours";
     if (selectedTourIds.length === 0) return "All tours";
-    if (selectedTourIds.length === 1) {
-      const t = tourById.get(selectedTourIds[0]);
-      return t?.name ?? "Selected tour";
-    }
-    return `${selectedTourIds.length} tours`;
-  }, [tourById, tours.length, selectedTourIds]);
+    const names = tourGroups
+      .filter((g) => g.ids.some((id) => selectedTourSet.has(id)))
+      .map((g) => g.name);
+    if (names.length === 1) return names[0];
+    return `${names.length} tours`;
+  }, [tourGroups, tours.length, selectedTourIds.length, selectedTourSet]);
 
   function openFilter() {
     setDraftTourIds(selectedTourIds);
@@ -850,12 +869,13 @@ export function BookingsList({
     setIsFilterOpen(false);
   }
 
-  function toggleDraftTour(id: string) {
+  function toggleDraftGroup(ids: string[]) {
     setDraftTourIds((current) => {
-      if (current.length === 0) return [id];
-      const next = current.includes(id)
-        ? current.filter((x) => x !== id)
-        : [...current, id];
+      // No selection means "All tours", so the first tap selects just this one.
+      if (current.length === 0) return ids;
+      const next = ids.every((id) => current.includes(id))
+        ? current.filter((x) => !ids.includes(x))
+        : [...current, ...ids.filter((id) => !current.includes(id))];
       if (next.length === 0 || next.length === tours.length) return [];
       return next;
     });
@@ -1299,13 +1319,15 @@ export function BookingsList({
                 ) : null}
               </button>
 
-              {tours.map((tour) => {
-                const isSelected = draftTourIds.includes(tour.id);
+              {tourGroups.map((group) => {
+                const isSelected = group.ids.every((id) =>
+                  draftTourIds.includes(id),
+                );
                 return (
                   <button
-                    key={tour.id}
+                    key={group.name}
                     type="button"
-                    onClick={() => toggleDraftTour(tour.id)}
+                    onClick={() => toggleDraftGroup(group.ids)}
                     aria-pressed={isSelected}
                     className={cn(
                       "flex min-h-12 w-full items-center justify-between gap-3 rounded-lg border px-3 text-left text-sm font-medium transition-colors",
@@ -1314,14 +1336,7 @@ export function BookingsList({
                         : "border-transparent text-foreground hover:bg-muted",
                     )}
                   >
-                    <span className="min-w-0 truncate">
-                      {tour.name || tour.masterTourName || "Unnamed tour"}
-                      {role === "owner" && tour.businessName ? (
-                        <span className="ml-1 text-xs text-muted-foreground">
-                          ({tour.businessName})
-                        </span>
-                      ) : null}
-                    </span>
+                    <span className="min-w-0 truncate">{group.name}</span>
                     {isSelected ? <Check className="size-5 shrink-0" /> : null}
                   </button>
                 );

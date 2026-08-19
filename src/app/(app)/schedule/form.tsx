@@ -37,6 +37,12 @@ export type ScheduleFormTour = {
 
 const INITIAL: CreateBookingState = {};
 
+/** "a date, a departure time, and the guest name" for the missing-fields hint. */
+const LIST_FORMAT = new Intl.ListFormat("en", {
+  style: "long",
+  type: "conjunction",
+});
+
 /** "14:30:00" -> "2:30 PM". Timeslots are stored as a plain local clock time. */
 function slotLabel(t: string): string {
   const m = /^(\d{1,2}):(\d{2})/.exec(t);
@@ -144,6 +150,20 @@ export function ScheduleForm({
   if (!selected) return null;
 
   const noSlots = selected.timeslots.length === 0;
+
+  /**
+   * What the booking still needs before it can be saved. The server action
+   * checks the same five fields and is the real gate; this only keeps the desk
+   * from submitting a booking it already knows is incomplete, and says which
+   * field is missing instead of leaving the button dead with no explanation.
+   */
+  const missing = [
+    !selected.id && "a tour",
+    !date.trim() && "a date",
+    !slot && "a departure time",
+    !customer.full_name.trim() && "the guest name",
+    !anyQty && "at least one guest",
+  ].filter((m): m is string => typeof m === "string");
 
   return (
     <form action={formAction} className="space-y-6">
@@ -432,8 +452,13 @@ export function ScheduleForm({
         </p>
       )}
 
-      <div className="flex items-center gap-2">
-        <SubmitButton disabled={noSlots || !anyQty}>Save booking</SubmitButton>
+      <div className="flex flex-wrap items-center gap-3">
+        <SubmitButton disabled={missing.length > 0}>Save booking</SubmitButton>
+        {missing.length > 0 && (
+          <p className="text-sm text-muted-foreground">
+            Still needed: {LIST_FORMAT.format(missing)}.
+          </p>
+        )}
       </div>
     </form>
   );
