@@ -39,19 +39,34 @@ export function appBaseUrl(): string {
 /**
  * Controller properties for every NEW connected account.
  *
- * Do NOT go back to `type: "express"`. That shorthand assigns
- * `controller.fees.payer = "application_express"`, which bills Stripe's Connect
- * fees ($2 per monthly active account + 0.25% of payout volume) to PRIME. Spelling
- * the controller out instead gives the business the same Express dashboard and the
- * same Stripe-run onboarding, while Stripe collects its fees from the business and
- * charges the platform nothing. Prime's `application_fee_amount` is unaffected.
+ * `fees.payer: "account"` is the whole point: Stripe bills its fees to the
+ * business, so Prime pays no Connect fee ($2 per monthly active account + 0.25%
+ * of payout volume). Do NOT go back to `type: "express"`, which assigns
+ * `fees.payer = "application_express"` and puts all of that on Prime.
  *
- * `losses.payments: "stripe"` also moves negative-balance liability off Prime,
- * which is what Stripe recommends for direct charges.
+ * The dashboard is `none`, and that is forced by the fee choice. Stripe rejects
+ * an Express dashboard whenever the business pays its own fees:
+ * "When stripe_dashboard[type]=express, your platform must collect fees and be
+ * liable for negative balances." Accounts v2 enforces the same rule
+ * (`account_controller_express_dash_without_application_losses_or_fees`), so this
+ * is not something a newer API unlocks. That leaves `full`, which hands the
+ * business an ordinary Stripe account, or `none`, which keeps the account inside
+ * PrimeWillCall. We want the second.
+ *
+ * `none` is only unsupported when requirement collection AND loss liability both
+ * sit with the platform. Here Stripe carries both, so it is allowed, and Stripe
+ * still runs hosted onboarding and KYC.
+ *
+ * Two consequences for callers:
+ *   - `accounts.createLoginLink` is Express-only. Never call it for these.
+ *   - There is no self-serve dashboard, and `account_update` links are not
+ *     available when Stripe is liable for losses. A business that needs to change
+ *     its own bank details later needs Connect embedded components, which are not
+ *     built yet.
  */
 export function connectControllerParams(): Stripe.AccountCreateParams.Controller {
   return {
-    stripe_dashboard: { type: "express" },
+    stripe_dashboard: { type: "none" },
     fees: { payer: "account" },
     losses: { payments: "stripe" },
     requirement_collection: "stripe",
