@@ -329,10 +329,6 @@ export function StripeConnectPanel({
                   {pending.chargesEnabled ? "Ready to switch" : "Setting up"}
                 </Badge>
               </div>
-              <p className="text-xs text-muted-foreground">
-                It takes no payments until you switch over. Nothing changes for the
-                business in the meantime.
-              </p>
               <div className="flex flex-wrap items-center gap-2">
                 <Button
                   type="button"
@@ -364,21 +360,15 @@ export function StripeConnectPanel({
               </div>
             </>
           ) : (
-            <>
-              <p className="text-xs text-muted-foreground">
-                Move this business to a new Stripe account. They confirm their details
-                once, then you switch it over. Nothing changes for them until you do.
-              </p>
-              <Button
-                type="button"
-                size="sm"
-                disabled={busy}
-                onClick={() => run({ action: "start_migration" })}
-              >
-                Set up a new account
-                <ExternalLink />
-              </Button>
-            </>
+            <Button
+              type="button"
+              size="sm"
+              disabled={busy}
+              onClick={() => run({ action: "start_migration" })}
+            >
+              Set up a new account
+              <ExternalLink />
+            </Button>
           )}
         </div>
       )}
