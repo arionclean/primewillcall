@@ -152,6 +152,25 @@ Deno.serve(async (req) => {
       if (!biz.stripe_account_id_pending) return json({ configured: true, pending: null });
       try {
         const account = await stripe.accounts.retrieve(biz.stripe_account_id_pending);
+        // Stripe enabling the account is what ends the setup, and the webhook does
+        // that promotion the moment it hears. Doing it here too means a business
+        // that is ready never sits waiting on a message that went missing.
+        if (account.charges_enabled) {
+          const legacy = [...(biz.stripe_account_id_legacy ?? [])];
+          if (biz.stripe_account_id && !legacy.includes(biz.stripe_account_id)) {
+            legacy.push(biz.stripe_account_id);
+          }
+          await db
+            .from("businesses")
+            .update({
+              stripe_account_id: account.id,
+              stripe_account_id_pending: null,
+              stripe_account_id_legacy: legacy,
+              ...accountStatusColumns(account),
+            })
+            .eq("id", businessId);
+          return json({ configured: true, pending: null });
+        }
         return json({
           configured: true,
           pending: {
