@@ -25,10 +25,19 @@ type ConnectRequest = {
   account_id?: string;
 };
 
+/** The account a business is being set up on, while Stripe still has it parked. */
+type PendingAccount = {
+  id: string;
+  chargesEnabled: boolean;
+  detailsSubmitted: boolean;
+  requirementsDue: number;
+};
+
 type ConnectResponse = {
   url?: string;
   ok?: true;
   configured?: boolean;
+  pending?: PendingAccount | null;
 };
 
 /**
@@ -127,6 +136,37 @@ function accountStatus(b: BusinessPaymentsFields): {
   };
 }
 
+/**
+ * The same plain-language treatment for an account that is still being set up.
+ * Until Stripe enables it, the only thing worth showing is whether someone has to
+ * go back to Stripe or just wait.
+ */
+function pendingStatus(pending: PendingAccount): {
+  label: string;
+  detail: string;
+  needsStripe: boolean;
+} {
+  if (!pending.detailsSubmitted) {
+    return {
+      label: "Setup started",
+      detail: "The details still have to be finished on Stripe.",
+      needsStripe: true,
+    };
+  }
+  if (pending.requirementsDue > 0) {
+    return {
+      label: "A few more details needed",
+      detail: "Stripe needs the rest before payments can start.",
+      needsStripe: true,
+    };
+  }
+  return {
+    label: "Waiting on Stripe",
+    detail: "Stripe is checking the details. Nothing to do right now.",
+    needsStripe: false,
+  };
+}
+
 const DOT: Record<Tone, string> = {
   live: "bg-emerald-500",
   pending: "bg-amber-500",
@@ -144,6 +184,9 @@ export function StripeConnectPanel({
   // null while the first status call is in flight, so the panel does not flash
   // "not switched on" at someone whose platform is configured fine.
   const [configured, setConfigured] = useState<boolean | null>(null);
+  // The account being set up, as Stripe has it right now. It lives on Stripe until
+  // it is enabled, so it is read on load rather than mirrored into the row.
+  const [pending, setPending] = useState<PendingAccount | null>(null);
 
   const connected = business.stripe_fees_payer === "account";
   const status = accountStatus(business);
@@ -170,7 +213,12 @@ export function StripeConnectPanel({
       return;
     }
     setConfigured(data.configured ?? false);
-  }, [business.id]);
+    setPending(data.pending ?? null);
+    // The function switches a business over the moment Stripe enables the new
+    // account, so a status call that comes back with nothing pending may have just
+    // done it. Re-read the row rather than leaving the screen a step behind.
+    if (data.pending === null && business.stripe_account_id_pending) router.refresh();
+  }, [business.id, business.stripe_account_id_pending, router]);
 
   function run(request: ConnectRequest) {
     setError(null);
@@ -243,6 +291,45 @@ export function StripeConnectPanel({
               variant="ghost"
               disabled={busy}
               onClick={() => run({ action: "refresh" })}
+            >
+              <RefreshCw />
+              Refresh
+            </Button>
+          </div>
+        </div>
+      ) : pending ? (
+        /* Setup is under way on Stripe. Showing the empty state here reads as
+           "nothing has happened", and whoever started it goes and starts it again. */
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <span
+              className={cn("mt-1.5 size-2 shrink-0 rounded-full", DOT.pending)}
+              aria-hidden
+            />
+            <div className="space-y-0.5">
+              <p className="text-sm font-medium">{pendingStatus(pending).label}</p>
+              <p className="text-xs text-muted-foreground">
+                {pendingStatus(pending).detail}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {pendingStatus(pending).needsStripe && (
+              <Button
+                type="button"
+                disabled={busy}
+                onClick={() => run({ action: "onboarding_link", target: "pending" })}
+              >
+                Continue on Stripe
+                <ExternalLink />
+              </Button>
+            )}
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={busy}
+              onClick={() => startTransition(loadStatus)}
             >
               <RefreshCw />
               Refresh

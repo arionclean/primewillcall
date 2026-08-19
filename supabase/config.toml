@@ -49,3 +49,9 @@ verify_jwt = true
 
 [functions.gp-book]
 verify_jwt = true
+
+[functions.stripe-connect]
+verify_jwt = true
+
+[functions.payments]
+verify_jwt = true
