@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, useTransition } from "react";
 
 import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -260,30 +260,19 @@ export function StripeConnectPanel({
                 <ExternalLink />
               </Button>
             )}
-            {business.stripe_details_submitted &&
-              (onNewSetup ? (
-                // Accounts on the new setup use the full Stripe Dashboard, which has
-                // no platform-minted login link: the business signs in themselves.
-                <a
-                  href="https://dashboard.stripe.com"
-                  target="_blank"
-                  rel="noreferrer"
-                  className={buttonVariants({ variant: "outline" })}
-                >
-                  Open Stripe dashboard
-                  <ExternalLink />
-                </a>
-              ) : (
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => run({ action: "login_link" })}
-                >
-                  Open Stripe dashboard
-                  <ExternalLink />
-                </Button>
-              ))}
+            {/* Only the older accounts have a Stripe dashboard to open. Accounts on
+                the new setup have none by design, and createLoginLink would error. */}
+            {business.stripe_details_submitted && !onNewSetup && (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy}
+                onClick={() => run({ action: "login_link" })}
+              >
+                Open Stripe dashboard
+                <ExternalLink />
+              </Button>
+            )}
             <Button
               type="button"
               variant="ghost"

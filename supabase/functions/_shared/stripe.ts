@@ -44,21 +44,29 @@ export function appBaseUrl(): string {
  * of payout volume). Do NOT go back to `type: "express"`, which assigns
  * `fees.payer = "application_express"` and puts all of that on Prime.
  *
- * The dashboard MUST be `full` here. An Express dashboard cannot be combined with
- * a business that pays its own fees: Stripe rejects the account outright with
+ * The dashboard is `none`, and that is forced by the fee choice. Stripe rejects
+ * an Express dashboard whenever the business pays its own fees:
  * "When stripe_dashboard[type]=express, your platform must collect fees and be
- * liable for negative balances". Express and fee-free are mutually exclusive, so
- * a fee-free business gets the full Stripe dashboard at dashboard.stripe.com
- * instead of the Express one. Stripe still runs onboarding and still carries
- * negative-balance liability (`losses.payments: "stripe"`), and Prime's
- * `application_fee_amount` is unaffected.
+ * liable for negative balances." Accounts v2 enforces the same rule
+ * (`account_controller_express_dash_without_application_losses_or_fees`), so this
+ * is not something a newer API unlocks. That leaves `full`, which hands the
+ * business an ordinary Stripe account, or `none`, which keeps the account inside
+ * PrimeWillCall. We want the second.
  *
- * One consequence for callers: `accounts.createLoginLink` only works on Express
- * accounts, so it must not be called for accounts created this way.
+ * `none` is only unsupported when requirement collection AND loss liability both
+ * sit with the platform. Here Stripe carries both, so it is allowed, and Stripe
+ * still runs hosted onboarding and KYC.
+ *
+ * Two consequences for callers:
+ *   - `accounts.createLoginLink` is Express-only. Never call it for these.
+ *   - There is no self-serve dashboard, and `account_update` links are not
+ *     available when Stripe is liable for losses. A business that needs to change
+ *     its own bank details later needs Connect embedded components, which are not
+ *     built yet.
  */
 export function connectControllerParams(): Stripe.AccountCreateParams.Controller {
   return {
-    stripe_dashboard: { type: "full" },
+    stripe_dashboard: { type: "none" },
     fees: { payer: "account" },
     losses: { payments: "stripe" },
     requirement_collection: "stripe",
