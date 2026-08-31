@@ -18,6 +18,7 @@ import {
   toggleAutomationActiveAction,
   deleteAutomationAction,
   updateAutomationProductAction,
+  updateAutomationTriggerAction,
   updateRuleAction,
   updateWaitGapAction,
   type MessagingActionState,
@@ -47,10 +48,19 @@ const INITIAL: MessagingActionState = {};
 /*  Trigger controls                                                          */
 /* -------------------------------------------------------------------------- */
 
-function TriggerSelect({ value, onChange }: { value: string; onChange?: (v: string) => void }) {
+function TriggerSelect({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  onChange?: (v: string) => void;
+  disabled?: boolean;
+}) {
   return (
     <Select
       value={value}
+      disabled={disabled}
       onChange={(event) => onChange?.(event.target.value)}
       className="h-9 w-auto max-w-full"
       aria-label="Trigger event"
@@ -61,6 +71,41 @@ function TriggerSelect({ value, onChange }: { value: string; onChange?: (v: stri
         </option>
       ))}
     </Select>
+  );
+}
+
+/**
+ * The trigger on a SAVED automation, which writes on change.
+ *
+ * The select is controlled, so without a handler React re-renders it straight
+ * back to the stored value and the choice looks like it was ignored. The
+ * optimistic value holds the new trigger while the write is in flight.
+ */
+function AutomationTriggerPicker({
+  automationId,
+  triggerEvent,
+}: {
+  automationId: string;
+  triggerEvent: string;
+}) {
+  const [pending, startTransition] = useTransition();
+  const [optimisticTrigger, setOptimisticTrigger] = useOptimistic(triggerEvent);
+
+  return (
+    <TriggerSelect
+      value={optimisticTrigger}
+      disabled={pending}
+      onChange={(next) => {
+        if (next === optimisticTrigger) return;
+        startTransition(async () => {
+          setOptimisticTrigger(next);
+          const fd = new FormData();
+          fd.set("automation_id", automationId);
+          fd.set("trigger_event", next);
+          await updateAutomationTriggerAction(fd);
+        });
+      }}
+    />
   );
 }
 
@@ -709,7 +754,7 @@ function AutomationCard({
             </p>
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <span className="font-medium">When</span>
-              <TriggerSelect value={triggerEvent} />
+              <AutomationTriggerPicker automationId={automationId} triggerEvent={triggerEvent} />
               <span className="font-medium">for</span>
               <TriggerProductPicker
                 automationId={automationId}

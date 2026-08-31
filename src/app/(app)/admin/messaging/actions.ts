@@ -288,6 +288,29 @@ export async function updateAutomationProductAction(formData: FormData): Promise
   revalidatePath("/admin/messaging");
 }
 
+/**
+ * Move a whole automation onto a different trigger.
+ *
+ * Scoped by `automation_id`, like the product picker, so every message in the
+ * sequence moves together: a trigger belongs to the automation, not to the
+ * individual message rows that store a copy of it.
+ */
+export async function updateAutomationTriggerAction(formData: FormData): Promise<void> {
+  const auth = await requireOwner();
+  if (!auth.ok) return;
+
+  const automationId = String(formData.get("automation_id") ?? "").trim();
+  if (!automationId) return;
+
+  const { error } = await auth.supabase
+    .from("messaging_rules")
+    .update({ trigger_event: readTrigger(formData) })
+    .eq("automation_id", automationId);
+  if (error) return;
+
+  revalidatePath("/admin/messaging");
+}
+
 /** Create a WhatsApp text template in Twilio and submit it for Meta approval. */
 export async function createWhatsappTemplateAction(
   _prev: MessagingActionState,
