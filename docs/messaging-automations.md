@@ -13,7 +13,8 @@ An **automation** is a **trigger** plus one or more **actions**:
   (added in `20260712120000_messaging_rules_automation_id.sql`; backfilled by the old
   trigger+product grouping). Creating a message with no `automation_id` starts a new
   automation (the column default mints a fresh id); "Add action" passes the existing id.
-- **Trigger**: `trigger_event` (only `new_booking` today) + `business_tour_ids` (a
+- **Trigger**: `trigger_event` (`new_booking` or `new_booking_non_us`, see "US vs
+  non US" below) + `business_tour_ids` (a
   `uuid[]` of products; `null` or empty = any product). Multi-select, so one automation can
   cover three products and skip the rest, which the old single `business_tour_id` column
   could not express (replaced in `20260818120000_messaging_rules_multi_product.sql`, which
@@ -27,6 +28,53 @@ An **automation** is a **trigger** plus one or more **actions**:
   (`sms` / `whatsapp`), the body or WhatsApp template, `only_first_contact`, `is_active`,
   and `delay_minutes`. Messages have no user-facing name; the row's `name` is auto-derived
   for storage and the UI shows the message content.
+
+### US vs non US (`new_booking` / `new_booking_non_us`)
+
+The two booking triggers split on the customer's phone and are **exclusive**:
+`run-booking-automations` classifies the number once (`classifyPhone` in
+`supabase/functions/_shared/phone.ts`) and queries rules for exactly one of them, so a
+guest never collects both sets of messages and the owner never has to add an "unless"
+anywhere.
+
+They are separate triggers rather than one trigger with a condition because an overseas
+guest usually needs a *different* message, not the same one: WhatsApp instead of SMS,
+no US reply instructions, and often fewer follow-ups given what international SMS costs.
+Written as two automations, each side is edited on its own in the same builder.
+
+**"US" means the +1 country code**, which is all a phone number can answer on its own,
+so Canada and the Caribbean count as US here. That matches what Twilio treats as
+domestic, which is the thing the split is really about.
+
+`new_booking` keeps its exact former meaning and is simply worded honestly now, "A new
+booking comes in from a US phone". Before this trigger existed the runner normalized with
+a US-only helper, so an overseas number resolved to `NULL` and the run stopped at "no
+customer phone" before a single rule was read: `new_booking` could only ever reach a US
+number. The label was the inaccurate half, not the behaviour, so every automation built
+before the split behaves identically after it.
+
+There is deliberately no third "any phone" trigger. It would have to fire alongside one
+of the other two, which is how a guest ends up with two confirmations, and the owner
+would have no way to see that from the cards.
+
+**What counts as reachable.** `classifyPhone` returns `null` (send nothing) unless it can
+place the number without guessing:
+
+| Stored value | Result |
+| --- | --- |
+| `7865551234`, `(305) 555-1234`, `+13055551234` | US, `+13055551234` |
+| `+34 607 96 05 85`, `(+44)1803225485` | non US, `+34607960585` / `+441803225485` |
+| `0031610501406` (the `00` international prefix) | non US, `+31610501406` |
+| `306947705650` (bare digits, no country code marker) | refused |
+| `0211276116` (a New Zealand mobile stored as 10 digits) | refused |
+| `N/A`, `6`, `1852468624995504` | refused |
+
+A number is only read as international when its country code is **explicit**, a leading
+`+` or the `00` access prefix. Bare non-US-shaped digits are refused rather than guessed,
+because prefixing `+` to a national number that dropped its country code invents a
+different number, and a guessed number is someone else's phone. The cost of that
+strictness is ~3.2k legacy rows that could theoretically be reached but are not; all of
+them are Xano-synced, which never fire automations anyway.
 
 **Waits**: the builder treats an automation as a SEQUENCE. A Wait node is the gap
 between the previous step and the next message ("wait 1 day, then continue"); editing a
@@ -147,3 +195,12 @@ select cron.schedule(
 - **No retry**: a failed dispatch is marked `failed`, not retried. Add an attempts-based
   requeue if Twilio flakiness becomes an issue.
 - **`only_first_contact` is evaluated at enqueue time**, not at send time.
+- **International SMS needs Twilio geo permissions.** Twilio blocks SMS to a country
+  until that country is enabled under Messaging > Geo permissions, and prices per
+  country. A `new_booking_non_us` automation that looks correct will still fail at
+  dispatch until the destination countries are switched on. WhatsApp does not have this
+  restriction, which is one more reason it is usually the right channel for that trigger.
+- **The app cannot yet capture a non-US number.** `PhoneInput`, `/schedule` and `/gp`
+  all mask to 10 US digits, so today the only overseas numbers in the book arrive from
+  the Xano sync and OTA email parsing. The trigger is correct and ready, but staff cannot
+  key an international guest in by hand until the input side grows a country code.

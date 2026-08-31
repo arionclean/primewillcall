@@ -245,7 +245,12 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
 - Profile / settings not built.
 - **Messaging automations** (`/admin/messaging`) are built: owner rules grouped as
   trigger (a new booking, per product) plus one or more actions (SMS / WhatsApp), each with
-  an optional **wait** (`messaging_rules.delay_minutes`). The engine is **all in Supabase**:
+  an optional **wait** (`messaging_rules.delay_minutes`). The trigger is a **US / non US**
+  pair (`new_booking` / `new_booking_non_us`), split on the customer's phone by
+  `classifyPhone` in `_shared/phone.ts`; the two are exclusive, so exactly one fires per
+  booking and nobody is double-messaged. There is no "any phone" trigger on purpose.
+  "US" is the +1 country code, so Canada and the Caribbean count as US. The engine is
+  **all in Supabase**:
   the `on_native_booking_created` trigger calls the `run-booking-automations` edge function,
   which only ever ENQUEUES into `scheduled_messages`; `dispatch-scheduled-messages`
   (pg_cron) is the single thing that calls Twilio and it enforces the global hourly cap.

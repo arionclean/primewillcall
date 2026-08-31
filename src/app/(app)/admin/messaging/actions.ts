@@ -20,7 +20,7 @@ export type MessagingActionState = {
  * silently rewritten to new_booking by readTrigger, so a value that reaches
  * the form but not this set becomes a live new-booking message.
  */
-const ALLOWED_TRIGGERS = new Set(["new_booking"]);
+const ALLOWED_TRIGGERS = new Set(["new_booking", "new_booking_non_us"]);
 
 function readTrigger(formData: FormData): string {
   const value = String(formData.get("trigger_event") ?? "new_booking").trim();

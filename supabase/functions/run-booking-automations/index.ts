@@ -12,7 +12,7 @@
 // dispatcher uses). SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY are auto-injected.
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { toE164 } from "../_shared/phone.ts";
+import { classifyPhone } from "../_shared/phone.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -99,10 +99,17 @@ Deno.serve(async (req) => {
 
   const customer = booking.customer as { full_name: string | null; phone: string | null } | null;
   const product = booking.product as { name: string | null } | null;
-  // customers.phone is digits only; everything downstream (Twilio, sms_messages,
-  // sms_opt_outs) speaks E.164, so convert once here and queue the E.164 form.
-  const toPhone = toE164(customer?.phone);
-  if (!toPhone) return Response.json({ skipped: "no customer phone" });
+  // customers.phone is digits only for numbers this app captured, but the rows
+  // synced from Xano arrive in every shape there is; everything downstream
+  // (Twilio, sms_messages, sms_opt_outs) speaks E.164, so convert once here and
+  // queue the E.164 form. The same read decides WHICH trigger fires: a US
+  // number takes new_booking, an overseas one takes new_booking_non_us. The two
+  // are exclusive, so a guest never collects both sets of messages, and a
+  // number we cannot place is not sent to at all.
+  const phone = classifyPhone(customer?.phone);
+  if (!phone) return Response.json({ skipped: "no usable customer phone" });
+  const toPhone = phone.e164;
+  const triggerEvent = phone.isUs ? "new_booking" : "new_booking_non_us";
 
   const base = (settings.booking_link_base ?? "https://bked.io/booking").replace(/\/+$/, "");
   const vars: Record<string, string> = {
@@ -123,7 +130,7 @@ Deno.serve(async (req) => {
       "id, channel, body, whatsapp_content_sid, whatsapp_variables, only_first_contact, " +
         "delay_minutes, business_tour_ids",
     )
-    .eq("trigger_event", "new_booking")
+    .eq("trigger_event", triggerEvent)
     .eq("is_active", true);
   if (ruleErr) return Response.json({ error: ruleErr.message }, { status: 500 });
   const productId = booking.business_tour_id as string | null;

@@ -80,17 +80,35 @@ export type Channel = "sms" | "whatsapp";
 export const ANY_KEY = "__any__";
 
 /**
- * The events an automation can start from. Only "a new booking comes in" is
- * wired to the sending engine today; this list is the seam for adding more.
+ * The events an automation can start from.
+ *
+ * The two booking events split on the customer's phone and are EXCLUSIVE: the
+ * engine reads the number once and fires exactly one of them, so a guest never
+ * receives both sets of messages and no automation needs an "unless" on it.
+ * They are separate triggers because an overseas guest usually needs a
+ * different message, not the same one: WhatsApp rather than SMS, no US reply
+ * instructions, and often fewer follow-ups given what international SMS costs.
+ *
+ * `new_booking` is worded "from a US phone" rather than plain "a new booking"
+ * because that is all it has ever done. The engine normalized every number
+ * through a US-only helper, so an overseas booking stopped at "no customer
+ * phone" before any rule was read. The label was the inaccurate half, not the
+ * behaviour, so naming it honestly changes no automation that already exists.
+ *
+ * "US" is the +1 country code, which is all a phone number can tell us on its
+ * own, so Canada and the Caribbean count as US here.
  *
  * The post-tour review funnel is deliberately NOT here. It branches on the
  * customer's reply and cancels itself on uncheck, which this rules model
  * cannot express, so it is a fixed flow instead. See docs/review-automation.md.
  */
-export const TRIGGERS = [{ value: "new_booking", label: "A new booking comes in" }] as const;
+export const TRIGGERS = [
+  { value: "new_booking", label: "A new booking comes in from a US phone" },
+  { value: "new_booking_non_us", label: "A new booking comes in from a non US phone" },
+] as const;
 
 export function triggerLabel(value: string): string {
-  return TRIGGERS.find((t) => t.value === value)?.label ?? "A new booking comes in";
+  return TRIGGERS.find((t) => t.value === value)?.label ?? TRIGGERS[0].label;
 }
 
 export const PLACEHOLDERS = ["first_name", "product_name", "booking_link", "booking_date"];
