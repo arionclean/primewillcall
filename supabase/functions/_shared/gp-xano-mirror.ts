@@ -128,7 +128,9 @@ export async function mirrorGpBookingToXano(
     contact_status: "new",
     autoreschedule: false,
     bookingConfirmation_id: input.publicToken,
-    image_url: input.voucherImageUrls.length ? [input.voucherImageUrls.join(",")] : [],
+    // One URL per element. Joining them put every voucher into a single string
+    // that is not a URL, so a guest redeeming two vouchers showed a dead image.
+    image_url: input.voucherImageUrls,
     pickupLocation_id: null,
     dropoffLocation_id: null,
     check_in_time: null,
