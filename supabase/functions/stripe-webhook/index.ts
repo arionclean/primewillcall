@@ -17,12 +17,7 @@
 import Stripe from "npm:stripe@22.3.0";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-import {
-  gpMirrorEnabled,
-  gpMirrorLegacyId,
-  gpMirrorRef,
-  mirrorGpBookingToXano,
-} from "../_shared/gp-xano-mirror.ts";
+import { mirrorGrouponBooking } from "../_shared/gp-xano-mirror.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -188,86 +183,20 @@ async function handleEvent(event: Stripe.Event): Promise<void> {
 /** Flip a pending booking to confirmed + paid. No-op if the id is not a booking. */
 async function markBookingPaid(bookingId: string | null, paymentIntentId: string | null): Promise<void> {
   if (!bookingId || !UUID_RE.test(bookingId)) return;
-  const patch: Record<string, unknown> = { status: "confirmed", paid_at: new Date().toISOString() };
+  // awaiting_payment is what hides an unpaid /gp booking from staff. The money has
+  // landed, so the booking is real: clear it in the same write that confirms it.
+  const patch: Record<string, unknown> = {
+    status: "confirmed",
+    paid_at: new Date().toISOString(),
+    awaiting_payment: false,
+  };
   if (paymentIntentId) patch.stripe_payment_intent_id = paymentIntentId;
   await sb.from("bookings").update(patch).eq("id", bookingId);
 
   // Only now, once the confirmation trigger has already fired on the pending -> confirmed
   // update above. Stamping legacy_id any earlier marks the booking as Xano-synced and the
   // trigger skips it, which is how mirroring at creation silenced the guest's own text.
-  await mirrorGrouponBookingToXano(bookingId);
-}
-
-/**
- * Temporary: copy a paid /gp booking into Xano so staff still see it on the side they work
- * from. Off unless GP_XANO_MIRROR=true. Never throws: a mirror failure is logged and the
- * Supabase booking stands, since that is the source of truth.
- */
-async function mirrorGrouponBookingToXano(bookingId: string): Promise<void> {
-  if (!gpMirrorEnabled()) return;
-
-  interface MirrorRow {
-    id: string;
-    legacy_id: string | null;
-    source_channel: string | null;
-    starts_at: string;
-    pax_adult: number | null;
-    notes: string | null;
-    public_token: string;
-    groupon_voucher_urls: string[] | null;
-    customer: { full_name: string | null } | null;
-    business_tour: {
-      name: string;
-      legacy_product_id: string | null;
-      business: { name: string; legacy_company_id: string | null } | null;
-    } | null;
-  }
-
-  const { data: booking } = await sb
-    .from("bookings")
-    .select(
-      "id, legacy_id, source_channel, starts_at, pax_adult, notes, public_token, groupon_voucher_urls, " +
-        "customer:customers(full_name), " +
-        "business_tour:business_tours(name, legacy_product_id, business:businesses(name, legacy_company_id))",
-    )
-    .eq("id", bookingId)
-    .maybeSingle<MirrorRow>();
-
-  if (!booking || booking.source_channel !== "groupon") return;
-  // Already mirrored (the webhook can deliver checkout.session.completed AND
-  // payment_intent.succeeded for the same sale).
-  if (booking.legacy_id) return;
-
-  const ref = gpMirrorRef();
-
-  // Claim the row before calling Xano, so two concurrent deliveries cannot both mirror.
-  const { data: claimed } = await sb
-    .from("bookings")
-    .update({ legacy_id: gpMirrorLegacyId(ref) })
-    .eq("id", bookingId)
-    .is("legacy_id", null)
-    .select("id");
-  if (!claimed || claimed.length === 0) return;
-
-  const bt = booking.business_tour;
-
-  const mirror = await mirrorGpBookingToXano({
-    ref,
-    status: "confirmed",
-    publicToken: booking.public_token,
-    legacyCompanyId: bt?.business?.legacy_company_id ?? null,
-    legacyProductId: bt?.legacy_product_id ?? null,
-    productName: bt?.name ?? "",
-    supplierName: bt?.business?.name ?? "",
-    customerName: booking.customer?.full_name ?? "",
-    startsAtIso: booking.starts_at,
-    passengers: booking.pax_adult ?? 1,
-    voucherImageUrls: booking.groupon_voucher_urls ?? [],
-    note: booking.notes ?? "",
-  });
-  if (!mirror.ok) {
-    console.error(`[gp] Xano mirror failed for booking ${bookingId} (${ref}): ${mirror.error}`);
-  }
+  await mirrorGrouponBooking(sb, bookingId);
 }
 
 /** Upsert one Stripe Charge into the ledger, keyed on the charge id. */
@@ -358,7 +287,24 @@ async function upsertChargeToLedger(event: Stripe.Event, charge: Stripe.Charge):
   await sb.from("stripe_transactions").upsert(row, { onConflict: "stripe_id" });
 }
 
+/**
+ * The business an event's connected account belongs to.
+ *
+ * The live account is tried first (unique index, the hot path). A business that
+ * has switched to a fee-free account keeps taking events on the account it left:
+ * a refund, a dispute or a delayed charge can land days after the switch. Those
+ * fall back to `stripe_account_id_legacy`, so the row still gets a business_id
+ * instead of settling as NULL, which RLS would hide from that business's manager.
+ */
 async function businessIdForAccount(accountId: string): Promise<string | null> {
   const { data } = await sb.from("businesses").select("id").eq("stripe_account_id", accountId).maybeSingle();
-  return data?.id ?? null;
+  if (data?.id) return data.id;
+
+  const { data: retired } = await sb
+    .from("businesses")
+    .select("id")
+    .contains("stripe_account_id_legacy", [accountId])
+    .limit(1)
+    .maybeSingle();
+  return retired?.id ?? null;
 }

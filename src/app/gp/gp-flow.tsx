@@ -109,7 +109,9 @@ export function GrouponFlow() {
 
   const [showPayment, setShowPayment] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [confirmed, setConfirmed] = useState<{ totalCents: number } | null>(null);
+  const [confirmed, setConfirmed] = useState<
+    { totalCents: number; free: boolean } | null
+  >(null);
 
   const [modal, setModal] = useState<{ open: boolean; message: string; preview: string | null }>({
     open: false,
@@ -281,7 +283,12 @@ export function GrouponFlow() {
           window.location.href = json.payment.checkoutUrl;
           return;
         }
-        setConfirmed({ totalCents: json?.totalCents ?? match.feeCents * match.passengers });
+        // A product with no convenience fee has nothing to collect, so the booking is
+        // already confirmed. Saying a team member will collect $0.00 would be nonsense.
+        setConfirmed({
+          totalCents: json?.totalCents ?? match.feeCents * match.passengers,
+          free: json.payment?.status === "free",
+        });
       } else {
         setStatusMsg(json?.message ?? "Could not complete your reservation. Please try again.");
       }
@@ -501,17 +508,29 @@ export function GrouponFlow() {
                 <div className="gp-confirm">
                   <p className="gp-confirm-title">You&apos;re on the list.</p>
                   <p className="gp-confirm-body">
-                    Your reservation is held. A team member will confirm your voucher and collect the{" "}
-                    {formatUsd(confirmed.totalCents)} convenience fee. Questions? Call {SUPPORT_PHONE_DISPLAY}.
+                    {confirmed.free ? (
+                      <>
+                        Your reservation is confirmed. There is no convenience fee for this
+                        tour, so there is nothing to pay. Questions? Call {SUPPORT_PHONE_DISPLAY}.
+                      </>
+                    ) : (
+                      <>
+                        Your reservation is held. A team member will confirm your voucher and
+                        collect the {formatUsd(confirmed.totalCents)} convenience fee.
+                        Questions? Call {SUPPORT_PHONE_DISPLAY}.
+                      </>
+                    )}
                   </p>
                 </div>
               ) : (
                 <>
                   <div className="gp-total">
                     <span>Total convenience fee</span>
-                    <strong>{formatUsd(totalCents)}</strong>
+                    <strong>{totalCents === 0 ? "None" : formatUsd(totalCents)}</strong>
                     <small>
-                      {match.passengers} guest{match.passengers === 1 ? "" : "s"} × {formatUsd(match.feeCents)}
+                      {totalCents === 0
+                        ? "This tour has no convenience fee."
+                        : `${match.passengers} guest${match.passengers === 1 ? "" : "s"} × ${formatUsd(match.feeCents)}`}
                     </small>
                   </div>
                   <button

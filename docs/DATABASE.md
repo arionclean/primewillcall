@@ -216,7 +216,28 @@ the pending booking is created, then a Checkout Session collects the convenience
 the business is not yet onboarded to Stripe, it gracefully falls back to the pre-Stripe
 behavior (booking held, fee collected manually).
 
+**A $0 fee skips Stripe entirely.** Stripe will not take a payment under $0.50, so a
+product whose `groupon_fee_cents` is `0` (Jet Ski, today) used to sit `pending` forever:
+never paid, so never texted and never mirrored to Xano. There is nothing to charge, so
+`gp-book` creates the booking `confirmed` and mirrors it to Xano itself, since the webhook
+that normally does the mirroring never fires for it.
+
+**An abandoned checkout is not a booking.** The booking has to exist before payment (the
+Checkout Session carries its id in metadata), so a guest who opens the payment page and
+walks away leaves an unpaid `pending` row that Xano never hears about. `gp-book` therefore
+sets `bookings.awaiting_payment` when it hands the guest a Checkout page, and the
+`bookings_select` policy hides any row that is `awaiting_payment AND paid_at IS NULL AND
+status = 'pending'`. The webhook clears the flag in the same write that confirms the
+booking. All three conditions must hold for a row to be hidden, so a missed webhook leaves
+the booking visible rather than lost. Bookings never handed a payment page are unaffected:
+the $0 path, the manual-collection fallback, and `pending` bookings synced from Xano all
+stay visible. Service-role callers bypass RLS, so the guest's own `/booking/<token>` page
+still shows it and they can come back and pay.
+
 ### Schema
+- `bookings.awaiting_payment` (bool, default false) — set while a /gp guest holds an
+  unpaid Stripe Checkout page. Hidden from staff by `bookings_select`; cleared by
+  `stripe-webhook` on payment. Nothing else in the app writes it.
 - `business_tours.groupon_fee_cents` (int, nullable) — the owner-managed per-passenger
   convenience fee for that product. `NULL` = the product does not accept Groupon;
   `0` = offered free. Owners edit this on the owner-only `/admin/groupon` page.

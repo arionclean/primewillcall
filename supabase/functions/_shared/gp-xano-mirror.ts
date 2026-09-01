@@ -39,6 +39,8 @@ const XANO_BOOKINGS_API = "https://xmhi-aj9d-cnsb.n7.xano.io/api:0AUqUbBn";
 const XANO_GP_CHANNEL = "groupon-surcharge";
 const TIMEOUT_MS = 8_000;
 
+import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
+
 import { nyDateString } from "./ny-time.ts";
 
 /** Booking reference shared by both systems. Also the Xano internal_id. */
@@ -149,5 +151,92 @@ export async function mirrorGpBookingToXano(
     return { ok: true };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/**
+ * Read a Groupon booking, claim it, and mirror it into Xano.
+ *
+ * Both entry points call this: the Stripe webhook once a paid booking flips to confirmed,
+ * and `gp-book` directly for a $0 convenience fee, which has no payment to wait for and so
+ * never reaches the webhook at all.
+ *
+ * Must run AFTER the booking is already `confirmed`, never before. Stamping `legacy_id` is
+ * what marks a booking as Xano-synced, and the confirmation trigger's WHEN clause skips
+ * those, so mirroring first silences the guest's own text.
+ *
+ * No-ops unless the booking is a Groupon booking that has not been mirrored yet. Never
+ * throws: a mirror failure is logged and the Supabase booking stands, since that is the
+ * source of truth.
+ *
+ * `sb` must be a service-role client: it reads and stamps a booking regardless of RLS.
+ */
+export async function mirrorGrouponBooking(
+  sb: SupabaseClient,
+  bookingId: string,
+): Promise<void> {
+  if (!gpMirrorEnabled()) return;
+
+  interface MirrorRow {
+    id: string;
+    legacy_id: string | null;
+    source_channel: string | null;
+    starts_at: string;
+    pax_adult: number | null;
+    notes: string | null;
+    public_token: string;
+    groupon_voucher_urls: string[] | null;
+    customer: { full_name: string | null } | null;
+    business_tour: {
+      name: string;
+      legacy_product_id: string | null;
+      business: { name: string; legacy_company_id: string | null } | null;
+    } | null;
+  }
+
+  const { data: booking } = await sb
+    .from("bookings")
+    .select(
+      "id, legacy_id, source_channel, starts_at, pax_adult, notes, public_token, groupon_voucher_urls, " +
+        "customer:customers(full_name), " +
+        "business_tour:business_tours(name, legacy_product_id, business:businesses(name, legacy_company_id))",
+    )
+    .eq("id", bookingId)
+    .maybeSingle<MirrorRow>();
+
+  if (!booking || booking.source_channel !== "groupon") return;
+  // Already mirrored (the webhook can deliver checkout.session.completed AND
+  // payment_intent.succeeded for the same sale).
+  if (booking.legacy_id) return;
+
+  const ref = gpMirrorRef();
+
+  // Claim the row before calling Xano, so two concurrent deliveries cannot both mirror.
+  const { data: claimed } = await sb
+    .from("bookings")
+    .update({ legacy_id: gpMirrorLegacyId(ref) })
+    .eq("id", bookingId)
+    .is("legacy_id", null)
+    .select("id");
+  if (!claimed || claimed.length === 0) return;
+
+  const bt = booking.business_tour;
+
+  const mirror = await mirrorGpBookingToXano({
+    ref,
+    status: "confirmed",
+    publicToken: booking.public_token,
+    legacyCompanyId: bt?.business?.legacy_company_id ?? null,
+    legacyProductId: bt?.legacy_product_id ?? null,
+    productName: bt?.name ?? "",
+    supplierName: bt?.business?.name ?? "",
+    customerName: booking.customer?.full_name ?? "",
+    startsAtIso: booking.starts_at,
+    passengers: booking.pax_adult ?? 1,
+    voucherImageUrls: booking.groupon_voucher_urls ?? [],
+    note: booking.notes ?? "",
+  });
+  if (!mirror.ok) {
+    console.error(`[gp] Xano mirror failed for booking ${bookingId} (${ref}): ${mirror.error}`);
   }
 }

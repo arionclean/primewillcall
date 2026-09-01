@@ -295,7 +295,10 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   [`docs/review-automation.md`](docs/review-automation.md). The `/reviews`
   management section (the other half of the Xano feature) is deliberately not built.
 - **Groupon `/gp`** (public voucher redemption) is built: upload -> vision match -> details
-  -> pending booking on the `groupon` channel. Owner sets the per-product fee at
+  -> pending booking on the `groupon` channel. A booking waiting on an unpaid Stripe
+  Checkout page carries `bookings.awaiting_payment` and is hidden by the `bookings_select`
+  policy, so an abandoned checkout never reaches staff; a $0 fee product skips Stripe and
+  is confirmed (and mirrored to Xano) outright. Owner sets the per-product fee at
   `/admin/groupon` (`business_tours.groupon_fee_cents`). Vision runs in the
   `gp-voucher-vision` edge function (port of Xano vision_v3: Google OCR -> Groq fallback
   -> deterministic alias match -> Groq extraction); its keys (`GOOGLE_API_KEY`,

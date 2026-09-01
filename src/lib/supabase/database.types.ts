@@ -64,6 +64,7 @@ export type Database = {
       }
       bookings: {
         Row: {
+          awaiting_payment: boolean
           business_id: string
           business_tour_id: string
           checked_in_at: string | null
@@ -94,6 +95,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          awaiting_payment?: boolean
           business_id: string
           business_tour_id: string
           checked_in_at?: string | null
@@ -124,6 +126,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          awaiting_payment?: boolean
           business_id?: string
           business_tour_id?: string
           checked_in_at?: string | null
@@ -1889,6 +1892,7 @@ export type Database = {
           staff_id: string
         }[]
       }
+      custom_access_token_hook: { Args: { event: Json }; Returns: Json }
       dashboard_monthly_guests: {
         Args: { p_end: string; p_start: string; p_tz?: string }
         Returns: {
@@ -1976,6 +1980,34 @@ export type Database = {
           method: string
           tour_id: string
           tour_name: string
+        }[]
+      }
+      messaging_conversations: {
+        Args: { p_before?: string; p_limit?: number; p_search?: string }
+        Returns: {
+          counterpart: string
+          customer_name: string
+          has_sms: boolean
+          has_whatsapp: boolean
+          last_at: string
+          last_body: string
+          last_channel: string
+          last_direction: string
+          message_count: number
+          whatsapp_window_open: boolean
+        }[]
+      }
+      messaging_thread: {
+        Args: { p_counterpart: string }
+        Returns: {
+          body: string
+          channel: string
+          created_at: string
+          direction: string
+          from_phone: string
+          id: string
+          status: string
+          to_phone: string
         }[]
       }
       payments_feed: {

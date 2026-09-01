@@ -12,12 +12,18 @@
 // Secrets: STRIPE_SECRET_KEY (platform key), STRIPE_PLATFORM_FEE_BPS (optional, default 25),
 // APP_URL (Stripe redirect base).
 //
-// The Xano mirror does NOT run here. It runs from the Stripe webhook once the guest has
-// paid, because stamping legacy_id marks a booking as Xano-synced and silences its own
-// confirmation text. See supabase/functions/_shared/gp-xano-mirror.ts.
+// A product whose convenience fee is $0 has nothing to charge, so it skips Stripe
+// entirely: the booking is created `confirmed` and mirrored to Xano from here. Every other
+// product is created `pending` and flagged `awaiting_payment`, which hides it from staff
+// until the webhook confirms it, so an abandoned checkout never looks like a booking.
+//
+// For a paid booking the Xano mirror does NOT run here. It runs from the Stripe webhook
+// once the guest has paid, because stamping legacy_id marks a booking as Xano-synced and
+// silences its own confirmation text. See supabase/functions/_shared/gp-xano-mirror.ts.
 
 import Stripe from "npm:stripe@22.3.0";
 
+import { mirrorGrouponBooking } from "../_shared/gp-xano-mirror.ts";
 import {
   appBaseUrl,
   computeApplicationFeeCents,
@@ -106,6 +112,10 @@ Deno.serve(async (req) => {
     return json({ ok: false, error: "not_available", message: "This product is not accepting Groupon." }, 400);
   }
   const feeCents = bt.groupon_fee_cents as number;
+  // Nothing to charge. Stripe will not take a payment under $0.50, so a $0 fee product
+  // (Jet Ski, today) would otherwise sit `pending` forever: never paid, never texted,
+  // never mirrored. There is no payment to wait for, so the booking is real immediately.
+  const isFree = feeCents * passengers <= 0;
 
   // One transaction in the database: it re-checks the slot belongs to this tour, that
   // the time is not closed for that date, prices the fee from business_tours (never from
@@ -129,7 +139,7 @@ Deno.serve(async (req) => {
       p_customer_phone: phone,
       p_customer_legacy_source: "groupon",
       p_notes: noteParts.join(" · "),
-      p_status: "pending",
+      p_status: isFree ? "confirmed" : "pending",
       p_source_channel: "groupon",
       p_legacy_reference: voucherCodes.join(", ") || null,
       // A guest may only book a departure that is open and active.
@@ -157,6 +167,21 @@ Deno.serve(async (req) => {
 
   const booking = { id: created.booking_id, public_token: created.public_token };
   const totalCents = created.total_cents;
+
+  // Free product: no Stripe, and the webhook that normally mirrors a paid booking will
+  // never fire for it, so mirror from here. The booking is already `confirmed`, so the
+  // confirmation trigger has fired and stamping legacy_id now cannot silence its text.
+  if (isFree) {
+    await mirrorGrouponBooking(db, booking.id);
+    return json({
+      ok: true,
+      bookingId: booking.id,
+      feeCents,
+      passengers,
+      totalCents,
+      payment: { status: "free", checkoutUrl: null },
+    });
+  }
 
   // Charge the convenience fee via a Stripe Checkout Session created DIRECTLY on the
   // business's connected account, with a platform application_fee (Prime's cut). The
@@ -222,6 +247,16 @@ Deno.serve(async (req) => {
           { stripeAccount: biz.stripe_account_id },
         );
         checkoutUrl = session.url;
+        // The guest now has a payment page. Hide the booking from staff until they pay,
+        // so an abandoned checkout does not sit in the bookings list as a real booking.
+        // Guarded on the row still being unpaid: the webhook can beat us to it on a fast
+        // checkout, and re-hiding a booking that is already paid would be worse.
+        await db
+          .from("bookings")
+          .update({ awaiting_payment: true })
+          .eq("id", booking.id)
+          .eq("status", "pending")
+          .is("paid_at", null);
       } catch (e) {
         // Fall through to the manual-collection fallback. Stripe rejects a total under
         // $0.50, which is what a $0 Groupon product produces, so this is a reachable path
