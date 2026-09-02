@@ -263,12 +263,41 @@ async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
   }
 
   const name = parseName(row);
-  const customerId = await findOrCreateCustomer(
-    rec.business_id,
-    name,
-    clean(row.phone),
-    clean(row.email),
-  );
+  const incomingPhone = clean(row.phone);
+
+  // A Xano row that carries no phone must not replace a customer we already have a
+  // number for.
+  //
+  // Our own /gp bookings come back through here. The mirror sends phone "null" on
+  // purpose, so Xano cannot text the guest twice, and on the round trip that used to
+  // mint a phone-less twin of the customer and repoint the booking at it. The booking
+  // confirmation still went out (it fires on insert, before this runs), which is why
+  // this stayed invisible, but everything later had no number left to text: the
+  // review funnel found every /gp guest unreachable.
+  //
+  // Only when the row has no phone at all. One that carries a phone is authoritative
+  // exactly as before, and a booking we have never seen still goes through the normal
+  // name + phone match. Checked before findOrCreateCustomer so the duplicate is never
+  // created in the first place.
+  let customerId: string | null = null;
+  if (!norm(incomingPhone)) {
+    const { data: prior } = await sb
+      .from("bookings")
+      .select("customer_id, customer:customers(phone)")
+      .eq("legacy_id", legacyId)
+      .maybeSingle<{ customer_id: string | null; customer: { phone: string | null } | null }>();
+    if (prior?.customer_id && norm(prior.customer?.phone)) {
+      customerId = prior.customer_id;
+    }
+  }
+  if (!customerId) {
+    customerId = await findOrCreateCustomer(
+      rec.business_id,
+      name,
+      incomingPhone,
+      clean(row.email),
+    );
+  }
 
   let a = toInt(row.adult);
   const c = toInt(row.child);

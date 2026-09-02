@@ -27,8 +27,9 @@ verify_jwt = false
 [functions.email-booking-parse]
 verify_jwt = true
 
+# Xano sends only x-webhook-secret, never a Supabase token.
 [functions.xano-booking-sync]
-verify_jwt = true
+verify_jwt = false
 [functions.whatsapp-send]
 verify_jwt = true
 
