@@ -21,8 +21,12 @@
 //   1. review_automation_enabled - its own switch, default false.
 //      automations_enabled is ALREADY true for booking confirmations, so this
 //      funnel deliberately does not ride on it.
-//   2. legacy_id IS NULL - never touches the ~90k Xano-synced bookings, which
-//      Xano's own rateAsk campaign still handles. This is what stops double SMS.
+//   2. Bookings this system owns: legacy_id IS NULL, plus the /gp bookings we
+//      created here and mirrored into Xano (legacy_id 'ota-GP-%'). Never touches
+//      the ~90k genuinely Xano-synced bookings, which Xano's own rateAsk campaign
+//      still handles. This is what stops double SMS. The mirrored ones are safe
+//      because they reach Xano with phone "null", and a Xano booking with no phone
+//      triggers nothing there (confirmed by the owner).
 //   3. review_ask_lookback_hours - bounded window, so switching this on can
 //      never back-text every booking in history.
 //   4. checked_in_at IS NOT NULL - only guests who actually turned up.
@@ -43,6 +47,13 @@ const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
 // Hard ceilings per run, independent of the settings windows.
 const ASK_BATCH = 200;
 const REASK_BATCH = 200;
+
+/**
+ * The legacy_id prefix gp-xano-mirror.ts stamps on a /gp booking it copied into Xano.
+ * Those bookings originate here, so the review funnel owns them; Xano never mints this
+ * prefix itself. Keep in step with gpMirrorLegacyId in _shared/gp-xano-mirror.ts.
+ */
+const GP_MIRROR_PREFIX = "ota-GP-";
 
 const TAG_ASK = "review_ask";
 const TAG_REASK = "review_reask";
@@ -106,8 +117,16 @@ Deno.serve(async (req) => {
       "id, business_id, customer_id, ends_at, checked_in_at, " +
         "customer:customers(full_name, phone), business:businesses(google_review_url)",
     )
-    // Brake 2. Supabase-native bookings only. Xano still texts its own.
-    .is("legacy_id", null)
+    // Brake 2. Bookings this system owns. Xano still texts its own.
+    //
+    // "Owns" is not the same as "has no legacy_id". A /gp booking is created here and
+    // then mirrored into Xano, and the mirror stamps `ota-GP-<ref>` on the way out, so
+    // by the time this sweep runs (hours after the tour) our own booking is wearing a
+    // legacy id and the old test excluded it. The GP prefix is one we generate
+    // ourselves in gp-xano-mirror.ts and Xano never produces it, so it is a safe mark
+    // of "ours". Those bookings are mirrored with phone "null", which is what stops
+    // Xano's own funnel from texting the same guest.
+    .or(`legacy_id.is.null,legacy_id.like.${GP_MIRROR_PREFIX}%`)
     .gte("ends_at", endedAfter)
     .lte("ends_at", endedBefore)
     // Brake 4. Only guests who actually turned up.
