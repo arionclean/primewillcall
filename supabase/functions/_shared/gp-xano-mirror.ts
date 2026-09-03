@@ -128,9 +128,12 @@ export async function mirrorGpBookingToXano(
     contact_status: "new",
     autoreschedule: false,
     bookingConfirmation_id: input.publicToken,
-    // One URL per element. Joining them put every voucher into a single string
-    // that is not a URL, so a guest redeeming two vouchers showed a dead image.
-    image_url: input.voucherImageUrls,
+    // Every voucher in ONE comma-joined element, which looks wrong and is not.
+    // Xano's booking/v12 reads this field as `image_url|get:0|split:","`: it takes
+    // element 0 and splits it on commas, so the list it stores is built from that
+    // single string. Sending one URL per element therefore loses every voucher
+    // after the first. Do not "fix" this without changing booking/v12 first.
+    image_url: input.voucherImageUrls.length ? [input.voucherImageUrls.join(",")] : [],
     pickupLocation_id: null,
     dropoffLocation_id: null,
     check_in_time: null,
