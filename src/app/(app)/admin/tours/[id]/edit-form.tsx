@@ -149,12 +149,13 @@ export function EditTourForm({
               hint="Inactive tours are hidden from new assignments."
             >
               <label className="flex items-center gap-2 text-sm">
+                {/* defaultChecked on purpose: React resets the form after the action, and a controlled checkbox would snap back to its mount-time value. See admin/groupon/groupon-form.tsx. */}
                 <input
                   id="is_active"
                   name="is_active"
                   type="checkbox"
                   value="1"
-                  checked={isActive}
+                  defaultChecked={isActive}
                   onChange={(e) => setIsActive(e.target.checked)}
                   className="h-4 w-4 accent-primary"
                 />
@@ -185,7 +186,7 @@ export function EditTourForm({
                           type="checkbox"
                           name="business_ids"
                           value={b.id}
-                          checked={checked}
+                          defaultChecked={checked}
                           onChange={() => toggleBusiness(b.id)}
                           className="h-4 w-4 accent-primary"
                         />

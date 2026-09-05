@@ -247,12 +247,13 @@ export function EditStaffForm({
 
           <Field label="Active" htmlFor="is_active" className="sm:col-span-2">
             <label className="flex items-center gap-2 text-sm">
+              {/* defaultChecked on purpose: React resets the form after the action, and a controlled checkbox would snap back to its mount-time value. See admin/groupon/groupon-form.tsx. */}
               <input
                 id="is_active"
                 name="is_active"
                 type="checkbox"
                 value="1"
-                checked={isActive}
+                defaultChecked={isActive}
                 onChange={(e) => setIsActive(e.target.checked)}
                 className="h-4 w-4 accent-primary"
               />
@@ -352,7 +353,7 @@ export function EditStaffForm({
                         type="checkbox"
                         name="tour_ids"
                         value={t.id}
-                        checked={checked}
+                        defaultChecked={checked}
                         onChange={() => toggleTour(t.id)}
                         className="h-4 w-4 accent-primary"
                       />

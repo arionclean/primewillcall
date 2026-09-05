@@ -94,11 +94,20 @@ export function GrouponFeesForm({ rows }: { rows: GrouponProductRow[] }) {
                 </div>
 
                 <label className="flex items-center justify-center gap-2 text-sm">
+                  {/*
+                    defaultChecked, not checked, on purpose. React resets a <form action>
+                    after the action completes, and a reset puts every checkbox back to
+                    its `defaultChecked` attribute. For a controlled checkbox React writes
+                    that attribute once, at mount, so unticking a product and saving left
+                    the box visually ticked again while the fee stayed disabled and the
+                    database was right. An uncontrolled checkbox has the attribute re-synced
+                    on every render, so the reset lands on the value just saved.
+                  */}
                   <input
                     type="checkbox"
                     name={`bt_enabled_${i}`}
                     value="1"
-                    checked={rs.enabled}
+                    defaultChecked={rs.enabled}
                     onChange={(e) => setRow(row.id, { enabled: e.target.checked })}
                     className="h-4 w-4 accent-primary"
                   />
