@@ -9,7 +9,9 @@
 //      tour_name_aliases of the Groupon-enabled products (groupon_candidates()
 //      RPC). Three tiers: verbatim title, then a windowed word match that
 //      survives a dropped or misread word (Xano's fuzzy scoring, rebuilt), then
-//      the merchant name as a last resort. Zero AI in the common case.
+//      the merchant name as a last resort. Zero AI in the common case. The
+//      matcher lives in _shared/gp-match.ts so real OCR text can be replayed
+//      through it in a unit test (gp-match.test.ts).
 //   3. Extraction: Groq openai/gpt-oss-120b reads the OCR text for passengers and
 //      the redemption code (the "1 of 1" trap is handled in the prompt, same as
 //      Xano), and doubles as the match fallback when (2) found nothing. OpenAI
@@ -26,6 +28,12 @@
 // The function itself only ever reads from the public gp-vouchers bucket.
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
+
+import {
+  type Candidate,
+  deterministicMatch,
+  voucherNamesMerchant,
+} from "../_shared/gp-match.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -44,28 +52,12 @@ const sb = createClient(SUPABASE_URL, SERVICE_KEY, {
   auth: { persistSession: false },
 });
 
-const norm = (s: unknown): string =>
-  (s ?? "").toString().toLowerCase().replace(/[^a-z0-9]+/g, "");
-
 function json(obj: unknown, status: number): Response {
   return new Response(JSON.stringify(obj), {
     status,
     headers: { "content-type": "application/json" },
   });
 }
-
-type Candidate = {
-  business_tour_id: string;
-  business_id: string;
-  business_name: string;
-  /** Storefront names Groupon sells this business under, including its own. */
-  merchant_names: string[];
-  tour_id: string;
-  tour_name: string;
-  product_name: string;
-  groupon_fee_cents: number;
-  aliases: string[];
-};
 
 // ── OCR ───────────────────────────────────────────────────────────────────────
 async function ocrGoogle(b64: string): Promise<string | null> {
@@ -206,207 +198,6 @@ async function extract(
   return null;
 }
 
-// ── Deterministic match ───────────────────────────────────────────────────────
-// Three tiers, most precise first, before the model is asked to decide:
-//   1. title   - a product title appears verbatim in the OCR text
-//   2. fuzzy   - a title's words appear together in a short span of the text,
-//                tolerating a dropped, inserted, or misread word (this is what
-//                Xano's scoring lambda buys, and the tier we were missing)
-//   3. merchant- the storefront name alone. Last resort on purpose: it says who
-//                sold the voucher, not what it is for, so it must never outrank
-//                a title match, or a city-tour voucher whose title we failed to
-//                read would book (and charge) the merchant's boat product.
-
-const MIN_ALIAS_NORM_LEN = 8; // skip short/generic names that would false-positive
-const FUZZY_MIN_COVERAGE = 0.7; // share of a title's words the voucher must carry
-const FUZZY_WINDOW_SLACK = 4; // words a voucher may insert inside a title
-const FUZZY_MIN_MARGIN = 0.1; // two products this close = ambiguous, ask the model
-
-/** Words too common to distinguish one product from another. */
-const STOPWORDS = new Set([
-  "the", "a", "an", "of", "with", "and", "in", "on", "for", "to", "your", "at",
-  "from", "by", "or", "our", "you", "it", "is", "this", "that",
-]);
-
-/** Naive plural strip so "cruises"/"cruise" and "tours"/"tour" compare equal. */
-const stem = (t: string): string => (t.length >= 4 && t.endsWith("s") ? t.slice(0, -1) : t);
-
-/**
- * Words that identify WHICH product. If a title carries one and the voucher
- * never says it, they are different products. This is what stops a "City Tour &
- * Boat Combo" title from matching a plain city-tour voucher.
- */
-const DISTINCTIVE = new Set(
-  [
-    "combo", "boat", "bus", "jet", "ski", "everglades", "airboat", "key", "west",
-    "night", "sunset", "star", "island", "party", "empanada", "mojito", "sea",
-    "transportation", "bayside", "cruise", "tour", "city", "skyline", "land",
-    "private", "helicopter",
-  ].map(stem),
-);
-
-function tokenize(s: unknown): string[] {
-  return (s ?? "")
-    .toString()
-    .toLowerCase()
-    .replace(/\b\d+\s*of\s*\d+\b/g, " ") // "1 of 1" counts vouchers, not passengers
-    .replace(/\bfor\s+\d+\b/g, " ")
-    .replace(/&/g, " and ")
-    .replace(/[^a-z0-9]+/g, " ")
-    .split(/\s+/)
-    .filter(Boolean)
-    .filter((t) => !STOPWORDS.has(t))
-    .map(stem);
-}
-
-/**
- * Words that split one product from another. If the voucher says one right next
- * to the title and the title does not, they are different products: "Miami City
- * Tour and Boat Combo" is the combo product, not the city tour.
- */
-const SPLITTERS = new Set(
-  [
-    "combo", "boat", "bus", "jet", "ski", "everglades", "airboat", "party",
-    "transportation", "helicopter",
-  ].map(stem),
-);
-
-/**
- * The titles that describe the product itself. Names that ARE the merchant name
- * are dropped here and only ever match at tier 3: "Miami Skyline Cruises" is the
- * storefront on every voucher that business sells, including its city-tour ones,
- * so letting it compete as a title would book city-tour guests onto the boat.
- */
-const titlesOf = (c: Candidate): string[] => {
-  const merchant = norm(c.business_name);
-  return [c.product_name, c.tour_name, ...c.aliases].filter((n) => norm(n) !== merchant);
-};
-
-/**
- * Share of `title`'s words found together inside one short span of the voucher.
- * Windowing is what keeps this honest: without it a title could be assembled
- * from words scattered across the whole voucher, including the fine print.
- */
-function fuzzyScore(ocrTokens: string[], ocrSet: Set<string>, title: string): number {
-  const wanted = new Set(tokenize(title));
-  if (wanted.size < 2 || ocrTokens.length === 0) return 0;
-
-  for (const t of wanted) {
-    if (DISTINCTIVE.has(t) && !ocrSet.has(t)) return 0;
-  }
-
-  const size = Math.min(ocrTokens.length, wanted.size + FUZZY_WINDOW_SLACK);
-  const counts = new Map<string, number>();
-  const bump = (t: string, delta: number) => {
-    const n = (counts.get(t) ?? 0) + delta;
-    if (n <= 0) counts.delete(t);
-    else counts.set(t, n);
-  };
-
-  let best = 0;
-  for (let i = 0; i < ocrTokens.length; i++) {
-    bump(ocrTokens[i], 1);
-    if (i >= size) bump(ocrTokens[i - size], -1);
-    if (i + 1 < size) continue;
-
-    // A splitter sitting inside the window that the title does not claim means
-    // the voucher is for a neighbouring product. Skip this window, not the title:
-    // the same title may still fit cleanly somewhere else in the voucher.
-    let contaminated = false;
-    for (const t of counts.keys()) {
-      if (SPLITTERS.has(t) && !wanted.has(t)) {
-        contaminated = true;
-        break;
-      }
-    }
-    if (contaminated) continue;
-
-    let hit = 0;
-    for (const t of wanted) if (counts.has(t)) hit++;
-    best = Math.max(best, hit / wanted.size);
-    if (best === 1) break;
-  }
-  return best;
-}
-
-type Match = {
-  candidate: Candidate;
-  matchedName: string;
-  method: "title" | "fuzzy" | "merchant";
-};
-
-/** Longest verbatim hit wins: the longer the title, the more specific it is. */
-function exactMatch(
-  haystack: string,
-  candidates: Candidate[],
-  namesOf: (c: Candidate) => string[],
-): { candidate: Candidate; matchedName: string } | null {
-  let best: { candidate: Candidate; matchedName: string; len: number } | null = null;
-  for (const c of candidates) {
-    for (const name of namesOf(c)) {
-      const n = norm(name);
-      if (n.length < MIN_ALIAS_NORM_LEN) continue;
-      if (!haystack.includes(n)) continue;
-      if (!best || n.length > best.len) {
-        best = { candidate: c, matchedName: name, len: n.length };
-      }
-    }
-  }
-  return best ? { candidate: best.candidate, matchedName: best.matchedName } : null;
-}
-
-function fuzzyMatch(
-  ocrText: string,
-  candidates: Candidate[],
-): { candidate: Candidate; matchedName: string } | null {
-  const ocrTokens = tokenize(ocrText);
-  const ocrSet = new Set(ocrTokens);
-
-  const ranked = candidates
-    .map((c) => {
-      let score = 0;
-      let matchedName = "";
-      for (const title of titlesOf(c)) {
-        const s = fuzzyScore(ocrTokens, ocrSet, title);
-        if (s > score) {
-          score = s;
-          matchedName = title;
-        }
-      }
-      return { candidate: c, matchedName, score };
-    })
-    .filter((r) => r.score >= FUZZY_MIN_COVERAGE)
-    .sort((a, b) => b.score - a.score);
-
-  if (ranked.length === 0) return null;
-  // Two products fit about equally well. Guessing here books the wrong product
-  // and charges the wrong business, so hand the tie to the model instead.
-  if (ranked.length > 1 && ranked[0].score - ranked[1].score < FUZZY_MIN_MARGIN) return null;
-  return { candidate: ranked[0].candidate, matchedName: ranked[0].matchedName };
-}
-
-function deterministicMatch(ocrText: string, candidates: Candidate[]): Match | null {
-  const haystack = norm(ocrText);
-  if (!haystack) return null;
-
-  const title = exactMatch(haystack, candidates, titlesOf);
-  if (title) return { ...title, method: "title" };
-
-  const fuzzy = fuzzyMatch(ocrText, candidates);
-  if (fuzzy) return { ...fuzzy, method: "fuzzy" };
-
-  // The storefront names a business, not a product, so it is only decisive when
-  // that business sells exactly one Groupon-enabled product. Otherwise picking
-  // one would be a coin flip between different products AND different fees.
-  const merchant = exactMatch(haystack, candidates, (c) => c.merchant_names);
-  if (merchant) {
-    const sold = candidates.filter((c) => c.business_id === merchant.candidate.business_id);
-    if (sold.length === 1) return { ...merchant, method: "merchant" };
-  }
-
-  return null;
-}
-
 // ── main ──────────────────────────────────────────────────────────────────────
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
@@ -468,8 +259,6 @@ Deno.serve(async (req) => {
     );
   }
 
-  const haystack = norm(text);
-
   // 2. Deterministic match (zero AI in the common case).
   const det = deterministicMatch(text, candidates);
 
@@ -492,12 +281,7 @@ Deno.serve(async (req) => {
   //    of our own product titles in the text, which is evidence in itself, and
   //    gating them would throw away real vouchers whose photo is too poor for the
   //    storefront line to be read.
-  const merchantSeen = candidates.some((c) =>
-    c.merchant_names.some((n) => {
-      const nn = norm(n);
-      return nn.length >= MIN_ALIAS_NORM_LEN && haystack.includes(nn);
-    })
-  );
+  const merchantSeen = voucherNamesMerchant(text, candidates);
 
   const aiCandidate =
     !det && ex?.matched_business_tour_id

@@ -302,7 +302,10 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   `/admin/groupon` (`business_tours.groupon_fee_cents`). Vision runs in the
   `gp-voucher-vision` edge function (port of Xano vision_v3: Google OCR -> Groq fallback
   -> deterministic alias match -> Groq extraction); its keys (`GOOGLE_API_KEY`,
-  `GROQ_API_KEY`, optional `OPENAI_API_KEY`) are Supabase function secrets. The checkout
+  `GROQ_API_KEY`, optional `OPENAI_API_KEY`) are Supabase function secrets. The
+  deterministic matcher is `_shared/gp-match.ts` with a Deno test that replays real
+  voucher OCR text; a voucher that books the wrong product gets a case there, not a
+  one-off alias. The checkout
   step now creates a real Stripe Checkout Session (direct charge on the business's
   connected account + platform fee), with a graceful manual-collection fallback when the
   business is not yet Stripe-onboarded. The owner still marks each Groupon voucher redeemed

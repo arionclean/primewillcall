@@ -271,7 +271,15 @@ still shows it and they can come back and pay.
   precise first, before the model is asked to decide:
   1. **title** — a product name or `tour_name_aliases` entry appears verbatim in the OCR
      text (compared with punctuation and case stripped). Longest hit wins, since a longer
-     title is a more specific one.
+     title is a more specific one; an equal-length tie goes to the title with more words,
+     so the answer never depends on the order the catalog rows came back in. A title must
+     be at least **two words**: a one-word product name is a category, not a title, and
+     it appears inside other products' titles. "Transportation" (the fee-bucket product)
+     sat verbatim in "Everglades Tour with Transportation from Miami" and tied
+     "Everglades Tour" on length, so Everglades guests were booked onto Transportation and
+     shown its 8am-8pm departures. The matcher lives in
+     `supabase/functions/_shared/gp-match.ts`; `gp-match.test.ts` replays the real OCR
+     text of the vouchers that broke it.
   2. **fuzzy** — the title's words appear together inside a short window of the OCR text,
      so one dropped, inserted, or misread word no longer loses the match. This is the tier
      Xano bought with its scoring lambda and the one the first port was missing. Two
@@ -400,6 +408,12 @@ role. `stripe_events`: RLS on, no policies (service-role only).
   Handles `checkout.session.completed` / `payment_intent.succeeded`
   (flip booking to `confirmed`, set `paid_at` + `stripe_payment_intent_id`), `charge.*`
   (upsert the ledger), `charge.dispute.*`, and `account.updated`.
+  On `checkout.session.completed` it also **emails the Stripe receipt** by setting
+  `receipt_email` on the charge (the address Checkout collected) and copies that address
+  onto the booking's customer when the row has none. Stripe does not send a receipt on its
+  own for a direct charge unless the connected account has "Successful payments" emails
+  on, and these accounts have no Dashboard page to switch it on, so without this step the
+  /gp success page's "a receipt was emailed" was untrue for every payment.
 - **Booking link**: every charge carries `metadata.booking_id` + `metadata.source` (set on
   both the session and `payment_intent_data` so the CHARGE carries it). The webhook resolves
   `booking_id` and `business_id` (via `connected_account_id`) into the ledger row. `bookings`

@@ -100,10 +100,12 @@ async function handleEvent(event: Stripe.Event): Promise<void> {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
       if (session.payment_status === "paid") {
+        const bookingId = session.metadata?.[META.bookingId] ?? null;
         await markBookingPaid(
-          session.metadata?.[META.bookingId] ?? null,
+          bookingId,
           typeof session.payment_intent === "string" ? session.payment_intent : null,
         );
+        await emailCheckoutReceipt(event, session, bookingId);
       }
       return;
     }
@@ -197,6 +199,54 @@ async function markBookingPaid(bookingId: string | null, paymentIntentId: string
   // update above. Stamping legacy_id any earlier marks the booking as Xano-synced and the
   // trigger skips it, which is how mirroring at creation silenced the guest's own text.
   await mirrorGrouponBooking(sb, bookingId);
+}
+
+/**
+ * Email the Stripe receipt for a Checkout payment, and keep the address.
+ *
+ * Checkout collects the guest's email, but Stripe only sends a receipt by itself when
+ * the account that took the charge has "Successful payments" emails switched on. These
+ * are DIRECT charges, so that account is the business's connected account, and those
+ * accounts have no Dashboard page to switch it on (Stripe hosts their dashboard; the
+ * platform owns the settings). So the /gp success page promised "a receipt was emailed"
+ * and none ever was: every Groupon charge in the ledger carried receipt_email = null.
+ *
+ * Setting receipt_email on the charge is the documented way to send one from the API
+ * ("if this field is updated, then a new email receipt will be sent"), and it ignores
+ * the account's email settings. Guarded on the charge not already carrying an address,
+ * so a redelivered event cannot mail a second copy. Failures are logged, not thrown: a
+ * retry would re-run markBookingPaid and move paid_at, and the payment already stands.
+ *
+ * The address also lands on the customer row when it has none. It is the only email a
+ * /gp guest gives us, and "I never got a confirmation email" needs somewhere to reply.
+ */
+async function emailCheckoutReceipt(
+  event: Stripe.Event,
+  session: Stripe.Checkout.Session,
+  bookingId: string | null,
+): Promise<void> {
+  const email = session.customer_details?.email?.trim() || null;
+  const piId =
+    typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null;
+  if (!email || !piId) return;
+  const opts = event.account ? { stripeAccount: event.account } : undefined;
+
+  try {
+    const pi = await stripe.paymentIntents.retrieve(piId, { expand: ["latest_charge"] }, opts);
+    const charge = pi.latest_charge;
+    if (charge && typeof charge !== "string" && !charge.receipt_email) {
+      await stripe.charges.update(charge.id, { receipt_email: email }, opts);
+    }
+  } catch (err) {
+    console.error(
+      `[stripe-webhook] receipt for ${piId} not sent: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  if (!bookingId || !UUID_RE.test(bookingId)) return;
+  const { data: booking } = await sb.from("bookings").select("customer_id").eq("id", bookingId).maybeSingle();
+  if (!booking?.customer_id) return;
+  await sb.from("customers").update({ email }).eq("id", booking.customer_id).is("email", null);
 }
 
 /** Upsert one Stripe Charge into the ledger, keyed on the charge id. */
