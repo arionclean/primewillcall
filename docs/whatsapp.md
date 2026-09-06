@@ -59,7 +59,15 @@ public profile untouched, which is what we want.
 One thread per person, both channels, ordered by time. The merge is two SECURITY
 INVOKER functions, `messaging_conversations` (newest first, keyset paged, searchable
 by name or number) and `messaging_thread`, so RLS still scopes each table and the
-browser never pulls both and stitches them together.
+browser never pulls both and stitches them together. The list settles its page first
+and only then names each row, one indexed probe of `customers.phone_last10` (a stored
+generated column: the last ten digits of the phone, since `customers.phone` is stored in
+mixed formats). It used to fold the whole customers table on every call, which took
+seconds, re-ran on every incoming text, and hit the statement timeout as the table grew.
+The key is a real column rather than an expression index because under RLS Postgres
+will not use an index whose expression calls a non-leakproof function such as
+`regexp_replace` (see "Access control" in `DATABASE.md`). A failed refresh shows in the
+list column and clears on the next one that succeeds.
 
 The composer offers WhatsApp only to people who have used it, defaults to the channel
 of their last inbound message, and refuses a typed WhatsApp reply once the window

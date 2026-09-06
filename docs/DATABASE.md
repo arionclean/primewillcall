@@ -501,6 +501,28 @@ Table-specific notes:
   sharing the departure, which mirrors reality: the boat itself is not going out.
 - `customers`: owner + manager + check-in of the business can insert and read; update is
   owner + manager; delete is owner only.
+Two costs of RLS to design around (both bit the Messages list, see
+`messaging_conversations`):
+
+- **A policy runs once per row scanned, not per row returned.** `current_staff()` is
+  SECURITY DEFINER, so it cannot be inlined, and a query that touches 93k `customers`
+  rows calls it 93k times even when it keeps 50. Settle the page first, then look the
+  rows on it up by key. And write the policy so `current_staff()` sits in an
+  uncorrelated scalar subquery, `(select role from current_staff()) = 'owner' or
+  business_id = (select business_id from current_staff())`: the planner evaluates that
+  once per statement (an InitPlan). The older `EXISTS (select 1 from current_staff() cs
+  where ... cs.business_id = t.business_id)` form mentions the row, so it runs per row.
+  The messaging tables use the InitPlan form; the rest still use EXISTS and are worth
+  converting when one of them shows up slow.
+- **An index is only usable under RLS if the WHERE clause is leakproof.** Postgres
+  refuses to evaluate a clause containing a non-LEAKPROOF function before the policy,
+  because such a function could expose hidden rows through its error messages, and an
+  index condition is exactly that. `regexp_replace` is not leakproof; `=` on a plain
+  column is. So an expression index on `regexp_replace(phone, ...)` is used by the
+  table owner and silently ignored for `authenticated`: the same query took 0.5 s in
+  the SQL editor and timed out at 8 s for a staff member. Materialise the key instead
+  (`customers.phone_last10` is a stored generated column) and compare it with `=`.
+
 - `bookings`: all non-owner writes are capability-gated by the `staff.can_*` columns.
   Insert: owner; manager (own business); check-in (own business + assigned tour), each
   needing `can_create_bookings`. Update: same row scopes, needing `can_edit_bookings`

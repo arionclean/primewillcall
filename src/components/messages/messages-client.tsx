@@ -114,6 +114,10 @@ export function MessagesClient() {
   const [sending, setSending] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The list keeps its own error. It refreshes on every incoming message, so a failed
+  // refresh must neither overwrite a send error someone is reading nor outlive the
+  // refresh that succeeds right after it.
+  const [listError, setListError] = useState<string | null>(null);
 
   const activeRef = useRef<string | null>(null);
   activeRef.current = active;
@@ -169,9 +173,10 @@ export function MessagesClient() {
       });
       if (rpcError) {
         console.error("[messages] conversations load failed:", rpcError);
-        setError("Could not load conversations. Try again.");
+        setListError("Could not load conversations. Try again.");
         return null;
       }
+      setListError(null);
       return (data as Conversation[]) ?? [];
     },
     [],
@@ -394,6 +399,7 @@ export function MessagesClient() {
             }
           }}
         >
+          {listError ? <p className="p-4 text-sm text-destructive">{listError}</p> : null}
           {conversations.length === 0 ? (
             <p className="p-4 text-sm text-muted-foreground">
               {syncing

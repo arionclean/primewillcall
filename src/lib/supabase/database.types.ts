@@ -454,6 +454,7 @@ export type Database = {
           legacy_source: string | null
           notes: string | null
           phone: string | null
+          phone_last10: string | null
           stripe_customer_id: string | null
           updated_at: string
         }
@@ -467,6 +468,7 @@ export type Database = {
           legacy_source?: string | null
           notes?: string | null
           phone?: string | null
+          phone_last10?: string | null
           stripe_customer_id?: string | null
           updated_at?: string
         }
@@ -480,6 +482,7 @@ export type Database = {
           legacy_source?: string | null
           notes?: string | null
           phone?: string | null
+          phone_last10?: string | null
           stripe_customer_id?: string | null
           updated_at?: string
         }
