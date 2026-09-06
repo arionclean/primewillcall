@@ -14,12 +14,8 @@ import {
   todayLocalIso,
 } from "@/lib/dates";
 
-import {
-  BookingsList,
-  bookingSelect,
-  normalizeBookingRow,
-  type TourOption,
-} from "./list";
+import { bookingSelect, normalizeBookingRow } from "./booking-select";
+import { BookingsList, type TourOption } from "./list";
 
 const DEFAULT_TIMEZONE = BUSINESS_TZ;
 
