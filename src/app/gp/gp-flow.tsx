@@ -377,6 +377,10 @@ export function GrouponFlow() {
                   </button>
                 )}
               </div>
+              <p className="gp-upload-hint">
+                Make sure the Redemption Code is visible in your screenshot. In the
+                Groupon app, tap &ldquo;View Voucher&rdquo; first.
+              </p>
               {uploading && (
                 <div className="gp-loader" role="status">
                   <span className="gp-spinner" /> Checking your voucher...
@@ -650,6 +654,7 @@ const CSS = `
 .gp-arrow { display: flex; justify-content: center; }
 .gp-arrow svg { width: 54px; height: 54px; color: var(--gp-green-ink); animation: gp-hint 1.5s ease-in-out infinite; }
 .gp-upload-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.gp-upload-hint { margin: 0; text-align: center; font-size: 14px; line-height: 1.4; color: var(--gp-muted, #6b7280); }
 .gp-loader { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #4b4f52; justify-content: center; }
 .gp-spinner { width: 16px; height: 16px; border: 3px solid rgba(0,0,0,0.2); border-top-color: rgba(0,0,0,0.65); border-radius: 50%; animation: gp-spin 0.8s linear infinite; }
 .gp-status { margin: 0; font-size: 13px; font-weight: 600; color: #4b4f52; text-align: center; }

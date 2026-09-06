@@ -6,6 +6,14 @@
 // deterministic alias match -> Groq extraction; the AI keys are that function's secrets).
 // Returns the resolved product plus the Supabase-managed fee. It never creates a booking.
 //
+// A voucher is only accepted when a code could be read off it. Staff redeem on
+// Groupon by the Redemption Code, and the screenshot customers send most often is
+// the app's voucher card, where that code sits behind a "View Voucher" tap. Graded
+// on 156 stored uploads (docs/DATABASE.md "Groupon"), every image without a readable
+// code was that card, the "My Groupons" list, the purchase confirmation, or an
+// unrelated page, so the guest is asked for a screenshot that shows the code
+// instead of leaving staff a booking they cannot redeem.
+//
 // Deployed with JWT on: the public page sends the publishable anon key.
 // Body: multipart/form-data with `file`.
 
@@ -121,6 +129,16 @@ Deno.serve(async (req) => {
   const voucherCode = typeof result.voucher_code === "string" && result.voucher_code.trim()
     ? result.voucher_code.trim()
     : null;
+
+  if (!voucherCode) {
+    return json({
+      valid: false,
+      error: "missing_code",
+      message:
+        "We can't see the Redemption Code in that screenshot. In the Groupon app, open the voucher and tap \"View Voucher\" so the Redemption Code is showing, then take the screenshot again.",
+      imageUrl,
+    });
+  }
 
   return json({
     valid: true,

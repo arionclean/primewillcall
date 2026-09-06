@@ -266,6 +266,16 @@ still shows it and they can come back and pay.
   **Supabase function secrets**, not app env. Deployed with verify_jwt on; the route calls
   it with the service role key. If the function is unreachable the route degrades to a
   graceful "couldn't read the voucher".
+  **The voucher code is read from the OCR text first** (`_shared/gp-voucher-code.ts`: the
+  labelled Redemption Code, a printed voucher's bare code line, then the Groupon `VS-`
+  number), and the model's code only counts when the text had none and it is shaped like a
+  code. **A voucher with no readable code is refused** (`error: "missing_code"`): staff
+  redeem by the Redemption Code, and the screenshot guests send most is the app's voucher
+  card, where the code sits behind a "View Voucher" tap. Graded on 156 stored uploads
+  (120 most recent plus 36 shadow rows), 13 of 108 accepted uploads had no code anywhere
+  and every one was that card, the "My Groupons" list, the purchase confirmation or an
+  unrelated page; zero vouchers with a visible code were refused. Real OCR text for each
+  layout is replayed in `_shared/gp-voucher-code.test.ts`.
 
   **Product match** runs three deterministic tiers over `groupon_candidates()`, most
   precise first, before the model is asked to decide:

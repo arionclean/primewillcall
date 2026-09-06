@@ -223,7 +223,7 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   policy in `docs/DATABASE.md` and confirm `current_staff()` returns what you expect.
 - Test accounts (dev Supabase): owner `sky@gmail.com` (was
   `alegarcialuis98@gmail.com`); manager `skymanager@gmail.com` (Miami Skyline
-  Cruises); check-in `kiosk1@gmail.com`. The owner address is not a mailbox Prime
+  Cruises); check-in `kiosk01@gmail.com`. The owner address is not a mailbox Prime
   controls, so password resets and auth mail do not reach anyone here. The dashboard
   user panel only offers emailed recovery, so set an owner password with the Auth
   admin API (`PUT /auth/v1/admin/users/<id>` with the service role key) instead.
@@ -295,7 +295,11 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   [`docs/review-automation.md`](docs/review-automation.md). The `/reviews`
   management section (the other half of the Xano feature) is deliberately not built.
 - **Groupon `/gp`** (public voucher redemption) is built: upload -> vision match -> details
-  -> pending booking on the `groupon` channel. A booking waiting on an unpaid Stripe
+  -> pending booking on the `groupon` channel. A voucher whose Redemption Code cannot be
+  read off the image is refused with a "tap View Voucher and screenshot again" message
+  (`_shared/gp-voucher-code.ts` reads the code from the OCR text first, the model is the
+  fallback); staff redeem by that code, so a booking without it is useless to them. A
+  booking waiting on an unpaid Stripe
   Checkout page carries `bookings.awaiting_payment` and is hidden by the `bookings_select`
   policy, so an abandoned checkout never reaches staff; a $0 fee product skips Stripe and
   is confirmed (and mirrored to Xano) outright. Owner sets the per-product fee at

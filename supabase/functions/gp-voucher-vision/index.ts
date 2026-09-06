@@ -15,7 +15,12 @@
 //   3. Extraction: Groq openai/gpt-oss-120b reads the OCR text for passengers and
 //      the redemption code (the "1 of 1" trap is handled in the prompt, same as
 //      Xano), and doubles as the match fallback when (2) found nothing. OpenAI
-//      gpt-5.4-mini is the fallback provider if Groq errors.
+//      gpt-5.4-mini is the fallback provider if Groq errors. The voucher code
+//      itself is taken from the OCR text first (_shared/gp-voucher-code.ts: the
+//      labelled Redemption Code, a printed voucher's bare code line, or the
+//      Groupon number); the model's code only counts when nothing was found in
+//      the text and it is shaped like a code. `voucher_code: null` therefore
+//      means the image shows no code, which gp-validate refuses.
 //   4. Merchant gate: the model's match is only accepted when the voucher names
 //      one of our Groupon storefronts (businesses.name plus
 //      businesses.groupon_merchant_names). Without it the model happily maps a
@@ -34,6 +39,7 @@ import {
   deterministicMatch,
   voucherNamesMerchant,
 } from "../_shared/gp-match.ts";
+import { pickVoucherCode } from "../_shared/gp-voucher-code.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -302,7 +308,7 @@ Deno.serve(async (req) => {
       valid: !!matched,
       matched,
       passengers: ex?.passengers ?? 1,
-      voucher_code: ex?.voucher ?? null,
+      voucher_code: pickVoucherCode(ex?.voucher, text),
       reason,
       ocr: ocrMethod,
       match_method: det?.method ?? (aiMatch ? "ai" : null),
