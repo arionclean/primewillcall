@@ -33,7 +33,10 @@ export function AppShell({
         businessId={businessId}
       />
       <div className="mx-auto grid w-full max-w-7xl gap-6 px-6 py-8 md:grid-cols-[200px_1fr]">
-        <aside className="hidden space-y-4 md:sticky md:top-6 md:block md:self-start">
+        {/* Sticky, and capped to the viewport so a long list (the check-in
+            Manifest on a busy day) scrolls inside the sidebar instead of being
+            cut off below the fold. */}
+        <aside className="hidden space-y-4 md:sticky md:top-6 md:block md:max-h-[calc(100vh-1.5rem)] md:self-start md:overflow-y-auto md:overscroll-contain md:pb-6">
           <GlobalSearch />
           <AppSidebar
             role={role}
