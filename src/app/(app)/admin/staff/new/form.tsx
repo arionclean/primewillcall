@@ -58,7 +58,10 @@ type CapabilityName =
   | "can_edit_bookings"
   | "can_check_in"
   | "can_delete_bookings"
-  | "can_add_to_peek";
+  | "can_add_to_peek"
+  | "can_view_attachments"
+  | "can_redeem_groupon"
+  | "can_view_details";
 
 const CAPABILITY_OPTIONS: {
   name: CapabilityName;
@@ -90,6 +93,21 @@ const CAPABILITY_OPTIONS: {
     label: "Add to Peek",
     hint: "Mark bookings as entered in Peek from the Bookings page.",
   },
+  {
+    name: "can_redeem_groupon",
+    label: "Redeem Groupon vouchers",
+    hint: "Show the Redemption Codes and the Redeem toggle on Groupon bookings.",
+  },
+  {
+    name: "can_view_details",
+    label: "See full booking details",
+    hint: "Off: only the ID, name, phone, guests and check-in status show. Notes, emails and the edit form stay hidden.",
+  },
+  {
+    name: "can_view_attachments",
+    label: "See attachments",
+    hint: "Open the photos attached to a booking, such as Groupon voucher screenshots.",
+  },
 ];
 
 type Props = {
@@ -113,6 +131,9 @@ export function NewStaffForm({ businesses, tours }: Props) {
     can_check_in: true,
     can_delete_bookings: false,
     can_add_to_peek: true,
+    can_view_attachments: true,
+    can_redeem_groupon: false,
+    can_view_details: true,
   });
   const [password, setPassword] = useState<string>("");
   const [copied, setCopied] = useState(false);

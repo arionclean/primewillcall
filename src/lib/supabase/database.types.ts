@@ -62,6 +62,38 @@ export type Database = {
           },
         ]
       }
+      booking_changes: {
+        Row: {
+          booking_id: string
+          changed_at: string
+          changed_by: string
+          changes: Json
+          id: number
+        }
+        Insert: {
+          booking_id: string
+          changed_at?: string
+          changed_by?: string
+          changes: Json
+          id?: number
+        }
+        Update: {
+          booking_id?: string
+          changed_at?: string
+          changed_by?: string
+          changes?: Json
+          id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "booking_changes_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       bookings: {
         Row: {
           awaiting_payment: boolean
@@ -75,6 +107,7 @@ export type Database = {
           customer_id: string
           ends_at: string
           groupon_redeemed_at: string | null
+          groupon_voucher_codes: string[]
           groupon_voucher_urls: string[]
           id: string
           legacy_id: string | null
@@ -106,6 +139,7 @@ export type Database = {
           customer_id: string
           ends_at: string
           groupon_redeemed_at?: string | null
+          groupon_voucher_codes?: string[]
           groupon_voucher_urls?: string[]
           id?: string
           legacy_id?: string | null
@@ -137,6 +171,7 @@ export type Database = {
           customer_id?: string
           ends_at?: string
           groupon_redeemed_at?: string | null
+          groupon_voucher_codes?: string[]
           groupon_voucher_urls?: string[]
           id?: string
           legacy_id?: string | null
@@ -1166,6 +1201,9 @@ export type Database = {
           can_create_bookings: boolean
           can_delete_bookings: boolean
           can_edit_bookings: boolean
+          can_redeem_groupon: boolean
+          can_view_attachments: boolean
+          can_view_details: boolean
           created_at: string
           email: string
           full_name: string
@@ -1184,6 +1222,9 @@ export type Database = {
           can_create_bookings?: boolean
           can_delete_bookings?: boolean
           can_edit_bookings?: boolean
+          can_redeem_groupon?: boolean
+          can_view_attachments?: boolean
+          can_view_details?: boolean
           created_at?: string
           email: string
           full_name: string
@@ -1202,6 +1243,9 @@ export type Database = {
           can_create_bookings?: boolean
           can_delete_bookings?: boolean
           can_edit_bookings?: boolean
+          can_redeem_groupon?: boolean
+          can_view_attachments?: boolean
+          can_view_details?: boolean
           created_at?: string
           email?: string
           full_name?: string
@@ -1866,6 +1910,7 @@ export type Database = {
           p_customer_name: string
           p_customer_phone?: string
           p_date: string
+          p_groupon_voucher_codes?: string[]
           p_groupon_voucher_urls?: string[]
           p_legacy_reference?: string
           p_notes?: string
@@ -2176,12 +2221,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2205,11 +2250,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2230,11 +2275,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2255,11 +2300,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2272,11 +2317,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }

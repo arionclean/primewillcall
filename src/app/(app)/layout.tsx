@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app/app-shell";
+import { StaffClaimsSync } from "@/components/app/staff-claims-sync";
 import { getCurrentStaff, staffCapabilities } from "@/lib/auth";
 import { QueryProvider } from "@/lib/query/provider";
 
@@ -20,6 +21,7 @@ export default async function AppLayout({
 
   return (
     <QueryProvider>
+      <StaffClaimsSync staffId={staff.id} />
       <AppShell
         role={staff.role}
         fullName={staff.full_name}

@@ -14,7 +14,12 @@ import {
   todayLocalIso,
 } from "@/lib/dates";
 
-import { BookingsList, type BookingRow, type TourOption } from "./list";
+import {
+  BookingsList,
+  bookingSelect,
+  normalizeBookingRow,
+  type TourOption,
+} from "./list";
 
 const DEFAULT_TIMEZONE = BUSINESS_TZ;
 
@@ -107,34 +112,7 @@ async function BookingsPanel({
 
   const { data, error } = await supabase
     .from("bookings")
-    .select(
-      `
-      id,
-      starts_at,
-      ends_at,
-      status,
-      total_cents,
-      currency,
-      business_id,
-      business_tour_id,
-      customer_id,
-      checked_in_at,
-      peek,
-      source_channel,
-      groupon_redeemed_at,
-      groupon_voucher_urls,
-      pax_adult,
-      pax_child,
-      pax_infant,
-      notes,
-      business_tour:business_tours!bookings_business_tour_id_fkey(
-        id,
-        name,
-        tour:tours(id, name, capacity)
-      ),
-      customer:customers!bookings_customer_id_fkey(id, full_name, phone, email)
-      `,
-    )
+    .select(bookingSelect(caps))
     .gte("starts_at", range.startUtc)
     .lt("starts_at", range.endUtcExclusive)
     .order("starts_at", { ascending: true });
@@ -143,7 +121,7 @@ async function BookingsPanel({
     console.error("[bookings] page fetch error:", error);
   }
 
-  const bookings = (data ?? []) as unknown as BookingRow[];
+  const bookings = ((data ?? []) as unknown[]).map(normalizeBookingRow);
 
   // Role-scoped tour variants for the filter + edit dropdown. Owner sees all
   // rows; manager and check-in are scoped to their own business.

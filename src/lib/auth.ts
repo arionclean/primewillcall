@@ -18,6 +18,9 @@ export type CurrentStaff = {
   can_check_in: boolean;
   can_delete_bookings: boolean;
   can_add_to_peek: boolean;
+  can_view_attachments: boolean;
+  can_redeem_groupon: boolean;
+  can_view_details: boolean;
 };
 
 /**
@@ -33,6 +36,10 @@ function staffFromClaims(claims: Record<string, unknown>): CurrentStaff | null |
   if (typeof raw !== "object") return undefined;
   const s = raw as Record<string, unknown>;
   if (typeof s.id !== "string" || typeof s.role !== "string") return undefined;
+  // A token minted before a permission column existed says nothing about it,
+  // so it is treated like one that predates the hook. Point this at the
+  // newest column whenever one ships.
+  if (!("can_view_details" in s)) return undefined;
   return {
     id: s.id,
     full_name: typeof s.full_name === "string" ? s.full_name : "",
@@ -45,6 +52,9 @@ function staffFromClaims(claims: Record<string, unknown>): CurrentStaff | null |
     can_check_in: s.can_check_in === true,
     can_delete_bookings: s.can_delete_bookings === true,
     can_add_to_peek: s.can_add_to_peek === true,
+    can_view_attachments: s.can_view_attachments === true,
+    can_redeem_groupon: s.can_redeem_groupon === true,
+    can_view_details: s.can_view_details === true,
   };
 }
 
@@ -62,10 +72,14 @@ function staffFromClaims(claims: Record<string, unknown>): CurrentStaff | null |
  * hook is enabled, and for any session issued earlier. That fallback is what
  * makes this safe to deploy in either order.
  *
- * The claims can lag a permission edit by up to a token lifetime (about an
- * hour). They only drive the UI. RLS calls `current_staff()`, which reads the
+ * The claims only drive the UI. RLS calls `current_staff()`, which reads the
  * live table on every statement, so what someone can actually touch changes on
- * their next query regardless of what their token says.
+ * their next query regardless of what their token says. Left alone, the token
+ * would lag a permission edit by up to its lifetime (about an hour), which is
+ * why `StaffClaimsSync` (mounted by the `(app)` layout) watches the staffer's
+ * own row over Realtime and refreshes the session the moment it changes. An
+ * edit shows on an open screen within a second; the token lifetime is only
+ * the ceiling for a browser that was offline the whole time.
  *
  * Wrapped in React `cache()` so the layout, any nested layout and the page
  * share one result per request.
@@ -84,7 +98,7 @@ export const getCurrentStaff = cache(async () => {
   const { data: staff } = await supabase
     .from("staff")
     .select(
-      "id, full_name, role, business_id, is_active, kiosk_slug, can_create_bookings, can_edit_bookings, can_check_in, can_delete_bookings, can_add_to_peek",
+      "id, full_name, role, business_id, is_active, kiosk_slug, can_create_bookings, can_edit_bookings, can_check_in, can_delete_bookings, can_add_to_peek, can_view_attachments, can_redeem_groupon, can_view_details",
     )
     .eq("user_id", user.id)
     .maybeSingle();
@@ -98,12 +112,20 @@ export type StaffCapabilities = {
   canCheckIn: boolean;
   canDeleteBookings: boolean;
   canAddToPeek: boolean;
+  /** Open the photos attached to a booking. Screen-level. */
+  canViewAttachments: boolean;
+  /** See Redemption Codes and mark a Groupon voucher redeemed. */
+  canRedeemGroupon: boolean;
+  /** Off: only ID, name, phone, guests and check-in status. Screen-level. */
+  canViewDetails: boolean;
 };
 
 /**
  * Per-staff booking permissions, owner-editable on /admin/staff/[id].
  * Owners always have every capability; the columns only gate managers and
- * check-in staff. RLS + a bookings trigger enforce the same rules server-side.
+ * check-in staff. The write permissions are enforced by RLS plus the bookings
+ * update trigger; the two view switches decide what the bookings page fetches
+ * and shows (RLS is row-level and cannot hide a column).
  */
 export function staffCapabilities(staff: {
   role: StaffRole;
@@ -112,6 +134,9 @@ export function staffCapabilities(staff: {
   can_check_in: boolean;
   can_delete_bookings: boolean;
   can_add_to_peek: boolean;
+  can_view_attachments: boolean;
+  can_redeem_groupon: boolean;
+  can_view_details: boolean;
 }): StaffCapabilities {
   if (staff.role === "owner") {
     return {
@@ -120,6 +145,9 @@ export function staffCapabilities(staff: {
       canCheckIn: true,
       canDeleteBookings: true,
       canAddToPeek: true,
+      canViewAttachments: true,
+      canRedeemGroupon: true,
+      canViewDetails: true,
     };
   }
   return {
@@ -128,5 +156,8 @@ export function staffCapabilities(staff: {
     canCheckIn: staff.can_check_in,
     canDeleteBookings: staff.can_delete_bookings,
     canAddToPeek: staff.can_add_to_peek,
+    canViewAttachments: staff.can_view_attachments,
+    canRedeemGroupon: staff.can_redeem_groupon,
+    canViewDetails: staff.can_view_details,
   };
 }

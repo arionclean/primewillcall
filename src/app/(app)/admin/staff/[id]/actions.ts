@@ -52,6 +52,9 @@ export async function updateStaffAction(
   const can_check_in = formData.get("can_check_in") === "1";
   const can_delete_bookings = formData.get("can_delete_bookings") === "1";
   const can_add_to_peek = formData.get("can_add_to_peek") === "1";
+  const can_view_attachments = formData.get("can_view_attachments") === "1";
+  const can_redeem_groupon = formData.get("can_redeem_groupon") === "1";
+  const can_view_details = formData.get("can_view_details") === "1";
   const tour_ids = formData
     .getAll("tour_ids")
     .map((v) => String(v))
@@ -84,6 +87,9 @@ export async function updateStaffAction(
       can_check_in,
       can_delete_bookings,
       can_add_to_peek,
+      can_view_attachments,
+      can_redeem_groupon,
+      can_view_details,
     })
     .eq("id", id);
   if (updErr) return { error: updErr.message };

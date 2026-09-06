@@ -41,6 +41,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
 import { PaymentLinkButton } from "./payment-link-button";
+import { CopiedBubble, VoucherCodes } from "./voucher-codes";
 
 const PRIVACY_KEY = "pwc.bookings.privacy";
 const TOUR_FILTER_KEY = "pwc.bookings.tours";
@@ -87,7 +88,24 @@ function priceInputToCents(raw: string): number | null {
   return cents > 100_000_00 ? null : cents;
 }
 
-const BOOKING_SELECT = `
+/** The three permissions that shape what the list fetches and shows. */
+export type BookingViewCaps = Pick<
+  BookingCaps,
+  "canViewDetails" | "canViewAttachments" | "canRedeemGroupon"
+>;
+
+/**
+ * The columns the list reads, shaped by what this account may see. A column
+ * an account may not see is left out of the query rather than hidden after
+ * the fact, so it never reaches the device on the normal path: `notes` and
+ * the customer's email are details, the voucher photos are attachments, and
+ * the Redemption Codes go only to whoever redeems. RLS is row-level and
+ * cannot do this, which is why the same rule lives here and in the Realtime
+ * patch below (`withheldKeys`). Both the server page and the browser refetch
+ * use it, so the two reads never disagree.
+ */
+export function bookingSelect(caps: BookingViewCaps): string {
+  return `
   id,
   starts_at,
   ends_at,
@@ -101,18 +119,45 @@ const BOOKING_SELECT = `
   peek,
   source_channel,
   groupon_redeemed_at,
-  groupon_voucher_urls,
+  ${caps.canViewAttachments ? "groupon_voucher_urls," : ""}
+  ${caps.canRedeemGroupon ? "groupon_voucher_codes," : ""}
   pax_adult,
   pax_child,
   pax_infant,
-  notes,
+  ${caps.canViewDetails ? "notes," : ""}
   business_tour:business_tours!bookings_business_tour_id_fkey(
     id,
     name,
     tour:tours(id, name, capacity)
   ),
-  customer:customers!bookings_customer_id_fkey(id, full_name, phone, email)
+  customer:customers!bookings_customer_id_fkey(id, full_name, phone${
+    caps.canViewDetails ? ", email" : ""
+  })
 `;
+}
+
+/** Fill in what `bookingSelect` left out, so a row is always one shape. */
+export function normalizeBookingRow(raw: unknown): BookingRow {
+  const r = raw as BookingRow;
+  return {
+    ...r,
+    notes: r.notes ?? null,
+    groupon_voucher_urls: r.groupon_voucher_urls ?? [],
+    groupon_voucher_codes: r.groupon_voucher_codes ?? [],
+    customer: r.customer
+      ? { ...r.customer, email: r.customer.email ?? null }
+      : null,
+  };
+}
+
+/** The row keys `bookingSelect` leaves out for this account. */
+function withheldKeys(caps: BookingViewCaps): (keyof BookingRow)[] {
+  const keys: (keyof BookingRow)[] = [];
+  if (!caps.canViewDetails) keys.push("notes");
+  if (!caps.canViewAttachments) keys.push("groupon_voucher_urls");
+  if (!caps.canRedeemGroupon) keys.push("groupon_voucher_codes");
+  return keys;
+}
 
 type BookingStatus =
   | "pending"
@@ -189,6 +234,7 @@ export type BookingRow = {
   checked_in_at: string | null;
   peek: boolean;
   groupon_voucher_urls: string[];
+  groupon_voucher_codes: string[];
   source_channel: string | null;
   groupon_redeemed_at: string | null;
   pax_adult: number;
@@ -215,6 +261,9 @@ export type BookingCaps = {
   canCheckIn: boolean;
   canDeleteBookings: boolean;
   canAddToPeek: boolean;
+  canViewAttachments: boolean;
+  canRedeemGroupon: boolean;
+  canViewDetails: boolean;
 };
 
 type BookingsListProps = {
@@ -642,6 +691,14 @@ export function BookingsList({
     [rangeStartUtc, rangeEndUtcExclusive],
   );
 
+  // Pulled out as booleans so the effects below key on the values, not on
+  // the props object, which is rebuilt on every server refresh.
+  const { canViewDetails, canViewAttachments, canRedeemGroupon } = caps;
+  const viewCaps = useMemo<BookingViewCaps>(
+    () => ({ canViewDetails, canViewAttachments, canRedeemGroupon }),
+    [canViewDetails, canViewAttachments, canRedeemGroupon],
+  );
+
   // The rows live in the shared cache now, not component state, so coming back
   // to this screen paints them immediately instead of waiting on a read. The
   // server props seed the cache the first time a day is opened; after that the
@@ -652,18 +709,28 @@ export function BookingsList({
       const supabase = getSupabaseBrowserClient();
       const { data, error } = await supabase
         .from("bookings")
-        .select(BOOKING_SELECT)
+        .select(bookingSelect(viewCaps))
         .gte("starts_at", rangeStartUtc)
         .lt("starts_at", rangeEndUtcExclusive)
         .order("starts_at", { ascending: true });
       if (error) throw error;
-      return (data ?? []) as unknown as BookingRow[];
+      return ((data ?? []) as unknown[]).map(normalizeBookingRow);
     },
     initialData: initial,
     // These rows decide whether a guest boards, so never serve them without
     // checking. The cached copy paints instantly while the check runs.
     staleTime: 0,
   });
+
+  // A permission edit reaches this screen as new props while it stays mounted
+  // (StaffClaimsSync refreshes the server tree). The cached rows were read
+  // with the old column set, so read them again with the new one.
+  const viewCapsRef = useRef(viewCaps);
+  useEffect(() => {
+    if (viewCapsRef.current === viewCaps) return;
+    viewCapsRef.current = viewCaps;
+    void queryClient.invalidateQueries({ queryKey: bookingsKey });
+  }, [viewCaps, queryClient, bookingsKey]);
 
   /**
    * Drop-in replacement for the old `useState` setter, so every optimistic
@@ -770,6 +837,8 @@ export function BookingsList({
       ...(businessId ? { filter: `business_id=eq.${businessId}` } : {}),
     } as const;
 
+    const withheld = withheldKeys(viewCaps);
+
     const inLoadedDay = (iso: unknown) => {
       if (typeof iso !== "string") return false;
       const t = new Date(iso).getTime();
@@ -821,7 +890,10 @@ export function BookingsList({
         }
 
         // The common case: a scalar change on a row we already have. Check-in,
-        // peek, a note, a status, a pax count.
+        // peek, a note, a status, a pax count. A change payload carries every
+        // column RLS lets this account read, so the ones bookingSelect withholds
+        // are dropped before the merge, and the screen never holds them.
+        for (const key of withheld) delete row[key];
         setBookings((prev) =>
           prev.map((b) => (b.id === row.id ? { ...b, ...row } : b)),
         );
@@ -839,6 +911,7 @@ export function BookingsList({
     rangeEndUtcExclusive,
     setBookings,
     startTransition,
+    viewCaps,
   ]);
 
   // ── Tour filter ────────────────────────────────────────────────────────────
@@ -1045,13 +1118,14 @@ export function BookingsList({
     [setBookings],
   );
 
-  // ── Groupon "redeemed" toggle (owner only, optimistic) ─────────────────────
+  // ── Groupon "redeemed" toggle (permission-gated, optimistic) ───────────────
 
   const handleToggleRedeem = useCallback(
     async (booking: BookingRow) => {
-      // Records that the owner has redeemed this Groupon voucher on Groupon's
-      // platform. Independent of check-in and payment status: it only
-      // stamps/clears groupon_redeemed_at.
+      // Records that this voucher has been redeemed on Groupon's platform.
+      // Independent of check-in and payment status: it only stamps/clears
+      // groupon_redeemed_at. The update trigger refuses it without the
+      // Redeem Groupon vouchers permission.
       const nextRedeemedAt =
         booking.groupon_redeemed_at == null ? new Date().toISOString() : null;
       const prevRedeemedAt = booking.groupon_redeemed_at;
@@ -1128,6 +1202,7 @@ export function BookingsList({
       if (
         openNoteContainerRef.current &&
         !openNoteContainerRef.current.contains(target) &&
+        !openNoteTriggerRef.current?.contains(target) &&
         !openNotePanelRef.current?.contains(target)
       ) {
         setOpenNoteBookingId(null);
@@ -1483,13 +1558,21 @@ function BookingRowItem({
 
   const cancelled = booking.status === "cancelled";
   const checkedIn = booking.checked_in_at != null;
-  // Groupon vouchers are redeemed by the owner on Groupon's platform, then
-  // marked here. The toggle is owner-only (they own the Groupon relationship).
-  const canRedeem = role === "owner" && booking.source_channel === "groupon";
+  // Groupon vouchers are redeemed on Groupon's platform, then marked here by
+  // whoever holds the Redeem Groupon vouchers permission (owners always do).
+  const canRedeem =
+    caps.canRedeemGroupon && booking.source_channel === "groupon";
   const redeemed = booking.groupon_redeemed_at != null;
+  // The codes go with the toggle: the code is what Groupon asks for.
+  const voucherCodes = caps.canRedeemGroupon ? booking.groupon_voucher_codes : [];
   const badge = statusBadge(booking.status);
   const paxBreakdown = describePax(booking);
-  const note = booking.notes?.trim() ?? "";
+  // What "See full booking details" withholds on this row: the note and the
+  // edit form (which shows every field). bookingSelect already left the note
+  // out of the read; this keeps the rule visible where the row is drawn.
+  const note = caps.canViewDetails ? (booking.notes?.trim() ?? "") : "";
+  const canEdit = caps.canEditBookings && caps.canViewDetails;
+  const photoUrls = caps.canViewAttachments ? booking.groupon_voucher_urls : [];
 
   const totalPax = booking.pax_adult + booking.pax_child + booking.pax_infant;
   const tint = tourTint(color);
@@ -1528,10 +1611,24 @@ function BookingRowItem({
             <span aria-hidden>·</span>
             <span className="truncate">{tourName}</span>
             {note ? (
-              <StickyNote
-                className="size-3.5 shrink-0"
-                aria-label="Has a note"
-              />
+              <button
+                type="button"
+                onClick={(event) => {
+                  const trigger =
+                    event.currentTarget instanceof HTMLElement
+                      ? event.currentTarget
+                      : null;
+                  onToggleNote(trigger);
+                }}
+                aria-expanded={noteOpen}
+                className={cn(
+                  "inline-flex size-6 shrink-0 items-center justify-center rounded-md text-indigo-500 transition hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+                  noteOpen ? "bg-indigo-50" : "",
+                )}
+              >
+                <span className="sr-only">Show booking note</span>
+                <StickyNote className="size-3.5" />
+              </button>
             ) : null}
           </div>
         </div>
@@ -1546,7 +1643,7 @@ function BookingRowItem({
           {caps.canAddToPeek ? (
             <PeekButton inPeek={booking.peek} busy={busy} onToggle={onTogglePeek} />
           ) : null}
-          {booking.groupon_voucher_urls.length > 0 ? (
+          {photoUrls.length > 0 ? (
             <button
               type="button"
               onClick={onShowPhotos}
@@ -1564,7 +1661,7 @@ function BookingRowItem({
             aria-label="Toggle check-in"
             className="size-5 accent-fuchsia-600 disabled:cursor-not-allowed disabled:opacity-50"
           />
-          {caps.canEditBookings ? (
+          {canEdit ? (
             <button type="button" onClick={onEdit} className={rowActionButtonClass}>
               <span className="sr-only">Edit booking</span>
               <PencilLine className="size-4" />
@@ -1572,6 +1669,18 @@ function BookingRowItem({
           ) : null}
         </div>
       </div>
+
+      {voucherCodes.length > 0 ? (
+        <div className="-mt-1.5 px-3 pb-3 lg:hidden">
+          <VoucherCodes
+            bookingId={booking.id}
+            codes={voucherCodes}
+            privacyOn={privacyOn}
+            copiedKey={copiedKey}
+            onCopyField={onCopyField}
+          />
+        </div>
+      ) : null}
 
       {/* Dense grid for desktop (lg and up). */}
       <div className="hidden items-center gap-3 px-3 py-3 text-sm lg:grid lg:grid-cols-[7rem_minmax(11rem,1.3fr)_minmax(8.5rem,.85fr)_3rem_2.5rem_minmax(10rem,1.1fr)_auto]">
@@ -1617,6 +1726,17 @@ function BookingRowItem({
         {badge ? (
           <div className="mt-0.5">
             <Badge tone={badge.tone}>{badge.label}</Badge>
+          </div>
+        ) : null}
+        {voucherCodes.length > 0 ? (
+          <div className="mt-1">
+            <VoucherCodes
+              bookingId={booking.id}
+              codes={voucherCodes}
+              privacyOn={privacyOn}
+              copiedKey={copiedKey}
+              onCopyField={onCopyField}
+            />
           </div>
         ) : null}
       </div>
@@ -1722,44 +1842,11 @@ function BookingRowItem({
               <span className="sr-only">Show booking note</span>
               <StickyNote className="size-4" />
             </button>
-            {noteOpen && noteLayout && typeof document !== "undefined"
-              ? createPortal(
-                  <div
-                    ref={openNotePanelRef}
-                    className={cn(
-                      "fixed z-[90]",
-                      noteLayout.placement === "top" ? "-translate-y-full" : "",
-                    )}
-                    style={{
-                      left: noteLayout.left,
-                      top: noteLayout.top,
-                      width: noteLayout.width,
-                    }}
-                  >
-                    <div className="relative rounded-2xl bg-foreground px-4 py-3 text-left text-sm leading-snug text-background shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-                      <span
-                        aria-hidden="true"
-                        className={cn(
-                          "absolute size-3 rotate-45 bg-foreground",
-                          noteLayout.placement === "top"
-                            ? "top-full -translate-y-1/2"
-                            : "bottom-full translate-y-1/2",
-                        )}
-                        style={{ left: noteLayout.arrowLeft }}
-                      />
-                      <div className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words">
-                        {note}
-                      </div>
-                    </div>
-                  </div>,
-                  document.body,
-                )
-              : null}
           </div>
         ) : (
           <span className="size-8" aria-hidden="true" />
         )}
-        {booking.groupon_voucher_urls.length > 0 ? (
+        {photoUrls.length > 0 ? (
           <button
             type="button"
             onClick={onShowPhotos}
@@ -1769,7 +1856,7 @@ function BookingRowItem({
             <ImageIcon className="size-4" />
           </button>
         ) : null}
-        {caps.canEditBookings ? (
+        {canEdit ? (
           <button type="button" onClick={onEdit} className={rowActionButtonClass}>
             <span className="sr-only">Edit booking</span>
             <PencilLine className="size-4" />
@@ -1779,29 +1866,46 @@ function BookingRowItem({
         )}
       </div>
       </div>
+
+      {/* The note, anchored to whichever layout's button opened it. */}
+      {noteOpen && noteLayout && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              ref={openNotePanelRef}
+              className={cn(
+                "fixed z-[90]",
+                noteLayout.placement === "top" ? "-translate-y-full" : "",
+              )}
+              style={{
+                left: noteLayout.left,
+                top: noteLayout.top,
+                width: noteLayout.width,
+              }}
+            >
+              <div className="relative rounded-2xl bg-foreground px-4 py-3 text-left text-sm leading-snug text-background shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "absolute size-3 rotate-45 bg-foreground",
+                    noteLayout.placement === "top"
+                      ? "top-full -translate-y-1/2"
+                      : "bottom-full translate-y-1/2",
+                  )}
+                  style={{ left: noteLayout.arrowLeft }}
+                />
+                <div className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words">
+                  {note}
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </article>
   );
 }
 
-function CopiedBubble() {
-  return (
-    <div className="pointer-events-none absolute bottom-full left-1/2 z-30 -translate-x-1/2 pb-3">
-      <span className="relative block rounded-2xl bg-foreground px-3 py-1.5 text-[10px] font-semibold text-background shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-        Copied
-        <span
-          aria-hidden="true"
-          className="absolute left-1/2 top-full size-2.5 -translate-x-1/2 -translate-y-1/2 rotate-45 bg-foreground"
-        />
-      </span>
-    </div>
-  );
-}
-
-/**
- * Owner-only "mark as redeemed" toggle for Groupon bookings. Amber "Redeem" until
- * the owner has redeemed the voucher on Groupon, then a green "Redeemed" that can
- * be clicked to undo. Toggles `bookings.groupon_redeemed_at`.
- */
+/** The photos attached to a booking (Groupon voucher screenshots), one at a time. */
 function BookingPhotosModal({
   booking,
   onClose,
@@ -1918,6 +2022,12 @@ function PeekButton({
   );
 }
 
+/**
+ * "Mark as redeemed" toggle for Groupon bookings, shown to whoever holds the
+ * Redeem Groupon vouchers permission. Amber "Redeem" until the voucher has
+ * been redeemed on Groupon, then a green "Redeemed" that can be clicked to
+ * undo. Toggles `bookings.groupon_redeemed_at`.
+ */
 function GrouponRedeemButton({
   redeemed,
   busy,

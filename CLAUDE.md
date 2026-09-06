@@ -43,12 +43,16 @@ Realtime). Supabase project id: `qbnizuhozzwkiitfkjee`.
   `/schedule`. Lands on `/bookings` (no dashboard; the sidebar Manifest shows
   today's remaining check-ins per departure).
 
-Non-owner staff also carry per-person booking permissions
+Non-owner staff also carry per-person booking permissions, owner-editable in the
+"Permissions" section of `/admin/staff/[id]`. Six are write permissions
 (`staff.can_create_bookings / can_edit_bookings / can_check_in / can_delete_bookings /
-can_add_to_peek`), owner-editable in the "Permissions" section of `/admin/staff/[id]`.
-Owners always have all of them. Enforcement is layered (UI, server action, RLS, plus a
-bookings trigger that limits check-in-only accounts to the check-in + peek stamps);
-see `docs/DATABASE.md`.
+can_add_to_peek / can_redeem_groupon`), enforced in layers (UI, server action, RLS,
+plus a bookings trigger that checks each stamp against its own switch and limits an
+account without edit to those stamps). Two are view switches
+(`can_view_details`, `can_view_attachments`): off, the bookings page shows only the
+ID, name, phone, guests and check-in status, or hides the voucher photos. Those are
+screen-level (RLS cannot hide a column): `bookingSelect()` leaves the withheld columns
+out of the read. Owners always have all eight. See `docs/DATABASE.md`.
 
 A Postgres trigger links `auth.users` to a `staff` row by email on sign-up. The
 `current_staff()` SECURITY DEFINER function returns `(staff_id, role, business_id)` and
@@ -139,7 +143,13 @@ src/app/_archive, src/components/_archive   legacy Bubble pages, kept as referen
   `getCurrentStaff()` (`lib/auth.ts`), which is `cache()`d so the `(app)` layout and the
   page it renders share a single `getUser()` + staff round-trip per request instead of
   each doing their own. Each route group has a `loading.tsx` skeleton, so navigation
-  paints instantly while the page server-renders.
+  paints instantly while the page server-renders. The staff row itself comes out of
+  the access token (the `app_staff` claim the custom access token hook writes), not
+  a query, so a role or permission edit would lag a token lifetime; `StaffClaimsSync`
+  (`components/app/staff-claims-sync.tsx`, mounted by the `(app)` layout) watches the
+  staffer's own `staff` row over Realtime and refreshes the session when it changes,
+  so an edit reaches an open screen within a second. RLS reads the live row
+  regardless. See "The staff row in the access token" in `docs/DATABASE.md`.
 - **Reads**: server component fetches with `getSupabaseServerClient()`, passes typed
   data to client components. Live-updating lists (bookings) re-fetch via a Realtime
   `postgres_changes` subscription on the browser client.
@@ -298,7 +308,12 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   -> pending booking on the `groupon` channel. A voucher whose Redemption Code cannot be
   read off the image is refused with a "tap View Voucher and screenshot again" message
   (`_shared/gp-voucher-code.ts` reads the code from the OCR text first, the model is the
-  fallback); staff redeem by that code, so a booking without it is useless to them. A
+  fallback); staff redeem by that code, so a booking without it is useless to them. The
+  codes live in `bookings.groupon_voucher_codes` (not `legacy_reference`, which the Xano
+  sync-back overwrites) and the bookings list shows them to whoever may redeem (owner, or `can_redeem_groupon`), as a copy chip
+  under the guest's name on desktop and phone: one click copies a single code, several
+  open a small per-code list. The note is a plain "Groupon redemption" (no code, no
+  voucher URL: every role reads notes); the Xano mirror builds Bubble's fuller note itself. A
   booking waiting on an unpaid Stripe
   Checkout page carries `bookings.awaiting_payment` and is hidden by the `bookings_select`
   policy, so an abandoned checkout never reaches staff; a $0 fee product skips Stripe and
@@ -313,7 +328,8 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   step now creates a real Stripe Checkout Session (direct charge on the business's
   connected account + platform fee), with a graceful manual-collection fallback when the
   business is not yet Stripe-onboarded. The owner still marks each Groupon voucher redeemed
-  (owner-only "Redeem" / "Redeemed" toggle on Groupon rows in the bookings list,
+  ("Redeem" / "Redeemed" toggle on Groupon rows in the bookings list, for the owner and
+  staff with `can_redeem_groupon`,
   `bookings.groupon_redeemed_at`) after redeeming it on Groupon's own platform. See the
   Stripe entry below and [`docs/DATABASE.md`](docs/DATABASE.md) "Groupon convenience fee" +
   "Payments (Stripe)". The matcher can be graded against live Xano by the **shadow test**

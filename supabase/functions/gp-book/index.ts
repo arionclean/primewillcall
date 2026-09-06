@@ -93,7 +93,6 @@ Deno.serve(async (req) => {
     .map((u) => String(u ?? "").trim())
     .filter((u) => u.startsWith("http"))
     .filter((u, i, all) => all.indexOf(u) === i);
-  const imageUrl = imageUrls[imageUrls.length - 1] ?? null;
 
   if (!businessTourId || !customerName) {
     return json({ ok: false, error: "missing_fields", message: "Name and product are required." }, 400);
@@ -121,11 +120,11 @@ Deno.serve(async (req) => {
   // the time is not closed for that date, prices the fee from business_tours (never from
   // the client), and inserts the customer + pending booking together. See
   // supabase/migrations/20260816120000_create_booking_rpc.sql.
+  // The note is read by every role on the bookings list, so it carries neither the
+  // Redemption Codes nor the voucher URL: those live in `groupon_voucher_codes`
+  // (owner-only chip) and `groupon_voucher_urls`. The Xano mirror composes its own
+  // fuller note for Bubble from those columns (see gp-xano-mirror.ts).
   const noteParts = ["Groupon redemption"];
-  if (voucherCodes.length) {
-    noteParts.push(`code${voucherCodes.length > 1 ? "s" : ""} ${voucherCodes.join(", ")}`);
-  }
-  if (imageUrl) noteParts.push(`voucher ${imageUrl}`);
 
 
   const { data: created, error: rpcErr } = await db
@@ -147,6 +146,10 @@ Deno.serve(async (req) => {
       p_active_slots_only: true,
       // What the bookings list renders as the voucher photo.
       p_groupon_voucher_urls: imageUrls,
+      // The Redemption Codes staff copy from the bookings list, one per voucher. Kept
+      // apart from legacy_reference, which Xano's sync-back overwrites with the mirror
+      // reference; see migration groupon_voucher_codes.
+      p_groupon_voucher_codes: voucherCodes,
     })
     .maybeSingle<CreatedBooking>();
 

@@ -31,8 +31,18 @@ const DEFAULT_CAP = 100;
 const BATCH = 50;
 const HOUR_MS = 3_600_000;
 
+// A send that failed for a reason that may not repeat (a 5xx, a rate limit, or a
+// request that never reached Twilio at all) is put back on the queue instead of
+// being dropped. Twilio's own rejections (bad number, unsubscribed) are permanent
+// and are not retried, because asking again produces the same answer.
+const MAX_ATTEMPTS = 3;
+/** Wait before retry N, indexed by the attempt that just failed. */
+const RETRY_BACKOFF_MS = [60_000, 300_000];
+
 interface ScheduledMessage {
   id: string;
+  /** Set by claim_due_scheduled_messages, so it counts the attempt in flight. */
+  attempts: number;
   to_phone: string;
   channel: "sms" | "whatsapp";
   body: string | null;
@@ -45,7 +55,7 @@ interface ScheduledMessage {
 
 async function twilioSend(
   params: URLSearchParams,
-): Promise<{ ok: boolean; sid?: string; status?: string; error?: string }> {
+): Promise<{ ok: boolean; sid?: string; status?: string; error?: string; retryable?: boolean }> {
   if (!ACCOUNT_SID || !AUTH_TOKEN) {
     return { ok: false, error: "Twilio credentials not configured" };
   }
@@ -58,19 +68,43 @@ async function twilioSend(
       },
       body: params,
     });
-    const json = (await res.json()) as { sid?: string; status?: string; message?: string };
-    if (res.status === 201 && json.sid) {
-      return { ok: true, sid: json.sid, status: json.status ?? "queued" };
+
+    // Read the body as text and parse it ourselves. Calling res.json() straight out
+    // threw whenever the reply was not JSON, and the throw took the HTTP status with
+    // it: the first real failure here recorded only "that wasn't JSON", so there was
+    // no way to tell a gateway 502 from a Twilio rejection. Not every reply on this
+    // path comes from Twilio, and the ones that don't are exactly the interesting ones.
+    const text = await res.text();
+    let body: { sid?: string; status?: string; message?: string; code?: number } | null = null;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = null;
     }
-    return { ok: false, error: json.message ?? `Twilio HTTP ${res.status}` };
+
+    if (res.status === 201 && body?.sid) {
+      return { ok: true, sid: body.sid, status: body.status ?? "queued" };
+    }
+
+    // Keep the status, and a slice of whatever came back when it was not JSON.
+    const detail = body?.message ?? text.replace(/\s+/g, " ").trim().slice(0, 200);
+    return {
+      ok: false,
+      error: `Twilio HTTP ${res.status}${body?.code ? ` (${body.code})` : ""}: ${detail}`,
+      // 5xx and 429 are Twilio (or something in front of it) asking us to come back.
+      // A non-JSON body means the reply never came from the API at all, so the message
+      // was almost certainly never created: worth another go.
+      retryable: res.status >= 500 || res.status === 429 || body === null,
+    };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    // Never left the machine: DNS, TLS, timeout. Always worth retrying.
+    return { ok: false, error: e instanceof Error ? e.message : String(e), retryable: true };
   }
 }
 
 async function sendOne(
   row: ScheduledMessage,
-): Promise<{ ok: boolean; sid?: string; error?: string }> {
+): Promise<{ ok: boolean; sid?: string; status?: string; error?: string; retryable?: boolean }> {
   if (row.channel === "sms") {
     if (!SMS_FROM) return { ok: false, error: "TWILIO_FROM_NUMBER not configured" };
     return twilioSend(
@@ -92,7 +126,9 @@ async function sendOne(
   });
   return result.sent
     ? { ok: true, sid: result.sid, status: result.status }
-    : { ok: false, error: result.reason ?? "WhatsApp send failed" };
+    // sendWhatsapp already decided template vs free-form, so a failure here is Meta's
+    // answer about this specific message. Retrying it would only repeat the refusal.
+    : { ok: false, error: result.reason ?? "WhatsApp send failed", retryable: false };
 }
 
 /** Send an email via Resend (used for the cap alert). Returns ok. */
@@ -264,6 +300,7 @@ Deno.serve(async (req) => {
 
   let sent = 0;
   let failed = 0;
+  let requeued = 0;
   const nowIso = new Date().toISOString();
   for (const row of rows) {
     const result = await sendOne(row);
@@ -273,19 +310,42 @@ Deno.serve(async (req) => {
         .from("scheduled_messages")
         .update({ status: "sent", sent_at: nowIso, provider_sid: result.sid ?? null })
         .eq("id", row.id);
-    } else {
-      failed += 1;
+      continue;
+    }
+
+    const error = result.error ?? "unknown error";
+    // Back to pending with a later send_at, so the next cron tick picks it up. A blip
+    // between here and Twilio used to drop the guest's message for good.
+    if (result.retryable && row.attempts < MAX_ATTEMPTS) {
+      requeued += 1;
+      const wait = RETRY_BACKOFF_MS[row.attempts - 1] ?? RETRY_BACKOFF_MS.at(-1)!;
+      console.error(
+        `[dispatch] retry ${row.attempts}/${MAX_ATTEMPTS} for ${row.id} in ${wait / 1000}s: ${error}`,
+      );
       await db
         .from("scheduled_messages")
-        .update({ status: "failed", last_error: result.error ?? "unknown error" })
+        .update({
+          status: "pending",
+          send_at: new Date(Date.now() + wait).toISOString(),
+          last_error: error,
+        })
         .eq("id", row.id);
+      continue;
     }
+
+    failed += 1;
+    console.error(`[dispatch] giving up on ${row.id} after ${row.attempts}: ${error}`);
+    await db
+      .from("scheduled_messages")
+      .update({ status: "failed", last_error: error })
+      .eq("id", row.id);
   }
 
   return Response.json({
     claimed: rows.length,
     sent,
     failed,
+    requeued,
     capped: due > budget,
     cap,
     sentLastHour: alreadySent + sent,

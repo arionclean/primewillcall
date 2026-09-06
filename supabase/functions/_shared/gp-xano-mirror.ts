@@ -191,6 +191,7 @@ export async function mirrorGrouponBooking(
     notes: string | null;
     public_token: string;
     groupon_voucher_urls: string[] | null;
+    groupon_voucher_codes: string[] | null;
     customer: { full_name: string | null } | null;
     business_tour: {
       name: string;
@@ -202,7 +203,7 @@ export async function mirrorGrouponBooking(
   const { data: booking } = await sb
     .from("bookings")
     .select(
-      "id, legacy_id, source_channel, starts_at, pax_adult, notes, public_token, groupon_voucher_urls, " +
+      "id, legacy_id, source_channel, starts_at, pax_adult, notes, public_token, groupon_voucher_urls, groupon_voucher_codes, " +
         "customer:customers(full_name), " +
         "business_tour:business_tours(name, legacy_product_id, business:businesses(name, legacy_company_id))",
     )
@@ -227,6 +228,16 @@ export async function mirrorGrouponBooking(
 
   const bt = booking.business_tour;
 
+  // Xano's note is what Bubble staff read, and today it is where they find the
+  // Redemption Code, so it keeps the full "code X · voucher URL" text. Our own note
+  // stays a plain "Groupon redemption": every role can read it here, and the code has
+  // its owner-only column.
+  const codes = booking.groupon_voucher_codes ?? [];
+  const lastVoucherUrl = booking.groupon_voucher_urls?.at(-1);
+  const noteParts = [booking.notes?.trim() || "Groupon redemption"];
+  if (codes.length) noteParts.push(`code${codes.length > 1 ? "s" : ""} ${codes.join(", ")}`);
+  if (lastVoucherUrl) noteParts.push(`voucher ${lastVoucherUrl}`);
+
   const mirror = await mirrorGpBookingToXano({
     ref,
     status: "confirmed",
@@ -239,7 +250,7 @@ export async function mirrorGrouponBooking(
     startsAtIso: booking.starts_at,
     passengers: booking.pax_adult ?? 1,
     voucherImageUrls: booking.groupon_voucher_urls ?? [],
-    note: booking.notes ?? "",
+    note: noteParts.join(" · "),
   });
   if (!mirror.ok) {
     console.error(`[gp] Xano mirror failed for booking ${bookingId} (${ref}): ${mirror.error}`);

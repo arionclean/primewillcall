@@ -44,18 +44,38 @@ booking page (`/booking/<token>`).
 ### staff
 `id uuid pk, user_id? (-> auth.users), business_id? (-> businesses), role enum,
 full_name, email, phone?, is_active, can_create_bookings, can_edit_bookings,
-can_check_in, can_delete_bookings, can_add_to_peek, created_at, updated_at`
+can_check_in, can_delete_bookings, can_add_to_peek, can_view_attachments,
+can_redeem_groupon, can_view_details, created_at, updated_at`
 Role enum (`staff_role`): `owner`, `business_manager`, `check_in`. `owner` has no
 `business_id`. A trigger links a new `auth.users` row to its `staff` row by email.
 
 The `can_*` booleans are per-staff booking permissions, editable by the owner
 on `/admin/staff/[id]` ("Permissions"). Owners ignore them (always allowed); they
-gate managers and check-in staff via the bookings RLS policies plus the
-`bookings_enforce_update_capabilities` trigger (an account with `can_check_in` but
-not `can_edit_bookings` may only change `checked_in_at` / `checked_in_by_staff_id`
-and `peek`; without `can_add_to_peek` the trigger blocks `peek` flips entirely; RLS
-alone cannot express column-level rules). Defaults: create/edit/check-in/peek on,
-delete off (new managers get delete on from the New team member form).
+gate managers and check-in staff. They come in two kinds.
+
+**Write permissions** (`can_create_bookings`, `can_edit_bookings`, `can_check_in`,
+`can_delete_bookings`, `can_add_to_peek`, `can_redeem_groupon`) are enforced by the
+bookings RLS policies plus the `bookings_enforce_update_capabilities` trigger. The
+update policy admits a row to anyone holding any of edit / check-in / peek / redeem;
+the trigger then checks each stamp against its own switch (`checked_in_at` needs
+`can_check_in`, `peek` needs `can_add_to_peek`, `groupon_redeemed_at` needs
+`can_redeem_groupon`) and, without `can_edit_bookings`, refuses any other change.
+RLS alone cannot express column-level rules, which is why the trigger exists.
+Service-role writers have no `current_staff()` row and pass through.
+
+**View switches** (`can_view_details`, `can_view_attachments`) decide what the
+bookings page fetches and shows. Off, `can_view_details` leaves the desk with the ID,
+name, phone, guest count and check-in status (no note, no email, no edit form);
+`can_view_attachments` off hides the voucher photos. `can_redeem_groupon` also gates
+seeing the Redemption Codes. These are screen-level: RLS is row-level and cannot hide
+a column, so `bookingSelect()` in `bookings/list.tsx` leaves the withheld columns out
+of both the server read and the browser refetch, and the Realtime patch drops them
+from change payloads. A change payload on the wire still carries every column the
+row policy allows; treat the view switches as privacy on the device, not a boundary.
+
+Defaults: create/edit/check-in/peek/attachments/details on, delete and redeem off
+(new managers get delete on from the New team member form). Redeem was owner-only
+before the switch existed, so the default preserves that.
 `bookings.peek` marks a booking as manually entered into Peek (the boat's
 reservation system); it is the same field the Xano sync carries, so both stacks
 agree during the migration.
@@ -319,7 +339,8 @@ still shows it and they can come back and pay.
 - `gp-book` (edge function): re-validates the product + fee (and rejects a time closed for
   that date), creates the customer
   (`legacy_source = 'groupon'`) and a `pending` booking (`source_channel = 'groupon'`,
-  `legacy_reference = <voucher code>`, `total_cents = fee × passengers`, the fee as a
+  `legacy_reference = <codes, comma-joined>`, `groupon_voucher_codes = <one per voucher>`,
+  `total_cents = fee × passengers`, the fee as a
   `tour_pax_breakdown` line), then (when the business is Stripe-onboarded) creates a
   Checkout Session and returns its URL; otherwise returns the manual-collection fallback.
 
@@ -469,12 +490,32 @@ register the two webhook endpoints, connect each business, Terminal Locations) i
 remaining operational step.
 
 ### Marking a voucher redeemed
-The owner still redeems each voucher on Groupon's own platform (the photo/code the
-guest uploaded is kept in the booking's `notes`). Once done, they record it here via
+Each voucher is still redeemed on Groupon's own platform, by its Redemption Code
+(`groupon_voucher_codes`, below; the guest's screenshots are in
+`groupon_voucher_urls`). Once done, it is recorded here via
 `bookings.groupon_redeemed_at` (nullable timestamp, mirrors `checked_in_at`): the
-bookings list shows an owner-only "Redeem" / "Redeemed" toggle on `source_channel =
-'groupon'` rows. Independent of check-in and payment status; no RLS change (owner
-already has full booking access).
+bookings list shows a "Redeem" / "Redeemed" toggle on `source_channel = 'groupon'`
+rows to the owner and to staff with `can_redeem_groupon`. Independent of check-in
+and payment status. The `bookings_enforce_update_capabilities` trigger refuses a
+`groupon_redeemed_at` change from any non-owner without the permission.
+
+### Redemption codes on the row
+`bookings.groupon_voucher_codes` (`text[]`, one Redemption Code per voucher, in upload
+order) is written by `create_booking()` from `gp-book`, and was backfilled from
+`legacy_reference` for the /gp bookings made before the column existed (only entries
+shaped like a code: the 6-10 digit Redemption Code or the older `VS-XXXX-...` voucher
+number). The bookings list shows the codes to whoever may redeem (the owner, plus staff
+with `can_redeem_groupon`), as a chip under the guest's name in both the desktop and phone layouts: one code
+copies on click; several show the first plus a count and open a small list with a copy
+button per code (Groupon redeems one code at a time) and a check on each code already
+copied, plus "Copy all". Privacy mode masks them. The codes deliberately do not rely on
+`legacy_reference`: `xano-booking-sync` overwrites that field with Xano's
+`booking_reference` (the `GP-...` mirror reference) on every round trip, and it never
+maps `groupon_voucher_codes`, so the column survives the mirror. The booking **note** is
+a plain "Groupon redemption": every role reads notes, so it carries neither the code nor
+the voucher URL (migration `groupon_voucher_codes_from_notes` scrubbed the old ones and
+recovered the codes of the mirrored rows from them). The Xano mirror composes the fuller
+"code X · voucher URL" note Bubble staff read from the two columns.
 
 ## Access control (RLS)
 
@@ -482,25 +523,6 @@ RLS is enabled on all app tables. Every policy is expressed through the
 `current_staff()` SECURITY DEFINER function, which returns the caller's
 `(staff_id, role, business_id)`. This avoids recursive policy lookups on `staff`.
 
-General shape:
-
-- **owner**: full access to everything.
-- **business_manager**: read + write rows belonging to their `business_id`
-  (`bookings`, `customers`, `business_tours`, `tour_pax_tiers` via the parent business).
-- **check_in**: read `business_tours` / `tour_pax_tiers` for their business; read,
-  insert and update `bookings` only for tours they are assigned to via `staff_tours`
-  (each write also gated by the `staff.can_*` capability columns). Can insert
-  `customers` for their business. Delete only when `can_delete_bookings` is on.
-
-Table-specific notes:
-
-- `tours` / `tour_timeslots`: all roles can read; only `owner` can write. (Timeslots are
-  shared, so managers never edit schedules.)
-- `tour_slot_closures`: all roles can read; insert/delete is owner, or a manager whose
-  business is assigned to the tour (`business_tours`). Closing affects every business
-  sharing the departure, which mirrors reality: the boat itself is not going out.
-- `customers`: owner + manager + check-in of the business can insert and read; update is
-  owner + manager; delete is owner only.
 Two costs of RLS to design around (both bit the Messages list, see
 `messaging_conversations`):
 
@@ -523,6 +545,25 @@ Two costs of RLS to design around (both bit the Messages list, see
   the SQL editor and timed out at 8 s for a staff member. Materialise the key instead
   (`customers.phone_last10` is a stored generated column) and compare it with `=`.
 
+General shape:
+
+- **owner**: full access to everything.
+- **business_manager**: read + write rows belonging to their `business_id`
+  (`bookings`, `customers`, `business_tours`, `tour_pax_tiers` via the parent business).
+- **check_in**: read `business_tours` / `tour_pax_tiers` for their business; read,
+  insert and update `bookings` only for tours they are assigned to via `staff_tours`
+  (each write also gated by the `staff.can_*` capability columns). Can insert
+  `customers` for their business. Delete only when `can_delete_bookings` is on.
+
+Table-specific notes:
+
+- `tours` / `tour_timeslots`: all roles can read; only `owner` can write. (Timeslots are
+  shared, so managers never edit schedules.)
+- `tour_slot_closures`: all roles can read; insert/delete is owner, or a manager whose
+  business is assigned to the tour (`business_tours`). Closing affects every business
+  sharing the departure, which mirrors reality: the boat itself is not going out.
+- `customers`: owner + manager + check-in of the business can insert and read; update is
+  owner + manager; delete is owner only.
 - `bookings`: all non-owner writes are capability-gated by the `staff.can_*` columns.
   Insert: owner; manager (own business); check-in (own business + assigned tour), each
   needing `can_create_bookings`. Update: same row scopes, needing `can_edit_bookings`
@@ -540,6 +581,34 @@ When something returns no rows or a write silently fails, it is almost always RL
 Verify the caller's role/business by querying `current_staff()` and compare against the
 policy.
 
+### The staff row in the access token
+
+`getCurrentStaff()` (`lib/auth.ts`) does not query `staff`. The
+`custom_access_token_hook` function (migration `staff_claims_hook`) copies the row into
+the JWT as an `app_staff` claim when Auth issues a token, so the layout answers "who is
+this and what may they do?" locally on every navigation instead of paying a 140 to
+200ms round trip. The hook runs as `supabase_auth_admin`, which has its own SELECT policy
+on `staff` for that purpose. The claim is missing on tokens that predate the hook, and
+the app falls back to the query in that case.
+
+This is a UI cache and nothing more. Every policy and the bookings trigger call
+`current_staff()`, which reads the live table, so a revoked permission is refused on
+the very next statement whatever the token says.
+
+What it cannot do on its own is tell the person. A token lives about an hour, and Auth
+only reruns the hook when it reissues one, so an edit the owner saves would keep showing
+the old buttons on that person's screen until then. That is what happened to a check-in
+account that signed in 25 seconds before its permissions were changed: the database
+refused every click, the buttons stayed. The fix is `StaffClaimsSync`
+(`components/app/staff-claims-sync.tsx`), mounted once by the `(app)` layout: it
+subscribes to the account's own `staff` row over Realtime (`staff` is in the
+publication for this; `staff_select` already lets an account read its own row) and, on
+UPDATE, calls `auth.refreshSession()`. Refreshing reruns the hook, the new claims land
+in the auth cookie, and `router.refresh()` re-renders the server tree from them. Each
+time the subscription joins (first load, or after a reconnect) it also compares the
+row's `updated_at` with the token's `iat` and refreshes if the row is newer, so a
+change that landed while the laptop was asleep is caught too.
+
 ## Realtime
 
 Screens that staff watch (bookings, messages, the payments ledger, a kiosk's caja)
@@ -548,8 +617,10 @@ have to be true in the database for that to work.
 
 **Published tables.** Postgres only emits changes for tables in the `supabase_realtime`
 publication. Currently: `bookings`, `kiosks`, `sms_messages`, `whatsapp_messages`,
-`stripe_transactions`, `stripe_refunds`, `cash_sales`. A new live screen needs its table
-added in a migration, or the client subscribes to silence.
+`stripe_transactions`, `stripe_refunds`, `cash_sales`, `staff`. A new live screen needs
+its table added in a migration, or the client subscribes to silence. `staff` is not
+there for a screen: each signed-in account watches its own row so a permission edit can
+refresh its access token (see "The staff row in the access token" above).
 
 **Replica identity.** `bookings`, `stripe_transactions`, `stripe_refunds` and
 `cash_sales` are `REPLICA IDENTITY FULL`. At the default identity a DELETE writes only
