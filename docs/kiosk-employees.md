@@ -11,7 +11,16 @@ which iPad; the employee PIN says who.
   among the active employees of a business, so a PIN alone identifies the person on that
   business's tablets.
 - **The tablet.** When `kiosks.pin_required` is on, the app shows a keypad over everything
-  until a valid PIN is typed (`kiosk-pin-verify`). The person stays unlocked until they
+  until a valid PIN is typed. The check is **local and immediate**: `kiosk-config` carries
+  the kiosk's eligible employees (id, name, salted hash, never the PIN), the tablet hashes
+  the typed PIN the same way (`js-sha256`) and unlocks on a match, then asks
+  `kiosk-pin-verify` in the background, which records the sign-in (`pin_ok`, `last_seen_at`)
+  and, if that PIN was changed or removed since the list was cached, answers `bad_pin` and
+  the tablet locks again. A PIN the tablet does not know (someone added since the last
+  config fetch) goes to the server first and the list is refreshed after. The list is
+  refreshed at launch, on every return to the foreground and after any server-checked PIN.
+  The hashes sit on the tablet because a PIN is attribution on a trusted device, not a
+  secret guarding money. The person stays unlocked until they
   tap their name at the top of the screen (Lock). There is no idle timer and no lock when
   the app goes to the background: the owner tried both on a tablet and does not want a
   keypad appearing mid-sale (`kiosks.pin_idle_lock_seconds` is kept but unused). A small
@@ -48,7 +57,8 @@ screen re-checks every few seconds), so no reinstall.
 | Where | What |
 |---|---|
 | `supabase/migrations/20260907181427_kiosk_employees_pin.sql` | table, switch, attribution columns, RLS |
-| `supabase/functions/kiosk-pin-verify` | the PIN check + rate limit |
-| `kiosk-config`, `kiosk-sale-start`, `kiosk-sale-complete`, `kiosk-log`, `kiosk-cash-sale`, `kiosk-booking` | accept `employee_id` |
+| `supabase/functions/kiosk-pin-verify` | the server-side PIN check; records the sign-in |
+| `supabase/functions/kiosk-config` | carries the employee list (hashes) for the local check |
+| `kiosk-sale-start`, `kiosk-sale-complete`, `kiosk-log`, `kiosk-cash-sale`, `kiosk-booking` | accept `employee_id` |
 | `src/app/(app)/admin/employees/*`, `src/lib/kiosk/pin.ts`, `src/lib/kiosk/events.ts` | the admin page |
 | PrimeKiosk `src/services/EmployeeSession.ts`, `src/context/EmployeeSessionContext.tsx` | session, keypad, pill |

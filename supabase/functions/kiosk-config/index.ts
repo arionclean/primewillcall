@@ -36,6 +36,25 @@ Deno.serve(async (req) => {
   if (!resolved) return json({ error: "unknown_kiosk" }, 404);
   const { kiosk } = resolved;
 
+  // When the kiosk asks for a PIN, the eligible employees ride along (id, name,
+  // salted hash) so the tablet can check a PIN on the spot and unlock at once;
+  // kiosk-pin-verify then confirms it in the background and records the event.
+  // A PIN is attribution on a trusted device, not a secret guarding money, which
+  // is why the hashes may live on the tablet.
+  type EmployeeRow = { id: string; name: string; pin_hash: string; pin_salt: string; kiosk_ids: string[] | null };
+  let employees: Omit<EmployeeRow, "kiosk_ids">[] = [];
+  if (kiosk.pin_required) {
+    const { data } = await sb
+      .from("kiosk_employees")
+      .select("id, name, pin_hash, pin_salt, kiosk_ids")
+      .eq("business_id", kiosk.business_id)
+      .eq("is_active", true)
+      .returns<EmployeeRow[]>();
+    employees = (data ?? [])
+      .filter((e) => !e.kiosk_ids || e.kiosk_ids.length === 0 || e.kiosk_ids.includes(kiosk.id))
+      .map(({ id, name, pin_hash, pin_salt }) => ({ id, name, pin_hash, pin_salt }));
+  }
+
   await sb.from("kiosks").update({ last_seen_at: new Date().toISOString() }).eq("id", kiosk.id);
   await logEvent(sb, {
     kioskId: kiosk.id,
@@ -56,7 +75,8 @@ Deno.serve(async (req) => {
       reader_low_battery_pct: kiosk.reader_low_battery_pct,
       reader_block_battery_pct: kiosk.reader_block_battery_pct,
       pin_required: kiosk.pin_required,
-      pin_idle_lock_seconds: kiosk.pin_idle_lock_seconds,
+      business_id: kiosk.business_id,
+      employees,
       xano_mirror: xanoMirrorEnabled(),
       server_time: new Date().toISOString(),
     },
