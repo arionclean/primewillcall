@@ -82,6 +82,9 @@ type CashSale = {
   business: { name: string } | null;
   /** Where the sale came from before staff moved it; null means never moved. */
   source_original: string | null;
+  /** Voided by staff: recorded by mistake or a duplicate. Listed, never counted. */
+  voided_at: string | null;
+  void_reason: string | null;
 };
 
 export type FeedItem = (
@@ -339,6 +342,12 @@ export function PaymentsView({
   const [movePin, setMovePin] = useState("");
   const [moveError, setMoveError] = useState<string | null>(null);
 
+  // "Void this sale" dialog, cash only. `voidFor` doubles as the open/closed flag.
+  const [voidFor, setVoidFor] = useState<CashSale | null>(null);
+  const [voidReason, setVoidReason] = useState("");
+  const [voidPin, setVoidPin] = useState("");
+  const [voidError, setVoidError] = useState<string | null>(null);
+
   // Filters apply on change (no Apply button). Handlers pass the value they
   // just set as an override because React state updates are async.
   const pushFilters = useCallback(
@@ -418,6 +427,41 @@ export function PaymentsView({
     setMoveTarget("");
     setMovePin("");
     setMoveError(null);
+  }
+
+  function openVoid(item: CashSale) {
+    setVoidFor(item);
+    setVoidReason("");
+    setVoidPin("");
+    setVoidError(null);
+  }
+
+  // Void, never delete: the sale keeps its row with who voided it, when and
+  // why, and stops counting toward the drawer and the totals. Passcode-gated
+  // like a refund, since it changes what the drawer is expected to hold.
+  function submitVoid() {
+    if (!voidFor) return;
+    const reason = voidReason.trim();
+    if (!reason) {
+      setVoidError("Enter a reason.");
+      return;
+    }
+    if (!voidPin.trim()) {
+      setVoidError("Enter the passcode.");
+      return;
+    }
+    setVoidError(null);
+    const id = voidFor.id;
+    const pin = voidPin.trim();
+    startTransition(async () => {
+      const res = await invokePayments({ action: "void_cash", id, reason, pin });
+      if (res.error) {
+        setVoidError(res.error);
+        return;
+      }
+      setVoidFor(null);
+      router.refresh();
+    });
   }
 
   function submitMove() {
@@ -638,15 +682,20 @@ export function PaymentsView({
                     .filter(Boolean)
                     .join(" · ");
                   const cashRefunded = item.amount_refunded_cents ?? 0;
-                  const cashBadge = statusBadge({
-                    amount: item.amount_cents,
-                    amount_refunded: cashRefunded,
-                    status: "succeeded",
-                  });
+                  const cashVoided = item.voided_at != null;
+                  const cashBadge = cashVoided
+                    ? { label: "Voided", tone: "neutral" as const }
+                    : statusBadge({
+                        amount: item.amount_cents,
+                        amount_refunded: cashRefunded,
+                        status: "succeeded",
+                      });
                   // Cash needs no Stripe config to refund: the money comes back
                   // out of the drawer by hand and this records it.
                   const cashRefundable =
-                    canMove && item.amount_cents - cashRefunded > 0;
+                    canMove && !cashVoided && item.amount_cents - cashRefunded > 0;
+                  // A sale with a refund on it was real, so it cannot be voided.
+                  const cashVoidable = canMove && !cashVoided && cashRefunded === 0;
                   return (
                     <tr key={`cash-${item.id}`} className="border-b last:border-0">
                       <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
@@ -668,12 +717,19 @@ export function PaymentsView({
                           </p>
                         )}
                         <MovedFrom from={item.source_original} />
+                        {cashVoided && (
+                          <p className="truncate text-xs text-muted-foreground">
+                            Voided{item.void_reason ? `: ${item.void_reason}` : ""}
+                          </p>
+                        )}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2">
                         <Badge tone="success">Cash</Badge>
                       </td>
                       <td className="whitespace-nowrap px-3 py-2 text-right font-medium">
-                        {formatCentsExact(item.amount_cents)}
+                        <span className={cashVoided ? "line-through opacity-60" : undefined}>
+                          {formatCentsExact(item.amount_cents)}
+                        </span>
                         {cashRefunded > 0 && (
                           <span className="block text-xs font-normal text-muted-foreground">
                             −{formatCentsExact(cashRefunded)}
@@ -695,7 +751,17 @@ export function PaymentsView({
                               Refund
                             </Button>
                           )}
-                          {canMove && (
+                          {cashVoidable && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openVoid(item)}
+                            >
+                              Void
+                            </Button>
+                          )}
+                          {canMove && !cashVoided && (
                             <Button
                               type="button"
                               size="sm"
@@ -705,7 +771,7 @@ export function PaymentsView({
                               Move
                             </Button>
                           )}
-                          {!cashRefundable && !canMove && (
+                          {!cashRefundable && !cashVoidable && (!canMove || cashVoided) && (
                             <span className="text-muted-foreground">-</span>
                           )}
                         </div>
@@ -913,6 +979,82 @@ export function PaymentsView({
                   onClick={submitMove}
                 >
                   {isPending ? "Moving…" : "Move sale"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {voidFor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <Card className="w-full max-w-sm">
+            <CardContent className="py-5">
+              <h2 className="text-base font-semibold">
+                Void{" "}
+                {voidFor.customer_name ??
+                  (voidFor.booking_ref ? `sale ${voidFor.booking_ref}` : "this cash sale")}
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                For a sale recorded by mistake or twice. The{" "}
+                {formatCentsExact(voidFor.amount_cents)} stays on the list marked
+                as voided, with your name and the reason, and stops counting
+                toward the drawer and the totals. Nothing is deleted, and no cash
+                changes hands: if money was handed back, record a refund instead.
+              </p>
+
+              <label className="mt-4 flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+                Reason
+                <Input
+                  type="text"
+                  value={voidReason}
+                  onChange={(e) => setVoidReason(e.target.value)}
+                  placeholder="Entered twice, wrong amount, test..."
+                  maxLength={500}
+                  className="h-9"
+                />
+              </label>
+
+              <label className="mt-3 flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+                Passcode
+                {/* Plain text masked via CSS, same as the refund pin: a real
+                    password field makes Safari/1Password offer to save it. */}
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  name="void-code"
+                  data-1p-ignore=""
+                  data-lpignore="true"
+                  style={{ WebkitTextSecurity: "disc" } as CSSProperties}
+                  value={voidPin}
+                  onChange={(e) => setVoidPin(e.target.value)}
+                  className="h-9"
+                />
+              </label>
+
+              {voidError && (
+                <p className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {voidError}
+                </p>
+              )}
+
+              <div className="mt-4 flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={isPending}
+                  onClick={() => setVoidFor(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  disabled={isPending || !voidReason.trim() || !voidPin.trim()}
+                  onClick={submitVoid}
+                >
+                  {isPending ? "Voiding…" : "Void sale"}
                 </Button>
               </div>
             </CardContent>

@@ -3,7 +3,7 @@
 // src/app/(app)/admin/payments/actions.ts and the route at
 // src/app/(app)/bookings/[id]/payment-link/route.ts.
 //
-// All four actions live together because they share the REFUND_PIN gate. Splitting
+// All five actions live together because they share the REFUND_PIN gate. Splitting
 // the Stripe ones out would put that passcode, and its secret, in two runtimes.
 //
 // Deployed with JWT ON. requireStaff turns the caller's token into their staff row;
@@ -29,7 +29,7 @@ import { withSentry } from "../_shared/sentry.ts";
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const REFUND_PIN = Deno.env.get("REFUND_PIN") ?? "";
 
-type Action = "refund_card" | "refund_cash" | "move_sale" | "payment_link";
+type Action = "refund_card" | "refund_cash" | "void_cash" | "move_sale" | "payment_link";
 
 interface Payload {
   action?: Action;
@@ -38,6 +38,8 @@ interface Payload {
   pin?: string;
   kind?: "card" | "cash";
   next_source?: string;
+  /** void_cash: why, in the voider's words. Required. */
+  reason?: string;
 }
 
 /**
@@ -216,13 +218,14 @@ Deno.serve(withSentry("payments", async (req) => {
     case "refund_cash": {
       const { data: sale } = await db
         .from("cash_sales")
-        .select("id, business_id, amount_cents, amount_refunded_cents")
+        .select("id, business_id, amount_cents, amount_refunded_cents, voided_at")
         .eq("id", id)
         .maybeSingle();
       if (!sale) return json({ error: "Sale not found." }, 404);
       if (!ownsBusiness(staff, sale.business_id)) {
         return json({ error: "Not authorized." }, 403);
       }
+      if (sale.voided_at) return json({ error: "This sale was voided, so there is nothing to refund." }, 400);
 
       const already = sale.amount_refunded_cents ?? 0;
       const checked = refundableError(payload.amount_cents, sale.amount_cents ?? 0, already);
@@ -248,6 +251,59 @@ Deno.serve(withSentry("payments", async (req) => {
         entityId: sale.id,
         action: "refunded",
         payload: { amount_cents: checked.amount },
+      });
+      return json({ ok: true });
+    }
+
+    /**
+     * Void a cash sale: recorded by mistake, or a duplicate. Nothing is deleted.
+     * The row stays with who voided it, when and why, and stops counting toward
+     * the drawer and the cash totals. Passcode-gated like a refund, because it
+     * changes what the drawer is expected to hold. A sale with a refund on it
+     * was real and cannot be voided (the check constraint agrees); a voided sale
+     * cannot be refunded (above). Card sales are never voided: a captured charge
+     * is refunded instead.
+     */
+    case "void_cash": {
+      const reason = (payload.reason ?? "").trim().slice(0, 500);
+      if (!reason) return json({ error: "Enter a reason for voiding this sale." }, 400);
+
+      const { data: sale } = await db
+        .from("cash_sales")
+        .select("id, business_id, amount_cents, amount_refunded_cents, voided_at")
+        .eq("id", id)
+        .maybeSingle();
+      if (!sale) return json({ error: "Sale not found." }, 404);
+      if (!ownsBusiness(staff, sale.business_id)) {
+        return json({ error: "Not authorized." }, 403);
+      }
+      if (sale.voided_at) return json({ error: "This sale is already voided." }, 400);
+      if ((sale.amount_refunded_cents ?? 0) > 0) {
+        return json({ error: "This sale has a refund on it, so it was real. It can't be voided." }, 400);
+      }
+
+      const { error } = await db
+        .from("cash_sales")
+        .update({
+          voided_at: new Date().toISOString(),
+          voided_by: staff.id,
+          void_reason: reason,
+        })
+        .eq("id", id)
+        .is("voided_at", null);
+      if (error) {
+        console.error("[payments] void cash sale failed:", error);
+        return json({ error: "Could not void the sale. Try again." }, 500);
+      }
+      await logStaffAction(db, {
+        staffId: staff.id,
+        businessId: sale.business_id,
+        employee,
+        entity: "cash_sales",
+        entityId: sale.id,
+        action: "voided",
+        changed: ["voided_at", "voided_by", "void_reason"],
+        payload: { amount_cents: sale.amount_cents ?? 0, reason },
       });
       return json({ ok: true });
     }

@@ -17,6 +17,8 @@ export type CajaItem = {
   at: string;
   amountCents: number;
   refundedCents?: number;
+  /** Cash only: voided on the Payments page. Listed, never counted. */
+  voided?: boolean;
   status: string | null;
   ok: boolean;
   label: string;
@@ -227,7 +229,9 @@ export function CajaView({
                     )}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-right font-medium tabular-nums">
-                    {formatCentsExact(it.amountCents)}
+                    <span className={it.voided ? "line-through opacity-60" : undefined}>
+                      {formatCentsExact(it.amountCents)}
+                    </span>
                     {it.refundedCents ? (
                       <span className="block text-xs font-normal text-muted-foreground">
                         {"−"}
@@ -250,6 +254,7 @@ export function CajaView({
 
 function StatusBadge({ item }: { item: CajaItem }) {
   if (item.kind === "cash") {
+    if (item.voided) return <Badge tone="neutral">Voided</Badge>;
     if (item.ok) return <Badge tone="success">Received</Badge>;
     if (item.status === "pending") return <Badge tone="warning">Pending</Badge>;
     return <Badge tone="danger">Failed</Badge>;

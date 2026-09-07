@@ -63,6 +63,7 @@ const LABELS: Record<string, string> = {
   "cash_sales.updated": "Edited a cash sale",
   "cash_sales.deleted": "Deleted a cash sale",
   "cash_sales.refunded": "Refunded a cash sale",
+  "cash_sales.voided": "Voided a cash sale",
   "cash_sales.moved": "Moved a sale to another kiosk",
   "stripe_refunds.created": "Refunded a card payment",
   "stripe_transactions.moved": "Moved a card sale to another kiosk",
@@ -122,12 +123,14 @@ function diffOf(payload: Record<string, unknown> | null): Diff {
 /**
  * The label for a row. Web edits get a more exact one when the diff says what
  * happened: a check-in is "checked_in_at" going from empty to a time, a
- * cancellation is status turning "cancelled".
+ * cancellation is status turning "cancelled", a void is "voided_at" being set
+ * (checked before status, since a void sets status to cancelled as well).
  */
 export function eventLabel(event: string, changed: string[] = [], payload: Record<string, unknown> | null = null): string {
   const diff = diffOf(payload);
   const after = (col: string) => diff[col]?.[1];
   if (event === "bookings.updated") {
+    if (changed.includes("voided_at")) return after("voided_at") ? "Voided a booking" : "Restored a voided booking";
     if (changed.includes("checked_in_at")) return after("checked_in_at") ? "Checked a guest in" : "Undid a check-in";
     if (changed.includes("peek")) return after("peek") ? "Added to Peek" : "Removed from Peek";
     if (changed.includes("groupon_redeemed_at")) return after("groupon_redeemed_at") ? "Marked a Groupon redeemed" : "Unmarked a Groupon";

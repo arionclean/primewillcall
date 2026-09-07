@@ -78,7 +78,7 @@ export default async function CajaPage({
     supabase
       .from("cash_sales")
       .select(
-        "id, booking_ref, amount_cents, amount_refunded_cents, status, created_at",
+        "id, booking_ref, amount_cents, amount_refunded_cents, status, created_at, voided_at",
       )
       .eq("business_id", businessId)
       .eq("kiosk_slug", kioskSlug)
@@ -128,8 +128,11 @@ export default async function CajaPage({
       at: c.created_at,
       amountCents: c.amount_cents ?? 0,
       status: c.status,
+      // Voided on /admin/payments: kept on the list so the desk sees the whole
+      // day, but it never counts.
+      voided: c.voided_at != null,
       // A cash sale "went through" when the tablet marked it success.
-      ok: c.status === "success",
+      ok: c.status === "success" && c.voided_at == null,
       label:
         (c.booking_ref ? nameByRef.get(c.booking_ref) : null) ??
         (c.booking_ref ? `Sale ${c.booking_ref}` : "Cash sale"),
@@ -152,11 +155,12 @@ export default async function CajaPage({
     })),
   ].sort((a, b) => (b.at ?? "").localeCompare(a.at ?? ""));
 
-  // Totals. Cash received (successful) is what the drawer should hold, less any
-  // cash handed back as a refund: that money physically left the drawer. Card is
-  // informational for "how much did I make" and never touches the drawer.
+  // Totals. Cash received (successful, not voided) is what the drawer should
+  // hold, less any cash handed back as a refund: that money physically left the
+  // drawer. Card is informational for "how much did I make" and never touches
+  // the drawer.
   const cashReceivedCents = (cashRows ?? [])
-    .filter((c) => c.status === "success")
+    .filter((c) => c.status === "success" && c.voided_at == null)
     .reduce(
       (s, c) => s + (c.amount_cents ?? 0) - (c.amount_refunded_cents ?? 0),
       0,
@@ -169,7 +173,7 @@ export default async function CajaPage({
     0,
   );
   const cashCount = (cashRows ?? []).filter(
-    (c) => c.status === "success",
+    (c) => c.status === "success" && c.voided_at == null,
   ).length;
   const cardCount = (cardRows ?? []).filter(
     (t) => t.status === "succeeded",

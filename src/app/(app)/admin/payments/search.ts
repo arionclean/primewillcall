@@ -16,7 +16,7 @@ export type PaymentsSearch = {
   /** 'card' | 'cash', or null for both. */
   tender: "card" | "cash" | null;
   /** Matches the badge on the row. 'refunded' also catches partial refunds. */
-  status: "succeeded" | "refunded" | "partly_refunded" | "disputed" | null;
+  status: "succeeded" | "refunded" | "partly_refunded" | "disputed" | "voided" | null;
   /** A single NY day (YYYY-MM-DD) the user named, which narrows the range. */
   onDate: string | null;
   /** Whatever was left: the free-text match. */
@@ -39,8 +39,10 @@ const STATUSES: Record<string, PaymentsSearch["status"]> = {
   refund: "refunded",
   refunds: "refunded",
   reembolso: "refunded",
-  voided: "refunded",
-  void: "refunded",
+  voided: "voided",
+  void: "voided",
+  anulada: "voided",
+  anulado: "voided",
   partial: "partly_refunded",
   partly: "partly_refunded",
   succeeded: "succeeded",
@@ -72,6 +74,7 @@ const STATUS_LABELS: Record<NonNullable<PaymentsSearch["status"]>, string> = {
   refunded: "Refunded",
   partly_refunded: "Partly refunded",
   disputed: "Disputed",
+  voided: "Voided",
 };
 
 const iso = (y: number, m: number, d: number) =>

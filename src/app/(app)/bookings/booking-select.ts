@@ -19,9 +19,12 @@ export type BookingViewCaps = Pick<
 /**
  * The columns the list reads, shaped by what this account may see. A column
  * an account may not see is left out of the query rather than hidden after
- * the fact, so it never reaches the device on the normal path: `notes` and
- * the customer's email are details, the voucher photos are attachments, and
- * the Redemption Codes go only to whoever redeems. RLS is row-level and
+ * the fact, so it never reaches the device on the normal path: `notes`, the
+ * customer's email and the reason a booking was voided are details, the
+ * voucher photos are attachments, and the Redemption Codes go only to whoever
+ * redeems. The void stamp itself (when, by whom) goes to every role, since the
+ * row reads "Voided" for everyone; the voider's name comes through the staff
+ * join and resolves only where staff RLS lets this account read it. RLS is row-level and
  * cannot do this, which is why the same rule lives here and in the Realtime
  * patch below (`withheldKeys`). Both the server page and the browser refetch
  * use it, so the two reads never disagree.
@@ -42,6 +45,10 @@ export function bookingSelect(caps: BookingViewCaps): string {
   peek,
   source_channel,
   groupon_redeemed_at,
+  voided_at,
+  voided_by_staff_id,
+  ${caps.canViewDetails ? "void_reason," : ""}
+  voided_by:staff!bookings_voided_by_staff_id_fkey(full_name),
   ${caps.canViewAttachments ? "groupon_voucher_urls," : ""}
   ${caps.canRedeemGroupon ? "groupon_voucher_codes," : ""}
   pax_adult,
@@ -65,6 +72,8 @@ export function normalizeBookingRow(raw: unknown): BookingRow {
   return {
     ...r,
     notes: r.notes ?? null,
+    void_reason: r.void_reason ?? null,
+    voided_by: r.voided_by ?? null,
     groupon_voucher_urls: r.groupon_voucher_urls ?? [],
     groupon_voucher_codes: r.groupon_voucher_codes ?? [],
     customer: r.customer
@@ -76,7 +85,7 @@ export function normalizeBookingRow(raw: unknown): BookingRow {
 /** The row keys `bookingSelect` leaves out for this account. */
 export function withheldKeys(caps: BookingViewCaps): (keyof BookingRow)[] {
   const keys: (keyof BookingRow)[] = [];
-  if (!caps.canViewDetails) keys.push("notes");
+  if (!caps.canViewDetails) keys.push("notes", "void_reason");
   if (!caps.canViewAttachments) keys.push("groupon_voucher_urls");
   if (!caps.canRedeemGroupon) keys.push("groupon_voucher_codes");
   return keys;

@@ -16,6 +16,8 @@ type BookingRow = {
   id: string;
   starts_at: string;
   status: string;
+  /** Voided by staff: the row stays, status is cancelled underneath. */
+  voided_at: string | null;
   checked_in_at: string | null;
   pax_adult: number;
   pax_child: number;
@@ -34,7 +36,8 @@ type CustomerDetail = {
   business: { name: string } | null;
 };
 
-function statusBadge(status: string) {
+function statusBadge(status: string, voided: boolean) {
+  if (voided) return { label: "Voided", tone: "danger" as const };
   if (status === "cancelled") return { label: "Cancelled", tone: "danger" as const };
   if (status === "pending")
     return { label: "Waiting for payment", tone: "warning" as const };
@@ -77,7 +80,7 @@ export default async function CustomerDetailPage({
   const { data: bookingsData } = await supabase
     .from("bookings")
     .select(
-      `id, starts_at, status, checked_in_at, pax_adult, pax_child, pax_infant,
+      `id, starts_at, status, voided_at, checked_in_at, pax_adult, pax_child, pax_infant,
        business_tour:business_tours!bookings_business_tour_id_fkey(
          name, tour:tours(name, color)
        )`,
@@ -143,7 +146,7 @@ export default async function CustomerDetailPage({
               const tour =
                 b.business_tour?.tour?.name ?? b.business_tour?.name ?? "Tour";
               const color = b.business_tour?.tour?.color ?? null;
-              const badge = statusBadge(b.status);
+              const badge = statusBadge(b.status, b.voided_at != null);
               const checked = b.checked_in_at != null;
               return (
                 <li

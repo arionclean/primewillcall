@@ -45,7 +45,7 @@ Realtime). Supabase project id: `qbnizuhozzwkiitfkjee`.
 
 Non-owner staff also carry per-person booking permissions, owner-editable in the
 "Permissions" section of `/admin/staff/[id]`. Six are write permissions
-(`staff.can_create_bookings / can_edit_bookings / can_check_in / can_delete_bookings /
+(`staff.can_create_bookings / can_edit_bookings / can_check_in / can_void_bookings /
 can_add_to_peek / can_redeem_groupon`), enforced in layers (UI, server action, RLS,
 plus a bookings trigger that checks each stamp against its own switch and limits an
 account without edit to those stamps). Two are view switches
@@ -159,7 +159,7 @@ src/app/_archive, src/components/_archive   legacy Bubble pages, kept as referen
   `postgres_changes` subscription on the browser client.
 - **Writes**: prefer a server action (`"use server"`) returning
   `{ error?, fieldErrors?, saved? }`, consumed with `useActionState`. The rich bookings
-  edit/check-in/delete use direct browser-client mutations (RLS protects them) for
+  edit/check-in use direct browser-client mutations (RLS protects them) for
   optimistic UX; that is the documented exception, not the default.
 - **Role gating is layered**, never a single check:
   1. Sidebar hides links the role cannot use.

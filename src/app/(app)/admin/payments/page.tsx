@@ -153,6 +153,8 @@ export default async function PaymentsPage({
           created_at: r.occurred_at,
           customer_name: r.customer_name,
           source_original: r.source_original,
+          voided_at: r.voided_at,
+          void_reason: r.void_reason,
           business,
           booking_href,
         }

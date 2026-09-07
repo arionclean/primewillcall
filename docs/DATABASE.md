@@ -44,8 +44,9 @@ booking page (`/booking/<token>`).
 ### staff
 `id uuid pk, user_id? (-> auth.users), business_id? (-> businesses), role enum,
 full_name, email, phone?, is_active, can_create_bookings, can_edit_bookings,
-can_check_in, can_delete_bookings, can_add_to_peek, can_view_attachments,
-can_redeem_groupon, can_view_details, can_use_caja, created_at, updated_at`
+can_check_in, can_void_bookings, can_add_to_peek, can_view_attachments,
+can_redeem_groupon, can_view_details, can_use_caja, pin_required, created_at,
+updated_at`
 Role enum (`staff_role`): `owner`, `business_manager`, `check_in`. `owner` has no
 `business_id`. A trigger links a new `auth.users` row to its `staff` row by email.
 
@@ -54,12 +55,15 @@ on `/admin/staff/[id]` ("Permissions"). Owners ignore them (always allowed); the
 gate managers and check-in staff. They come in two kinds.
 
 **Write permissions** (`can_create_bookings`, `can_edit_bookings`, `can_check_in`,
-`can_delete_bookings`, `can_add_to_peek`, `can_redeem_groupon`) are enforced by the
+`can_void_bookings`, `can_add_to_peek`, `can_redeem_groupon`) are enforced by the
 bookings RLS policies plus the `bookings_enforce_update_capabilities` trigger. The
-update policy admits a row to anyone holding any of edit / check-in / peek / redeem;
-the trigger then checks each stamp against its own switch (`checked_in_at` needs
+update policy admits a row to anyone holding any of edit / check-in / peek / redeem /
+void; the trigger then checks each stamp against its own switch (`checked_in_at` needs
 `can_check_in`, `peek` needs `can_add_to_peek`, `groupon_redeemed_at` needs
-`can_redeem_groupon`) and, without `can_edit_bookings`, refuses any other change.
+`can_redeem_groupon`, the void stamp needs `can_void_bookings`) and, without
+`can_edit_bookings`, refuses any other change. `can_void_bookings` was
+`can_delete_bookings` until migration `20260907240000_void_not_delete`; see "Void, not
+delete" under bookings.
 RLS alone cannot express column-level rules, which is why the trigger exists.
 Service-role writers have no `current_staff()` row and pass through.
 
@@ -129,6 +133,34 @@ from `/schedule` start as `confirmed`. The enum (`booking_status`) also contains
 legacy values `checked_in` and `completed`; the app no longer writes them. Check-in is
 tracked independently of status via `checked_in_at` (set/cleared by the check-in
 toggle and the check-in API), so a guest can be checked in regardless of payment status.
+
+#### Void, not delete
+
+Nobody deletes a booking (there is no DELETE policy, owner included; migration
+`20260907240000_void_not_delete`). A booking that should not count is **voided**:
+`void_booking(p_booking_id, p_reason)` sets `status = 'cancelled'` and the void stamp,
+`voided_at`, `voided_by_staff_id`, `void_reason` (required, as typed) and
+`voided_from_status` (what it was, for a restore). The row stays, and the activity log
+records the update with its diff, so the owner sees who voided what and why. Building
+on `cancelled` is deliberate: every manifest, report, message rule and the tablet
+already leave cancelled bookings out, so a voided booking stops counting with no other
+query touched. The screens tell the two apart by the stamp ("Voided" versus
+"Cancelled"), and `void_reason` is withheld like `notes` without `can_view_details`.
+
+Guards, in layers: the Void button needs `can_void_bookings` (owners always); the
+function re-checks it; RLS scopes which rows it reaches (SECURITY INVOKER); the
+`bookings_enforce_update_capabilities` trigger refuses the stamp without the switch and,
+for an account without edit, lets a void change nothing but the stamp and the status.
+While `voided_at` is set, the `bookings_keep_voided_cancelled` trigger forces `status`
+back to `cancelled` on any update (the edit form's status field, a status resend from
+Xano), and `bookings_cancel_messages_on_void` cancels every pending `scheduled_messages`
+row for the booking. `restore_booking(p_booking_id)` is owner only: status back to
+`voided_from_status`, stamp cleared. Both functions raise short tokens (`not_allowed`,
+`reason_required`, `already_voided`, `not_voided`, `not_found`) that the bookings list
+maps to plain sentences.
+
+Cash sales carry the same stamp (`cash_sales.voided_at / voided_by / void_reason`),
+written by the `payments` function's `void_cash` action; see "Payments (Stripe)".
 
 `due_cents` (default 0) is what the guest still owes at the desk, separate from the
 price in `total_cents`. The desk used to type it into the guest's name ("Alfred B Owes
@@ -413,7 +445,15 @@ business's current account.
 - `stripe_events` — webhook idempotency + audit (`id` = Stripe `evt_...`, `type`, `account`,
   `payload`, `received_at`, `processed_at`, `error`).
 - `cash_sales` — the PrimeKiosk tablet's cash ledger (`business_id`, `kiosk_id`,
-  `booking_id`/`booking_ref`, `amount_cents`, `type`, `product`, `status`, `kiosk_slug`).
+  `booking_id`/`booking_ref`, `amount_cents`, `type`, `product`, `status`, `kiosk_slug`,
+  the refund columns, and the void stamp `voided_at` / `voided_by` / `void_reason`). A
+  cash sale is never deleted: the `payments` function's `void_cash` action (owner or the
+  business's manager, refund passcode, reason required) stamps it, `payments_scope`
+  lists it with `effective_status = 'voided'` (the search word "voided" finds it) and
+  `payments_summary` and Caja leave it out of the cash total and count. A sale with a
+  refund on it was real and cannot be voided, and a voided sale cannot be refunded
+  (`cash_sales_void_xor_refund`). Card sales are not voided: a captured charge is
+  refunded instead.
   Card kiosk sales need no table: a Terminal PaymentIntent is a direct charge, so the webhook
   records it into `stripe_transactions` with `source='kiosk'`.
 - `kiosks` (Kiosk POS columns) — `business_id`, `slug` (the tablet's login tag; unique),
@@ -661,7 +701,7 @@ General shape:
 - **check_in**: read `business_tours` / `tour_pax_tiers` for their business; read,
   insert and update `bookings` only for tours they are assigned to via `staff_tours`
   (each write also gated by the `staff.can_*` capability columns). Can insert
-  `customers` for their business. Delete only when `can_delete_bookings` is on.
+  `customers` for their business. Void (never delete) only when `can_void_bookings` is on.
 
 Table-specific notes:
 
@@ -674,9 +714,10 @@ Table-specific notes:
   owner + manager; delete is owner only.
 - `bookings`: all non-owner writes are capability-gated by the `staff.can_*` columns.
   Insert: owner; manager (own business); check-in (own business + assigned tour), each
-  needing `can_create_bookings`. Update: same row scopes, needing `can_edit_bookings`
-  or `can_check_in` (the trigger limits check-in-only accounts to the check-in stamp).
-  Delete: owner, or manager / check-in with `can_delete_bookings`.
+  needing `can_create_bookings`. Update: same row scopes, needing any of
+  `can_edit_bookings` / `can_check_in` / `can_add_to_peek` / `can_redeem_groupon` /
+  `can_void_bookings` (the trigger limits an account without edit to its stamps).
+  Delete: nobody, owner included (no policy). Void through `void_booking()` instead.
 - `bookings_checkin_manifest(p_start, p_end)` — SECURITY INVOKER RPC: per-`starts_at`
   remaining-to-check-in pax + total pax for a day window, cancelled excluded, aggregated
   in the DB. RLS scopes it (check-in staff count only their assigned tours). Backs the

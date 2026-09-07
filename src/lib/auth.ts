@@ -16,7 +16,7 @@ export type CurrentStaff = {
   can_create_bookings: boolean;
   can_edit_bookings: boolean;
   can_check_in: boolean;
-  can_delete_bookings: boolean;
+  can_void_bookings: boolean;
   can_add_to_peek: boolean;
   can_view_attachments: boolean;
   can_redeem_groupon: boolean;
@@ -42,7 +42,7 @@ function staffFromClaims(claims: Record<string, unknown>): CurrentStaff | null |
   // A token minted before a permission column existed says nothing about it,
   // so it is treated like one that predates the hook. Point this at the
   // newest column whenever one ships.
-  if (!("pin_required" in s)) return undefined;
+  if (!("can_void_bookings" in s)) return undefined;
   return {
     id: s.id,
     full_name: typeof s.full_name === "string" ? s.full_name : "",
@@ -53,7 +53,7 @@ function staffFromClaims(claims: Record<string, unknown>): CurrentStaff | null |
     can_create_bookings: s.can_create_bookings === true,
     can_edit_bookings: s.can_edit_bookings === true,
     can_check_in: s.can_check_in === true,
-    can_delete_bookings: s.can_delete_bookings === true,
+    can_void_bookings: s.can_void_bookings === true,
     can_add_to_peek: s.can_add_to_peek === true,
     can_view_attachments: s.can_view_attachments === true,
     can_redeem_groupon: s.can_redeem_groupon === true,
@@ -103,7 +103,7 @@ export const getCurrentStaff = cache(async () => {
   const { data: staff } = await supabase
     .from("staff")
     .select(
-      "id, full_name, role, business_id, is_active, kiosk_slug, can_create_bookings, can_edit_bookings, can_check_in, can_delete_bookings, can_add_to_peek, can_view_attachments, can_redeem_groupon, can_view_details, can_use_caja, pin_required",
+      "id, full_name, role, business_id, is_active, kiosk_slug, can_create_bookings, can_edit_bookings, can_check_in, can_void_bookings, can_add_to_peek, can_view_attachments, can_redeem_groupon, can_view_details, can_use_caja, pin_required",
     )
     .eq("user_id", user.id)
     .maybeSingle();
@@ -115,7 +115,8 @@ export type StaffCapabilities = {
   canCreateBookings: boolean;
   canEditBookings: boolean;
   canCheckIn: boolean;
-  canDeleteBookings: boolean;
+  /** Void a booking (the record stays, stamped with who and why). Nobody deletes. */
+  canVoidBookings: boolean;
   canAddToPeek: boolean;
   /** Open the photos attached to a booking. Screen-level. */
   canViewAttachments: boolean;
@@ -139,7 +140,7 @@ export function staffCapabilities(staff: {
   can_create_bookings: boolean;
   can_edit_bookings: boolean;
   can_check_in: boolean;
-  can_delete_bookings: boolean;
+  can_void_bookings: boolean;
   can_add_to_peek: boolean;
   can_view_attachments: boolean;
   can_redeem_groupon: boolean;
@@ -151,7 +152,7 @@ export function staffCapabilities(staff: {
       canCreateBookings: true,
       canEditBookings: true,
       canCheckIn: true,
-      canDeleteBookings: true,
+      canVoidBookings: true,
       canAddToPeek: true,
       canViewAttachments: true,
       canRedeemGroupon: true,
@@ -163,7 +164,7 @@ export function staffCapabilities(staff: {
     canCreateBookings: staff.can_create_bookings,
     canEditBookings: staff.can_edit_bookings,
     canCheckIn: staff.can_check_in,
-    canDeleteBookings: staff.can_delete_bookings,
+    canVoidBookings: staff.can_void_bookings,
     canAddToPeek: staff.can_add_to_peek,
     canViewAttachments: staff.can_view_attachments,
     canRedeemGroupon: staff.can_redeem_groupon,

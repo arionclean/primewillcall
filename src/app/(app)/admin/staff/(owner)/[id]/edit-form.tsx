@@ -67,7 +67,7 @@ type Props = {
     can_create_bookings: boolean;
     can_edit_bookings: boolean;
     can_check_in: boolean;
-    can_delete_bookings: boolean;
+    can_void_bookings: boolean;
     can_add_to_peek: boolean;
     can_view_attachments: boolean;
     can_redeem_groupon: boolean;
@@ -85,7 +85,7 @@ const CAPABILITY_OPTIONS: {
     | "can_create_bookings"
     | "can_edit_bookings"
     | "can_check_in"
-    | "can_delete_bookings"
+    | "can_void_bookings"
     | "can_add_to_peek"
     | "can_view_attachments"
     | "can_redeem_groupon"
@@ -110,9 +110,9 @@ const CAPABILITY_OPTIONS: {
     hint: "Mark guests as arrived from the Bookings page.",
   },
   {
-    name: "can_delete_bookings",
-    label: "Delete bookings",
-    hint: "Remove bookings entirely. Leave off unless they really need it.",
+    name: "can_void_bookings",
+    label: "Void bookings",
+    hint: "Mark a booking as voided (a mistake or a duplicate). The booking stays on record with who voided it and why; nothing is ever deleted. Only an owner can restore one.",
   },
   {
     name: "can_add_to_peek",

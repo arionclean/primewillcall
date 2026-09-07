@@ -25,6 +25,8 @@ type SearchResult = {
   id: string;
   startsAt: string;
   status: BookingStatus;
+  /** Voided by staff: the row stays, status is cancelled underneath. */
+  voided: boolean;
   customerName: string;
   customerPhone: string | null;
   tourName: string;
@@ -38,10 +40,12 @@ type BookingStatus =
   | "completed"
   | "cancelled";
 
-// Confirmed bookings show no tag; only cancelled or unpaid get a badge.
+// Confirmed bookings show no tag; only voided, cancelled or unpaid get a badge.
 function statusBadge(
   status: BookingStatus,
+  voided: boolean,
 ): { label: string; tone: "warning" | "danger" } | null {
+  if (voided) return { label: "Voided", tone: "danger" };
   if (status === "cancelled") return { label: "Cancelled", tone: "danger" };
   if (status === "pending")
     return { label: "Waiting for payment", tone: "warning" };
@@ -176,7 +180,7 @@ export function GlobalSearch() {
         const { data: bookings, error: bookErr } = await supabase
           .from("bookings")
           .select(
-            `id, starts_at, status, pax_adult, pax_child, pax_infant, customer_id,
+            `id, starts_at, status, voided_at, pax_adult, pax_child, pax_infant, customer_id,
              business_tour:business_tours!bookings_business_tour_id_fkey(name, tour:tours(name)),
              customer:customers!bookings_customer_id_fkey(id, full_name, phone)`,
           )
@@ -191,6 +195,7 @@ export function GlobalSearch() {
           id: b.id,
           startsAt: b.starts_at,
           status: b.status,
+          voided: b.voided_at != null,
           customerName: b.customer?.full_name ?? "(walk-up)",
           customerPhone: b.customer?.phone ?? null,
           tourName:
@@ -320,7 +325,7 @@ export function GlobalSearch() {
                               {r.customerName}
                             </p>
                             {(() => {
-                              const badge = statusBadge(r.status);
+                              const badge = statusBadge(r.status, r.voided);
                               return badge ? (
                                 <Badge tone={badge.tone}>{badge.label}</Badge>
                               ) : null;
@@ -375,6 +380,7 @@ type RawBooking = {
   id: string;
   starts_at: string;
   status: BookingStatus;
+  voided_at: string | null;
   pax_adult: number | null;
   pax_child: number | null;
   pax_infant: number | null;

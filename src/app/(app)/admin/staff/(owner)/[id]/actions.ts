@@ -50,7 +50,7 @@ export async function updateStaffAction(
   const can_create_bookings = formData.get("can_create_bookings") === "1";
   const can_edit_bookings = formData.get("can_edit_bookings") === "1";
   const can_check_in = formData.get("can_check_in") === "1";
-  const can_delete_bookings = formData.get("can_delete_bookings") === "1";
+  const can_void_bookings = formData.get("can_void_bookings") === "1";
   const can_add_to_peek = formData.get("can_add_to_peek") === "1";
   const can_view_attachments = formData.get("can_view_attachments") === "1";
   const can_redeem_groupon = formData.get("can_redeem_groupon") === "1";
@@ -87,7 +87,7 @@ export async function updateStaffAction(
       can_create_bookings,
       can_edit_bookings,
       can_check_in,
-      can_delete_bookings,
+      can_void_bookings,
       can_add_to_peek,
       can_view_attachments,
       can_redeem_groupon,

@@ -196,6 +196,12 @@ export type Database = {
           total_cents: number
           tour_pax_breakdown: Json
           updated_at: string
+          void_reason: string | null
+          voided_at: string | null
+          voided_by_staff_id: string | null
+          voided_from_status:
+            | Database["public"]["Enums"]["booking_status"]
+            | null
         }
         Insert: {
           awaiting_payment?: boolean
@@ -230,6 +236,12 @@ export type Database = {
           total_cents: number
           tour_pax_breakdown?: Json
           updated_at?: string
+          void_reason?: string | null
+          voided_at?: string | null
+          voided_by_staff_id?: string | null
+          voided_from_status?:
+            | Database["public"]["Enums"]["booking_status"]
+            | null
         }
         Update: {
           awaiting_payment?: boolean
@@ -264,6 +276,12 @@ export type Database = {
           total_cents?: number
           tour_pax_breakdown?: Json
           updated_at?: string
+          void_reason?: string | null
+          voided_at?: string | null
+          voided_by_staff_id?: string | null
+          voided_from_status?:
+            | Database["public"]["Enums"]["booking_status"]
+            | null
         }
         Relationships: [
           {
@@ -306,6 +324,13 @@ export type Database = {
             columns: ["kiosk_employee_id"]
             isOneToOne: false
             referencedRelation: "kiosk_employees"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bookings_voided_by_staff_id_fkey"
+            columns: ["voided_by_staff_id"]
+            isOneToOne: false
+            referencedRelation: "staff"
             referencedColumns: ["id"]
           },
         ]
@@ -479,6 +504,9 @@ export type Database = {
           source_moved_by: string | null
           status: string
           type: string
+          void_reason: string | null
+          voided_at: string | null
+          voided_by: string | null
         }
         Insert: {
           amount_cents?: number
@@ -501,6 +529,9 @@ export type Database = {
           source_moved_by?: string | null
           status?: string
           type?: string
+          void_reason?: string | null
+          voided_at?: string | null
+          voided_by?: string | null
         }
         Update: {
           amount_cents?: number
@@ -523,6 +554,9 @@ export type Database = {
           source_moved_by?: string | null
           status?: string
           type?: string
+          void_reason?: string | null
+          voided_at?: string | null
+          voided_by?: string | null
         }
         Relationships: [
           {
@@ -563,6 +597,13 @@ export type Database = {
           {
             foreignKeyName: "cash_sales_source_moved_by_fkey"
             columns: ["source_moved_by"]
+            isOneToOne: false
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cash_sales_voided_by_fkey"
+            columns: ["voided_by"]
             isOneToOne: false
             referencedRelation: "staff"
             referencedColumns: ["id"]
@@ -1554,12 +1595,12 @@ export type Database = {
           can_add_to_peek: boolean
           can_check_in: boolean
           can_create_bookings: boolean
-          can_delete_bookings: boolean
           can_edit_bookings: boolean
           can_redeem_groupon: boolean
           can_use_caja: boolean
           can_view_attachments: boolean
           can_view_details: boolean
+          can_void_bookings: boolean
           created_at: string
           email: string
           full_name: string
@@ -1577,12 +1618,12 @@ export type Database = {
           can_add_to_peek?: boolean
           can_check_in?: boolean
           can_create_bookings?: boolean
-          can_delete_bookings?: boolean
           can_edit_bookings?: boolean
           can_redeem_groupon?: boolean
           can_use_caja?: boolean
           can_view_attachments?: boolean
           can_view_details?: boolean
+          can_void_bookings?: boolean
           created_at?: string
           email: string
           full_name: string
@@ -1600,12 +1641,12 @@ export type Database = {
           can_add_to_peek?: boolean
           can_check_in?: boolean
           can_create_bookings?: boolean
-          can_delete_bookings?: boolean
           can_edit_bookings?: boolean
           can_redeem_groupon?: boolean
           can_use_caja?: boolean
           can_view_attachments?: boolean
           can_view_details?: boolean
+          can_void_bookings?: boolean
           created_at?: string
           email?: string
           full_name?: string
@@ -2510,6 +2551,8 @@ export type Database = {
           status: string
           stripe_id: string
           total_count: number
+          void_reason: string
+          voided_at: string
         }[]
       }
       payments_scope: {
@@ -2544,6 +2587,8 @@ export type Database = {
           source_original: string
           status: string
           stripe_id: string
+          void_reason: string
+          voided_at: string
         }[]
       }
       payments_summary: {
@@ -2598,6 +2643,12 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      restore_booking: {
+        Args: { p_booking_id: string }
+        Returns: {
+          status: Database["public"]["Enums"]["booking_status"]
+        }[]
+      }
       sms_conversations: {
         Args: never
         Returns: {
@@ -2617,6 +2668,14 @@ export type Database = {
           refunded: number
           stripe_fees: number
           txn_count: number
+        }[]
+      }
+      void_booking: {
+        Args: { p_booking_id: string; p_reason: string }
+        Returns: {
+          voided_at: string
+          voided_by_name: string
+          voided_by_staff_id: string
         }[]
       }
       web_employee_lock: { Args: { p_employee: string }; Returns: undefined }

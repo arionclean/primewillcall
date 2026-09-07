@@ -112,13 +112,39 @@ function deskError(action: string, error: unknown): string {
 }
 
 /**
+ * void_booking() and restore_booking() refuse with a short stable token; the
+ * desk gets a sentence. Anything else is the generic wording (logged).
+ */
+function voidError(action: string, error: { message?: string } | null): string {
+  const token = error?.message ?? "";
+  if (token.includes("not_allowed")) return "Your account can't void bookings.";
+  if (token.includes("reason_required")) return "Enter a reason for voiding this booking.";
+  if (token.includes("already_voided")) return "This booking is already voided.";
+  if (token.includes("not_voided")) return "This booking is not voided.";
+  if (token.includes("not_found")) return "This booking is no longer available.";
+  return deskError(action, error);
+}
+
+const voidStampFormatter = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York",
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+});
+
+/**
  * A booking's payment status. Confirmed is the normal state and shows no tag.
  * Only the states that need the operator's attention get a badge. Check-in is a
  * separate concern (its own column, driven by `checked_in_at`), not a status.
+ * A void sets status to cancelled as well, so the stamp is checked first and
+ * the row reads "Voided" rather than "Cancelled".
  */
 function statusBadge(
   status: BookingStatus,
+  voided = false,
 ): { label: string; tone: "warning" | "danger" } | null {
+  if (voided) return { label: "Voided", tone: "danger" };
   if (status === "cancelled") return { label: "Cancelled", tone: "danger" };
   if (status === "pending")
     return { label: "Waiting for payment", tone: "warning" };
@@ -173,6 +199,13 @@ export type BookingRow = {
   groupon_voucher_codes: string[];
   source_channel: string | null;
   groupon_redeemed_at: string | null;
+  /** The void stamp: set when staff void the booking. The row stays. */
+  voided_at: string | null;
+  voided_by_staff_id: string | null;
+  /** Why it was voided. Withheld like `notes` without "See full booking details". */
+  void_reason: string | null;
+  /** The voider's name, through the staff join; null where staff RLS hides it. */
+  voided_by: { full_name: string } | null;
   pax_adult: number;
   pax_child: number;
   pax_infant: number;
@@ -195,7 +228,7 @@ export type BookingCaps = {
   canCreateBookings: boolean;
   canEditBookings: boolean;
   canCheckIn: boolean;
-  canDeleteBookings: boolean;
+  canVoidBookings: boolean;
   canAddToPeek: boolean;
   canViewAttachments: boolean;
   canRedeemGroupon: boolean;
@@ -821,7 +854,9 @@ export function BookingsList({
           !known ||
           (row.business_tour_id !== undefined &&
             row.business_tour_id !== known.business_tour_id) ||
-          (row.customer_id !== undefined && row.customer_id !== known.customer_id)
+          (row.customer_id !== undefined && row.customer_id !== known.customer_id) ||
+          (row.voided_by_staff_id !== undefined &&
+            row.voided_by_staff_id !== known.voided_by_staff_id)
         ) {
           return refetch();
         }
@@ -1416,10 +1451,6 @@ export function BookingsList({
             );
             setEditBooking(null);
           }}
-          onDeleted={(id) => {
-            setBookings((current) => current.filter((b) => b.id !== id));
-            setEditBooking(null);
-          }}
         />
       ) : null}
     </div>
@@ -1502,7 +1533,8 @@ function BookingRowItem({
   const redeemed = booking.groupon_redeemed_at != null;
   // The codes go with the toggle: the code is what Groupon asks for.
   const voucherCodes = caps.canRedeemGroupon ? booking.groupon_voucher_codes : [];
-  const badge = statusBadge(booking.status);
+  const voided = booking.voided_at != null;
+  const badge = statusBadge(booking.status, voided);
   const paxBreakdown = describePax(booking);
   // What "See full booking details" withholds on this row: the note and the
   // edit form (which shows every field). bookingSelect already left the note
@@ -1537,7 +1569,14 @@ function BookingRowItem({
             <HoverTooltip label={name}>
               <p className="truncate font-semibold">{displayName}</p>
             </HoverTooltip>
-            {badge ? <Badge tone={badge.tone}>{badge.label}</Badge> : null}
+            {badge ? (
+              <Badge
+                tone={badge.tone}
+                title={voided ? (booking.void_reason ?? undefined) : undefined}
+              >
+                {badge.label}
+              </Badge>
+            ) : null}
             {owes ? <Badge tone="warning">Owes {owes}</Badge> : null}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
@@ -1667,7 +1706,14 @@ function BookingRowItem({
         </HoverTooltip>
         {badge || owes ? (
           <div className="mt-0.5 flex flex-wrap gap-1">
-            {badge ? <Badge tone={badge.tone}>{badge.label}</Badge> : null}
+            {badge ? (
+              <Badge
+                tone={badge.tone}
+                title={voided ? (booking.void_reason ?? undefined) : undefined}
+              >
+                {badge.label}
+              </Badge>
+            ) : null}
             {owes ? <Badge tone="warning">Owes {owes}</Badge> : null}
           </div>
         ) : null}
@@ -2029,7 +2075,6 @@ function EditBookingModal({
   caps,
   onClose,
   onSaved,
-  onDeleted,
 }: {
   booking: BookingRow;
   tours: TourOption[];
@@ -2037,7 +2082,6 @@ function EditBookingModal({
   caps: BookingCaps;
   onClose: () => void;
   onSaved: (updated: BookingRow) => void;
-  onDeleted: (id: string) => void;
 }) {
   const [adult, setAdult] = useState(String(booking.pax_adult ?? 0));
   const [child, setChild] = useState(String(booking.pax_child ?? 0));
@@ -2059,10 +2103,14 @@ function EditBookingModal({
   const [due, setDue] = useState(centsToInput(booking.due_cents));
 
   const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  // First click on Delete turns it into an inline question; second click deletes.
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  // Void replaces delete: the booking stays on record. Void opens an inline
+  // question with a required reason; only an owner restores one.
+  const [voiding, setVoiding] = useState(false);
+  const [confirmVoid, setConfirmVoid] = useState(false);
+  const [voidReason, setVoidReason] = useState("");
+  const [restoring, setRestoring] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const voided = booking.voided_at != null;
 
   const formRef = useRef<HTMLFormElement | null>(null);
 
@@ -2131,7 +2179,7 @@ function EditBookingModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [businessTourId]);
 
-  const busy = saving || deleting;
+  const busy = saving || voiding || restoring;
 
   function readPhoneDigits(): string {
     const form = formRef.current;
@@ -2327,34 +2375,79 @@ function EditBookingModal({
     onSaved(updated);
   }
 
-  // Two clicks to delete, both inside the modal. Not window.confirm(): embedded
-  // browsers (the desktop app's preview pane, kiosk webviews) swallow native
-  // dialogs, and the click then does nothing with no explanation.
-  async function handleDelete() {
+  // Void, never delete. The booking keeps its row, stamped with who, when and
+  // why, and stops counting (status goes to cancelled underneath). Two steps,
+  // both inside the modal: Void opens the question with a reason field, and
+  // the second click sends it. Not window.confirm(): embedded browsers (the
+  // desktop app's preview pane, kiosk webviews) swallow native dialogs. The
+  // write is the void_booking() function, so the actor and the time are
+  // stamped by the database, and RLS still scopes which bookings it reaches.
+  async function handleVoid() {
     if (busy) return;
-    if (!confirmDelete) {
-      setConfirmDelete(true);
+    const reason = voidReason.trim();
+    if (!reason) {
+      setError("Enter a reason for voiding this booking.");
       return;
     }
 
-    setDeleting(true);
+    setVoiding(true);
     setError(null);
 
     const supabase = getSupabaseBrowserClient();
-    const { error: deleteError } = await supabase
-      .from("bookings")
-      .delete()
-      .eq("id", booking.id);
+    const { data, error: rpcError } = await supabase.rpc("void_booking", {
+      p_booking_id: booking.id,
+      p_reason: reason,
+    });
 
-    if (deleteError) {
-      setError(deskError("delete the booking", deleteError));
-      setDeleting(false);
-      setConfirmDelete(false);
+    if (rpcError) {
+      setError(voidError("void the booking", rpcError));
+      setVoiding(false);
       return;
     }
 
-    setDeleting(false);
-    onDeleted(booking.id);
+    const stamp = data?.[0];
+    const updated: BookingRow = {
+      ...booking,
+      status: "cancelled",
+      voided_at: stamp?.voided_at ?? new Date().toISOString(),
+      voided_by_staff_id: stamp?.voided_by_staff_id ?? booking.voided_by_staff_id,
+      void_reason: reason,
+      voided_by: stamp?.voided_by_name ? { full_name: stamp.voided_by_name } : null,
+    };
+
+    setVoiding(false);
+    onSaved(updated);
+  }
+
+  // Owner only (the function refuses anyone else): the status goes back to what
+  // it was and the stamp is cleared. Both moves stay in the activity log.
+  async function handleRestore() {
+    if (busy) return;
+    setRestoring(true);
+    setError(null);
+
+    const supabase = getSupabaseBrowserClient();
+    const { data, error: rpcError } = await supabase.rpc("restore_booking", {
+      p_booking_id: booking.id,
+    });
+
+    if (rpcError) {
+      setError(voidError("restore the booking", rpcError));
+      setRestoring(false);
+      return;
+    }
+
+    const updated: BookingRow = {
+      ...booking,
+      status: data?.[0]?.status ?? "confirmed",
+      voided_at: null,
+      voided_by_staff_id: null,
+      void_reason: null,
+      voided_by: null,
+    };
+
+    setRestoring(false);
+    onSaved(updated);
   }
 
   return (
@@ -2377,9 +2470,10 @@ function EditBookingModal({
         <div className="flex items-center justify-between border-b px-5 py-3">
           <h2
             id="booking-edit-title"
-            className="text-lg font-semibold tracking-tight"
+            className="flex items-center gap-2 text-lg font-semibold tracking-tight"
           >
             Edit booking
+            {voided ? <Badge tone="danger">Voided</Badge> : null}
           </h2>
           <button
             type="button"
@@ -2504,7 +2598,7 @@ function EditBookingModal({
                 Status
                 <select
                   value={status}
-                  disabled={busy}
+                  disabled={busy || voided}
                   onChange={(e) => setStatus(e.target.value as BookingStatus)}
                   className={editInputClass}
                 >
@@ -2514,6 +2608,11 @@ function EditBookingModal({
                     </option>
                   ))}
                 </select>
+                {voided ? (
+                  <span className="text-xs font-normal text-muted-foreground">
+                    A voided booking stays cancelled until an owner restores it.
+                  </span>
+                ) : null}
               </label>
 
               <div className="grid max-w-xs gap-2.5 sm:grid-cols-[minmax(0,1fr)_9rem]">
@@ -2620,6 +2719,55 @@ function EditBookingModal({
           </section>
         </div>
 
+        {confirmVoid && !voided ? (
+          <div className="mx-5 mb-4 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-3">
+            <p className="text-sm font-medium">Void this booking?</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              It stays on record, marked as voided with your name, the time and
+              the reason, and stops counting toward the manifest and reports.
+              Only an owner can restore it.
+            </p>
+            <label className="mt-2 grid gap-1 text-xs font-medium">
+              Reason
+              <input
+                type="text"
+                value={voidReason}
+                onChange={(e) => setVoidReason(e.target.value)}
+                onKeyDown={(e) => {
+                  // Enter here means "void", not the form's Save.
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void handleVoid();
+                  }
+                }}
+                placeholder="Duplicate, entered by mistake, test booking..."
+                maxLength={500}
+                autoFocus
+                disabled={busy}
+                className={editInputClass}
+              />
+            </label>
+            <div className="mt-2 flex items-center gap-2">
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => void handleVoid()}
+                disabled={busy || !voidReason.trim()}
+              >
+                {voiding ? "Voiding..." : "Void booking"}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setConfirmVoid(false)}
+                disabled={busy}
+              >
+                Keep
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
         {error ? (
           <p className="mx-5 mb-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
             {error}
@@ -2627,52 +2775,51 @@ function EditBookingModal({
         ) : null}
 
         <div className="flex items-center justify-between gap-3 border-t bg-muted/40 px-5 py-4">
-          {caps.canDeleteBookings || role !== "check_in" ? (
-            <div className="flex items-center gap-2">
-              {caps.canDeleteBookings && confirmDelete ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm text-muted-foreground">
-                    Delete this booking? This cannot be undone.
-                  </span>
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            {voided ? (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  <span className="font-medium text-foreground">Voided</span>{" "}
+                  {voidStampFormatter.format(new Date(booking.voided_at ?? 0))}
+                  {booking.voided_by?.full_name
+                    ? ` by ${booking.voided_by.full_name}`
+                    : ""}
+                  {booking.void_reason ? `. ${booking.void_reason}` : ""}
+                </p>
+                {role === "owner" ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => void handleRestore()}
+                    disabled={busy}
+                  >
+                    {restoring ? "Restoring..." : "Restore"}
+                  </Button>
+                ) : null}
+              </>
+            ) : (
+              <>
+                {caps.canVoidBookings && !confirmVoid ? (
                   <Button
                     type="button"
                     variant="destructive"
-                    onClick={() => void handleDelete()}
+                    onClick={() => setConfirmVoid(true)}
                     disabled={busy}
                   >
-                    {deleting ? "Deleting..." : "Yes, delete"}
+                    Void
                   </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => setConfirmDelete(false)}
+                ) : null}
+                {role !== "check_in" ? (
+                  <PaymentLinkButton
+                    bookingId={booking.id}
+                    amountCents={booking.total_cents}
+                    status={booking.status}
                     disabled={busy}
-                  >
-                    Keep
-                  </Button>
-                </div>
-              ) : caps.canDeleteBookings ? (
-                <Button
-                  type="button"
-                  variant="destructive"
-                  onClick={() => void handleDelete()}
-                  disabled={busy}
-                >
-                  Delete
-                </Button>
-              ) : null}
-              {role !== "check_in" ? (
-                <PaymentLinkButton
-                  bookingId={booking.id}
-                  amountCents={booking.total_cents}
-                  status={booking.status}
-                  disabled={busy}
-                />
-              ) : null}
-            </div>
-          ) : (
-            <span />
-          )}
+                  />
+                ) : null}
+              </>
+            )}
+          </div>
           <div className="flex items-center gap-3">
             <Button
               type="button"

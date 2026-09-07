@@ -57,7 +57,7 @@ type CapabilityName =
   | "can_create_bookings"
   | "can_edit_bookings"
   | "can_check_in"
-  | "can_delete_bookings"
+  | "can_void_bookings"
   | "can_add_to_peek"
   | "can_view_attachments"
   | "can_redeem_groupon"
@@ -85,9 +85,9 @@ const CAPABILITY_OPTIONS: {
     hint: "Mark guests as arrived from the Bookings page.",
   },
   {
-    name: "can_delete_bookings",
-    label: "Delete bookings",
-    hint: "Remove bookings entirely. Leave off unless they really need it.",
+    name: "can_void_bookings",
+    label: "Void bookings",
+    hint: "Mark a booking as voided (a mistake or a duplicate). The booking stays on record with who voided it and why; nothing is ever deleted. Only an owner can restore one.",
   },
   {
     name: "can_add_to_peek",
@@ -141,12 +141,12 @@ export function NewStaffForm({
   const [selectedTours, setSelectedTours] = useState<Set<string>>(
     () => new Set(),
   );
-  // Delete defaults on for managers, off for check-in staff.
+  // Void defaults on for managers, off for check-in staff.
   const [caps, setCaps] = useState<Record<CapabilityName, boolean>>({
     can_create_bookings: true,
     can_edit_bookings: true,
     can_check_in: true,
-    can_delete_bookings: false,
+    can_void_bookings: false,
     can_add_to_peek: true,
     can_view_attachments: true,
     can_redeem_groupon: false,
@@ -232,7 +232,7 @@ export function NewStaffForm({
               setRole(next);
               setCaps((prev) => ({
                 ...prev,
-                can_delete_bookings: next === "business_manager",
+                can_void_bookings: next === "business_manager",
               }));
             }}
             required
