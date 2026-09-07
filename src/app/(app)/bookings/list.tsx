@@ -591,6 +591,16 @@ function paxOf(b: BookingRow): number {
   return (b.pax_adult ?? 0) + (b.pax_child ?? 0);
 }
 
+/**
+ * Whether a booking counts toward a departure's seats. A cancelled booking
+ * (which is what a voided one is underneath) stays on the list, dimmed, but
+ * takes no seat, the same rule bookings_checkin_manifest applies in the
+ * database for the sidebar, so the two headers always agree.
+ */
+function countsTowardSeats(b: BookingRow): boolean {
+  return b.status !== "cancelled";
+}
+
 function groupByTime(rows: BookingRow[]): Group[] {
   const buckets = new Map<
     string,
@@ -607,7 +617,7 @@ function groupByTime(rows: BookingRow[]): Group[] {
       checkedPax: 0,
       first: b.starts_at,
     };
-    const pax = paxOf(b);
+    const pax = countsTowardSeats(b) ? paxOf(b) : 0;
     existing.rows.push(b);
     existing.totalPax += pax;
     if (b.checked_in_at != null) {
@@ -2730,11 +2740,6 @@ function EditBookingModal({
         {confirmVoid && !voided ? (
           <div className="mx-5 mb-4 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-3">
             <p className="text-sm font-medium">Void this booking?</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              It stays on record, marked as voided with your name, the time and
-              the reason, and stops counting toward the manifest and reports.
-              Only an owner can restore it.
-            </p>
             <label className="mt-2 grid max-w-sm gap-1 text-xs font-medium">
               Reason
               <select

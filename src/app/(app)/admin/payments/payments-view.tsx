@@ -100,6 +100,9 @@ export type FeedItem = (
   booking_href: string | null;
 };
 
+/** A cash row as listed, with its booking link (the only kind that voids). */
+type CashFeedItem = Extract<FeedItem, { kind: "cash" }>;
+
 type Summary = {
   card_gross: number;
   card_count: number;
@@ -348,7 +351,7 @@ export function PaymentsView({
   const [moveError, setMoveError] = useState<string | null>(null);
 
   // "Void this sale" dialog, cash only. `voidFor` doubles as the open/closed flag.
-  const [voidFor, setVoidFor] = useState<CashSale | null>(null);
+  const [voidFor, setVoidFor] = useState<CashFeedItem | null>(null);
   // A pick from the short list, or Other plus what they typed.
   const [voidChoice, setVoidChoice] = useState("");
   const [voidOther, setVoidOther] = useState("");
@@ -437,7 +440,7 @@ export function PaymentsView({
     setMoveError(null);
   }
 
-  function openVoid(item: CashSale) {
+  function openVoid(item: CashFeedItem) {
     setVoidFor(item);
     setVoidChoice("");
     setVoidOther("");
@@ -1011,6 +1014,19 @@ export function PaymentsView({
                 toward the drawer and the totals. Nothing is deleted, and no cash
                 changes hands: if money was handed back, record a refund instead.
               </p>
+              {voidFor.booking_href && (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Its booking is not voided with it. If the booking was a mistake
+                  too,{" "}
+                  <a
+                    href={voidFor.booking_href}
+                    className="font-medium text-primary underline-offset-4 hover:underline"
+                  >
+                    void it from Bookings
+                  </a>
+                  .
+                </p>
+              )}
 
               <label className="mt-4 flex flex-col gap-1 text-xs font-medium text-muted-foreground">
                 Reason
