@@ -413,6 +413,21 @@ business's current account.
   `stripe_account_id` (optional per-kiosk Connect override), `terminal_location_id`,
   `simulated`. Maps a tablet to the connected account its sales settle on.
 
+- `kiosk_sales` — kiosk **card flow v2** (docs/kiosk-card-flow-v2.md): one row per card
+  sale, written by `kiosk-sale-start` BEFORE the reader is asked for the card (`ref` = the KS
+  code, `amount_cents`, `customer_name`, `payment_intent_id`, `stripe_account_id`, the hidden
+  pending `booking_id`, the `xano_payload` the server mirrors to Xano once paid). `status`
+  pending -> paid (by `completed_by` tablet, sweep or reuse) or abandoned; `tablet_acked_at`
+  marks that a tablet showed the paid outcome, which is what stops a captured payment from
+  ever being attached twice. Service role writes only; staff read by business.
+- `kiosk_events` — append-only stream from the tablets (`kiosk-log`) and the kiosk sale
+  functions: reader connected/dropped/battery, sale started, card result with the SDK error,
+  sale completed, Xano mirror results. `kiosk_slug`, `app_build`, `device_id`, and `ref` (the
+  KS code) on every row. In the realtime publication. Same read policy as `cash_sales`.
+- `kiosks.card_flow` (`v1` default, `v2`), `reader_low_battery_pct` (25),
+  `reader_block_battery_pct` (10) — the per-kiosk rollout switch and battery thresholds the
+  tablet reads through `kiosk-config`. An old build ignores them.
+
 ### RPC
 - `stripe_payments_summary(p_start, p_end)` — gross / net / stripe_fees / application_fees /
   refunded / count for a date range, `SUM`'d in the DB. `SECURITY INVOKER`, so
@@ -716,6 +731,9 @@ server-rendered screens: it subscribes for the signal and lets `router.refresh()
 the answer, so the query stays in Postgres and there is no second copy of the filter and
 paging logic in the browser. Screens that hold their rows in client state (the bookings
 list, messages) subscribe directly and patch their own state.
+
+`kiosk_events` (kiosk card flow v2) is published too, inserts only, for a future live kiosks
+screen; nothing subscribes to it yet.
 
 ## Conventions
 

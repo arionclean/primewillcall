@@ -41,6 +41,14 @@ Last updated 2026-07-15. Companion: [`booking-dual-write.md`](booking-dual-write
   Locations on `kiosks.terminal_location_id`, Stripe webhook registered. `XANO_WEBHOOK_SECRET`
   is a project-wide Supabase secret (so `kiosk-booking` already works).
 
+### Card flow v2 (2026-09-07)
+
+Sale-first card payments with Stripe as the only authority on outcomes, per-kiosk switch
+`kiosks.card_flow`, a one-minute sweep, and the `kiosk_events` stream from the tablets.
+Backend live and inert; app build 1.0.3 (8) carries it. Roll out one iPad at a time:
+install, `update kiosks set card_flow = 'v2' where slug = '<kiosk>'`, watch `kiosk_events`;
+`'v1'` rolls back. Full design: [kiosk-card-flow-v2.md](kiosk-card-flow-v2.md).
+
 ### Left
 - Real-kiosk test (step 1). Cash_sales backfill (step 2). SalesScreen + bookings view reads
   (step 4). Products read, central remote flag, login, app rollout (step 5).

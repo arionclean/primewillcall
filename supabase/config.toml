@@ -50,3 +50,20 @@ verify_jwt = true
 
 [functions.gp-book]
 verify_jwt = true
+
+# Kiosk card flow v2 (docs/kiosk-card-flow-v2.md). The tablet sends only the anon key,
+# like the other kiosk functions; kiosk-sale-sweep is pg_cron with x-cron-secret.
+[functions.kiosk-config]
+verify_jwt = false
+
+[functions.kiosk-sale-start]
+verify_jwt = false
+
+[functions.kiosk-sale-complete]
+verify_jwt = false
+
+[functions.kiosk-sale-sweep]
+verify_jwt = false
+
+[functions.kiosk-log]
+verify_jwt = false

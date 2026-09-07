@@ -754,6 +754,185 @@ export type Database = {
           },
         ]
       }
+      kiosk_events: {
+        Row: {
+          app_build: string | null
+          at: string
+          business_id: string | null
+          client_at: string | null
+          device_id: string | null
+          event: string
+          id: number
+          kiosk_id: string | null
+          kiosk_slug: string | null
+          level: string
+          payload: Json
+          ref: string | null
+        }
+        Insert: {
+          app_build?: string | null
+          at?: string
+          business_id?: string | null
+          client_at?: string | null
+          device_id?: string | null
+          event: string
+          id?: never
+          kiosk_id?: string | null
+          kiosk_slug?: string | null
+          level?: string
+          payload?: Json
+          ref?: string | null
+        }
+        Update: {
+          app_build?: string | null
+          at?: string
+          business_id?: string | null
+          client_at?: string | null
+          device_id?: string | null
+          event?: string
+          id?: never
+          kiosk_id?: string | null
+          kiosk_slug?: string | null
+          level?: string
+          payload?: Json
+          ref?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kiosk_events_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kiosk_events_kiosk_id_fkey"
+            columns: ["kiosk_id"]
+            isOneToOne: false
+            referencedRelation: "kiosks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      kiosk_sales: {
+        Row: {
+          amount_cents: number
+          app_build: string | null
+          booking_id: string | null
+          business_id: string
+          cash_sale_id: string | null
+          completed_at: string | null
+          completed_by: string | null
+          created_at: string
+          customer_name: string | null
+          device_id: string | null
+          id: string
+          kiosk_id: string
+          kiosk_slug: string
+          paid_at: string | null
+          payment_intent_id: string | null
+          product: string | null
+          ref: string
+          status: string
+          stripe_account_id: string | null
+          tablet_acked_at: string | null
+          type: string
+          updated_at: string
+          xano_booking_id: string | null
+          xano_error: string | null
+          xano_mirrored_at: string | null
+          xano_payload: Json
+          xano_payment_qr: string | null
+        }
+        Insert: {
+          amount_cents: number
+          app_build?: string | null
+          booking_id?: string | null
+          business_id: string
+          cash_sale_id?: string | null
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          customer_name?: string | null
+          device_id?: string | null
+          id?: string
+          kiosk_id: string
+          kiosk_slug: string
+          paid_at?: string | null
+          payment_intent_id?: string | null
+          product?: string | null
+          ref: string
+          status?: string
+          stripe_account_id?: string | null
+          tablet_acked_at?: string | null
+          type?: string
+          updated_at?: string
+          xano_booking_id?: string | null
+          xano_error?: string | null
+          xano_mirrored_at?: string | null
+          xano_payload?: Json
+          xano_payment_qr?: string | null
+        }
+        Update: {
+          amount_cents?: number
+          app_build?: string | null
+          booking_id?: string | null
+          business_id?: string
+          cash_sale_id?: string | null
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          customer_name?: string | null
+          device_id?: string | null
+          id?: string
+          kiosk_id?: string
+          kiosk_slug?: string
+          paid_at?: string | null
+          payment_intent_id?: string | null
+          product?: string | null
+          ref?: string
+          status?: string
+          stripe_account_id?: string | null
+          tablet_acked_at?: string | null
+          type?: string
+          updated_at?: string
+          xano_booking_id?: string | null
+          xano_error?: string | null
+          xano_mirrored_at?: string | null
+          xano_payload?: Json
+          xano_payment_qr?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kiosk_sales_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kiosk_sales_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kiosk_sales_cash_sale_id_fkey"
+            columns: ["cash_sale_id"]
+            isOneToOne: false
+            referencedRelation: "cash_sales"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kiosk_sales_kiosk_id_fkey"
+            columns: ["kiosk_id"]
+            isOneToOne: false
+            referencedRelation: "kiosks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       kiosk_tours: {
         Row: {
           created_at: string
@@ -791,11 +970,14 @@ export type Database = {
         Row: {
           business_id: string | null
           can_create_bookings: boolean
+          card_flow: string
           created_at: string
           id: string
           last_seen_at: string | null
           name: string
           pairing_code: string
+          reader_block_battery_pct: number
+          reader_low_battery_pct: number
           revoked_at: string | null
           simulated: boolean
           slug: string | null
@@ -807,11 +989,14 @@ export type Database = {
         Insert: {
           business_id?: string | null
           can_create_bookings?: boolean
+          card_flow?: string
           created_at?: string
           id?: string
           last_seen_at?: string | null
           name: string
           pairing_code: string
+          reader_block_battery_pct?: number
+          reader_low_battery_pct?: number
           revoked_at?: string | null
           simulated?: boolean
           slug?: string | null
@@ -823,11 +1008,14 @@ export type Database = {
         Update: {
           business_id?: string | null
           can_create_bookings?: boolean
+          card_flow?: string
           created_at?: string
           id?: string
           last_seen_at?: string | null
           name?: string
           pairing_code?: string
+          reader_block_battery_pct?: number
+          reader_low_battery_pct?: number
           revoked_at?: string | null
           simulated?: boolean
           slug?: string | null
