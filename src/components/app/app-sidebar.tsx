@@ -18,7 +18,6 @@ import {
   Tag,
   UserCog,
   Wallet,
-  KeyRound,
   Zap,
   type LucideIcon,
 } from "lucide-react";
@@ -167,18 +166,13 @@ const SECTIONS: NavSection[] = [
         matchPrefix: "/admin/messaging",
       },
       {
+        // Owners: the team list + Employees tab. Managers: the Employees tab (the
+        // list page sends them there).
         href: "/admin/staff",
         label: "Team",
         icon: UserCog,
-        roles: ["owner"],
-        matchPrefix: "/admin/staff",
-      },
-      {
-        href: "/admin/employees",
-        label: "Employees",
-        icon: KeyRound,
         roles: ["owner", "business_manager"],
-        matchPrefix: "/admin/employees",
+        matchPrefix: "/admin/staff",
       },
     ],
   },

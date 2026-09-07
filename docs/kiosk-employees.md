@@ -38,15 +38,16 @@ which iPad; the employee PIN says who.
 
 ## The admin page
 
-`/admin/employees` (owner and any business manager manage the shared pool; check-in
-accounts are redirected away):
+`/admin/staff/employees`, the Employees tab of Team (owner and any business manager
+manage the shared pool; a manager's Team link opens this tab; check-in accounts are
+redirected away):
 add an employee (name, PIN), change a PIN, deactivate or reactivate, remove (past
 activity keeps the name), and **Activity**, built for volume:
 
-- Reads go through the `kiosk_activity` RPC (filters + keyset paging on `at, id`,
-  100 rows a page, "Load more" continues from the last row) and `kiosk_activity_count`
-  for the total; both are SECURITY INVOKER so `kiosk_events` RLS still scopes them.
-  A busy day never comes into memory, and page 40 costs what page 1 does.
+- Reads go through the `activity_feed` RPC (tablets and web as one stream, filters +
+  keyset paging on `at, key`, 100 rows a page, "Load more" continues from the last row);
+  SECURITY INVOKER, so `kiosk_events` and `audit_log` RLS still scope it. A busy day
+  never comes into memory, and page 40 costs what page 1 does.
 - Filters, all in the URL: one day (a single calendar, today by default; the RPC
   takes a range, the page just asks for one day), employee, tablet, **action group** (`EVENT_GROUPS` in
   `src/lib/kiosk/events.ts`: sales, guests and bookings, sign-ins, card reader,
@@ -129,5 +130,5 @@ screen re-checks every few seconds), so no reinstall.
 | `supabase/migrations/20260907195532_web_activity_log.sql` | `audit_log` trigger, `staff.pin_required`, web PIN functions, `activity_feed` |
 | `src/lib/employee-session.ts`, `src/app/(app)/employee-actions.ts`, `components/app/web-pin-lock.tsx`, `employee-chip.tsx` | the web PIN |
 | `supabase/functions/_shared/audit.ts` | explicit log rows from service-role functions (`payments`) |
-| `src/app/(app)/admin/employees/*`, `src/lib/kiosk/pin.ts`, `src/lib/kiosk/events.ts` | the admin page (`activity-feed.tsx` is the log) |
+| `src/app/(app)/admin/staff/employees/*`, `src/lib/kiosk/pin.ts`, `src/lib/kiosk/events.ts` | the admin page (`activity-feed.tsx` is the log) |
 | PrimeKiosk `src/services/EmployeeSession.ts`, `src/context/EmployeeSessionContext.tsx` | session, keypad, pill |

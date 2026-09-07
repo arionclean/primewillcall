@@ -12,7 +12,7 @@ export type EmployeeActionState = {
   saved?: true;
 };
 
-const PATH = "/admin/employees";
+const PATH = "/admin/staff/employees";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**

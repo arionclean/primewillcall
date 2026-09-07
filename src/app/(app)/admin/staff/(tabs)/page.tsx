@@ -5,6 +5,9 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { redirect } from "next/navigation";
+
+import { getCurrentStaff } from "@/lib/auth";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 const ROLE_LABEL = {
@@ -52,6 +55,10 @@ function groupByBusiness(staff: StaffRow[]) {
 }
 
 export default async function StaffListPage() {
+  // The team list is the owner's; a manager's Team page is the Employees tab.
+  const { staff: me } = await getCurrentStaff();
+  if (me?.role !== "owner") redirect("/admin/staff/employees");
+
   const supabase = await getSupabaseServerClient();
   const { data: staff, error } = await supabase
     .from("staff")
@@ -68,13 +75,10 @@ export default async function StaffListPage() {
   return (
     <div>
       <header className="mb-6 flex items-end justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Team</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Owners see everything; managers see one business; check-in staff see
-            specific tours.
-          </p>
-        </div>
+        <p className="text-sm text-muted-foreground">
+          Owners see everything; managers see one business; check-in staff see
+          specific tours.
+        </p>
         <Link
           href="/admin/staff/new"
           className={cn(buttonVariants({ variant: "default" }))}

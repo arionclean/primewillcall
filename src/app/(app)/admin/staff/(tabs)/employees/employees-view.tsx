@@ -52,13 +52,11 @@ export function EmployeesView({ employees, loadError }: Props) {
 
   return (
     <div className="space-y-8">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Employees</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          The people who use the tablets, at any business. Each one has a 4-digit PIN;
-          every sale, check-in and card action on a tablet is recorded under whoever typed it.
-        </p>
-      </header>
+      <p className="text-sm text-muted-foreground">
+        The people who use the tablets, at any business. Each one has a 4-digit PIN;
+        every sale, check-in and card action on a tablet or the web is recorded under
+        whoever typed it.
+      </p>
 
       {loadError && (
         <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">

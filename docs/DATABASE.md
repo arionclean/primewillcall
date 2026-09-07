@@ -201,7 +201,7 @@ employee_name?, entity, entity_id? (text), action, changed text[], payload jsonb
 table staff edit (only for a real staff session; system writes are skipped) and by the
 `payments` function for its own writes. `employee_id` is the person behind a shared
 login (`staff.pin_required`), read from the `x-employee-id` request header. Read with
-`kiosk_events` through `activity_feed()` on `/admin/employees`. Owner reads all; a
+`kiosk_events` through `activity_feed()` on `/admin/staff/employees`. Owner reads all; a
 manager their business's rows and their own; check-in their own. See
 docs/kiosk-employees.md "The web app".
 
