@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { DateField } from "@/components/ui/date-field";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -26,8 +27,7 @@ export type ActivityRow = {
 
 /** The filter as the page resolved it from the URL: what the database was asked. */
 export type ActivityFilter = {
-  from: string; // local YYYY-MM-DD
-  to: string;
+  day: string; // local YYYY-MM-DD
   startUtc: string;
   endUtcExclusive: string;
   employee: string;
@@ -46,7 +46,6 @@ type Props = {
   total: number;
   pageSize: number;
   filter: ActivityFilter;
-  presets: { label: string; from: string; to: string }[];
   employees: PersonOption[];
   kiosks: KioskOption[];
   loadError: boolean;
@@ -57,17 +56,6 @@ const timeFmt = new Intl.DateTimeFormat("en-US", {
   hour: "numeric",
   minute: "2-digit",
   second: "2-digit",
-});
-const dayFmt = new Intl.DateTimeFormat("en-US", {
-  timeZone: "America/New_York",
-  month: "short",
-  day: "numeric",
-});
-const nyDayKey = new Intl.DateTimeFormat("en-CA", {
-  timeZone: "America/New_York",
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
 });
 
 /** The same test the database applied, for rows that arrive live. */
@@ -128,28 +116,15 @@ function toRow(r: {
   };
 }
 
-function presetHref(f: ActivityFilter, from: string, to: string): string {
-  const p = new URLSearchParams();
-  p.set("from", from);
-  p.set("to", to);
-  if (f.employee) p.set("employee", f.employee);
-  if (f.kiosk) p.set("kiosk", f.kiosk);
-  if (f.group) p.set("group", f.group);
-  if (f.problems) p.set("problems", "1");
-  if (f.includeDebug) p.set("debug", "1");
-  if (f.q) p.set("q", f.q);
-  return `?${p.toString()}#activity`;
-}
-
 /**
  * The activity log. The server rendered the first page for the filter in the URL;
  * this holds the rows, pages further back through the `kiosk_activity` RPC (keyset
- * on `at, id`, so page 40 costs what page 1 does), and, while the range includes
- * now, prepends rows as the tablets post them (one Realtime INSERT subscription,
+ * on `at, id`, so page 40 costs what page 1 does), and, while the day is today,
+ * prepends rows as the tablets post them (one Realtime INSERT subscription,
  * filtered here the same way the database filtered the page). Nothing here
  * re-renders the rest of the page.
  */
-export function ActivityFeed({ rows: initialRows, total: initialTotal, pageSize, filter, presets, employees, kiosks, loadError }: Props) {
+export function ActivityFeed({ rows: initialRows, total: initialTotal, pageSize, filter, employees, kiosks, loadError }: Props) {
   const [rows, setRows] = useState<ActivityRow[]>(initialRows);
   const [total, setTotal] = useState(initialTotal);
   const [hasMore, setHasMore] = useState(initialRows.length >= pageSize);
@@ -217,26 +192,13 @@ export function ActivityFeed({ rows: initialRows, total: initialTotal, pageSize,
     setHasMore(more.length >= pageSize);
   }
 
-  // Day separators when the range spans more than one day.
-  const multiDay = filter.from !== filter.to;
-  const grouped = useMemo(() => {
-    const out: { day: string; rows: ActivityRow[] }[] = [];
-    for (const r of rows) {
-      const day = nyDayKey.format(new Date(r.at));
-      const last = out[out.length - 1];
-      if (last && last.day === day) last.rows.push(r);
-      else out.push({ day, rows: [r] });
-    }
-    return out;
-  }, [rows]);
-
   return (
     <section id="activity" className="space-y-3">
       <div className="flex flex-wrap items-end justify-between gap-2 px-1">
         <div>
           <h2 className="text-lg font-semibold tracking-tight">Activity</h2>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            What the tablets recorded, newest first.
+            What the tablets recorded that day, newest first.
             {live ? " New actions appear as they happen." : ""}
           </p>
         </div>
@@ -248,82 +210,60 @@ export function ActivityFeed({ rows: initialRows, total: initialTotal, pageSize,
 
       <Card>
         <CardContent className="space-y-4 py-5">
-          <form method="get" action="#activity" className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              {presets.map((p) => {
-                const active = p.from === filter.from && p.to === filter.to;
-                return (
-                  <a
-                    key={p.label}
-                    href={presetHref(filter, p.from, p.to)}
-                    className={
-                      "rounded-full border px-3 py-1 text-xs font-medium " +
-                      (active ? "border-foreground bg-foreground text-background" : "text-muted-foreground hover:bg-muted")
-                    }
-                  >
-                    {p.label}
-                  </a>
-                );
-              })}
+          <form method="get" action="#activity" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Field label="Day" htmlFor="act-day">
+              <DateField id="act-day" name="day" defaultValue={filter.day} />
+            </Field>
+            <Field label="Employee" htmlFor="act-emp">
+              <Select id="act-emp" name="employee" defaultValue={filter.employee}>
+                <option value="">Everyone</option>
+                {employees.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Tablet" htmlFor="act-kiosk">
+              <Select id="act-kiosk" name="kiosk" defaultValue={filter.kiosk}>
+                <option value="">All tablets</option>
+                {kiosks.map((k) => (
+                  <option key={k.id} value={k.slug}>
+                    {k.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Action" htmlFor="act-group">
+              <Select id="act-group" name="group" defaultValue={filter.group}>
+                <option value="">All actions</option>
+                {(Object.keys(EVENT_GROUPS) as EventGroup[]).map((g) => (
+                  <option key={g} value={g}>
+                    {EVENT_GROUPS[g].label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Search" htmlFor="act-q" hint="A code, a guest name, an amount">
+              <Input id="act-q" name="q" defaultValue={filter.q} placeholder="KS-1234 or Maria" autoComplete="off" />
+            </Field>
+            <div className="flex flex-col justify-end gap-2 text-sm sm:col-span-2">
+              <label htmlFor="act-problems" className="flex items-center gap-2">
+                <input id="act-problems" type="checkbox" name="problems" value="1" defaultChecked={filter.problems} className="size-4" />
+                Only things that went wrong (wrong PINs, card errors, reader drops)
+              </label>
+              <label htmlFor="act-debug" className="flex items-center gap-2">
+                <input id="act-debug" type="checkbox" name="debug" value="1" defaultChecked={filter.includeDebug} className="size-4" />
+                Also show the tablet&apos;s automatic events (app opened or closed, settings checks)
+              </label>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <Field label="From" htmlFor="act-from">
-                <Input id="act-from" type="date" name="from" defaultValue={filter.from} />
-              </Field>
-              <Field label="To" htmlFor="act-to">
-                <Input id="act-to" type="date" name="to" defaultValue={filter.to} />
-              </Field>
-              <Field label="Employee" htmlFor="act-emp">
-                <Select id="act-emp" name="employee" defaultValue={filter.employee}>
-                  <option value="">Everyone</option>
-                  {employees.map((e) => (
-                    <option key={e.id} value={e.id}>
-                      {e.name}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-              <Field label="Tablet" htmlFor="act-kiosk">
-                <Select id="act-kiosk" name="kiosk" defaultValue={filter.kiosk}>
-                  <option value="">All tablets</option>
-                  {kiosks.map((k) => (
-                    <option key={k.id} value={k.slug}>
-                      {k.name}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-              <Field label="Action" htmlFor="act-group">
-                <Select id="act-group" name="group" defaultValue={filter.group}>
-                  <option value="">All actions</option>
-                  {(Object.keys(EVENT_GROUPS) as EventGroup[]).map((g) => (
-                    <option key={g} value={g}>
-                      {EVENT_GROUPS[g].label}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-              <Field label="Search" htmlFor="act-q" hint="A code, a guest name, an amount">
-                <Input id="act-q" name="q" defaultValue={filter.q} placeholder="KS-1234 or Maria" autoComplete="off" />
-              </Field>
-              <div className="flex flex-col justify-end gap-2 text-sm">
-                <label htmlFor="act-problems" className="flex items-center gap-2">
-                  <input id="act-problems" type="checkbox" name="problems" value="1" defaultChecked={filter.problems} className="size-4" />
-                  Problems only
-                </label>
-                <label htmlFor="act-debug" className="flex items-center gap-2">
-                  <input id="act-debug" type="checkbox" name="debug" value="1" defaultChecked={filter.includeDebug} className="size-4" />
-                  Include tablet housekeeping
-                </label>
-              </div>
-              <div className="flex items-end gap-2">
-                <Button type="submit" variant="outline">
-                  Show
-                </Button>
-                <a href="?#activity" className={buttonVariants({ variant: "ghost" })}>
-                  Reset
-                </a>
-              </div>
+            <div className="flex items-end gap-2">
+              <Button type="submit" variant="outline">
+                Show
+              </Button>
+              <a href="?#activity" className={buttonVariants({ variant: "ghost" })}>
+                Reset
+              </a>
             </div>
           </form>
 
@@ -350,9 +290,28 @@ export function ActivityFeed({ rows: initialRows, total: initialTotal, pageSize,
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {grouped.map((g) => (
-                    <GroupRows key={g.day} day={g.day} rows={g.rows} showDay={multiDay} />
-                  ))}
+                  {rows.map((a) => {
+                    const person = PERSON_EVENTS.has(a.event);
+                    const detail = [eventDetail(a.event, a.payload), a.ref].filter(Boolean).join(" · ");
+                    return (
+                      <tr
+                        key={a.id}
+                        className={a.level === "error" ? "bg-red-50/60 dark:bg-red-950/20" : a.level === "warn" ? "bg-amber-50/60 dark:bg-amber-950/20" : ""}
+                      >
+                        <td className="whitespace-nowrap py-2 pr-3 tabular-nums text-muted-foreground">{timeFmt.format(new Date(a.at))}</td>
+                        <td className="whitespace-nowrap py-2 pr-3">
+                          {a.employeeName ? (
+                            <span className={person ? "font-medium" : ""}>{a.employeeName}</span>
+                          ) : (
+                            <span className="text-muted-foreground">Tablet</span>
+                          )}
+                        </td>
+                        <td className="whitespace-nowrap py-2 pr-3 text-muted-foreground">{a.kioskSlug ?? ""}</td>
+                        <td className="py-2 pr-3">{eventLabel(a.event)}</td>
+                        <td className="py-2 text-muted-foreground">{detail}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -372,41 +331,5 @@ export function ActivityFeed({ rows: initialRows, total: initialTotal, pageSize,
         </CardContent>
       </Card>
     </section>
-  );
-}
-
-function GroupRows({ day, rows, showDay }: { day: string; rows: ActivityRow[]; showDay: boolean }) {
-  return (
-    <>
-      {showDay && (
-        <tr className="bg-muted/40">
-          <td colSpan={5} className="py-1.5 pr-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {dayFmt.format(new Date(rows[0].at))}
-          </td>
-        </tr>
-      )}
-      {rows.map((a) => {
-        const person = PERSON_EVENTS.has(a.event);
-        const detail = [eventDetail(a.event, a.payload), a.ref].filter(Boolean).join(" · ");
-        return (
-          <tr
-            key={`${day}-${a.id}`}
-            className={a.level === "error" ? "bg-red-50/60 dark:bg-red-950/20" : a.level === "warn" ? "bg-amber-50/60 dark:bg-amber-950/20" : ""}
-          >
-            <td className="whitespace-nowrap py-2 pr-3 tabular-nums text-muted-foreground">{timeFmt.format(new Date(a.at))}</td>
-            <td className="whitespace-nowrap py-2 pr-3">
-              {a.employeeName ? (
-                <span className={person ? "font-medium" : ""}>{a.employeeName}</span>
-              ) : (
-                <span className="text-muted-foreground">Tablet</span>
-              )}
-            </td>
-            <td className="whitespace-nowrap py-2 pr-3 text-muted-foreground">{a.kioskSlug ?? ""}</td>
-            <td className="py-2 pr-3">{eventLabel(a.event)}</td>
-            <td className="py-2 text-muted-foreground">{detail}</td>
-          </tr>
-        );
-      })}
-    </>
   );
 }

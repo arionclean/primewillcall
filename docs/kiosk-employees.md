@@ -47,8 +47,8 @@ activity keeps the name), and **Activity**, built for volume:
   100 rows a page, "Load more" continues from the last row) and `kiosk_activity_count`
   for the total; both are SECURITY INVOKER so `kiosk_events` RLS still scopes them.
   A busy day never comes into memory, and page 40 costs what page 1 does.
-- Filters, all in the URL: date range with presets (today, yesterday, 7 and 30
-  days), employee, tablet, **action group** (`EVENT_GROUPS` in
+- Filters, all in the URL: one day (a single calendar, today by default; the RPC
+  takes a range, the page just asks for one day), employee, tablet, **action group** (`EVENT_GROUPS` in
   `src/lib/kiosk/events.ts`: sales, guests and bookings, sign-ins, card reader,
   tablet housekeeping; each maps to exact event names so the filter is an index
   lookup), problems only (warn + error), search (code, name, amount, anything in

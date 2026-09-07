@@ -7,12 +7,6 @@ import { EmployeesView } from "./employees-view";
 
 const PAGE_SIZE = 100;
 
-/** YYYY-MM-DD plus or minus whole days, no timezone involved. */
-function shiftYmd(ymd: string, days: number): string {
-  const [y, m, d] = ymd.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
-}
-
 /**
  * The people who use the kiosk tablets (one pool shared by every business, each
  * with a 4-digit PIN) and what they did. The activity is read through the
@@ -27,16 +21,13 @@ export default async function EmployeesPage({
   const supabase = await getSupabaseServerClient();
   const sp = await searchParams;
 
-  const today = todayLocalIso(BUSINESS_TZ);
-  let from = parseLocalYmd(sp.from) ?? today;
-  let to = parseLocalYmd(sp.to) ?? from;
-  if (to < from) [from, to] = [to, from];
+  const day = parseLocalYmd(sp.day) ?? todayLocalIso(BUSINESS_TZ);
+  const range = getLocalDateRange(day, BUSINESS_TZ);
   const group = isEventGroup(sp.group) ? sp.group : "";
   const filter: ActivityFilter = {
-    from,
-    to,
-    startUtc: getLocalDateRange(from, BUSINESS_TZ).startUtc,
-    endUtcExclusive: getLocalDateRange(to, BUSINESS_TZ).endUtcExclusive,
+    day,
+    startUtc: range.startUtc,
+    endUtcExclusive: range.endUtcExclusive,
     employee: /^[0-9a-f-]{36}$/i.test(sp.employee ?? "") ? (sp.employee as string) : "",
     kiosk: (sp.kiosk ?? "").slice(0, 64),
     group,
@@ -94,13 +85,6 @@ export default async function EmployeesPage({
     appBuild: a.app_build,
   }));
 
-  const presets = [
-    { label: "Today", from: today, to: today },
-    { label: "Yesterday", from: shiftYmd(today, -1), to: shiftYmd(today, -1) },
-    { label: "Last 7 days", from: shiftYmd(today, -6), to: today },
-    { label: "Last 30 days", from: shiftYmd(today, -29), to: today },
-  ];
-
   return (
     <div className="space-y-8">
       <EmployeesView employees={employees} loadError={Boolean(empRes.error)} />
@@ -109,7 +93,6 @@ export default async function EmployeesPage({
         total={Number(countRes.data ?? rows.length)}
         pageSize={PAGE_SIZE}
         filter={filter}
-        presets={presets}
         employees={people}
         kiosks={kiosks}
         loadError={Boolean(rowsRes.error)}
