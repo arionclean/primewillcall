@@ -21,6 +21,10 @@ What it does.
         public_token     equals a Xano bookingConfirmation_id (the 9-char Bubble token)
         legacy_reference equals a Xano booking_reference or internal_id
      Anything else is a GHOST. Ghosts already cancelled are left alone.
+     Two guards against a booking that is simply NEWER than the Xano read: the newest
+     Xano pages are always re-downloaded (a cached dump goes stale in minutes, and the
+     first live run voided 13 fresh bookings that way, restored the same minute), and
+     a Supabase row created after the Xano read minus a margin is never judged.
   4. Dry run prints the classification. With --live it voids the active ghosts through
      PostgREST: status -> cancelled plus the void stamp (voided_at, void_reason,
      voided_from_status; voided_by_staff_id stays null: this is the system, not a
@@ -63,13 +67,18 @@ def clean(v):
     return v or None
 
 
+FRESH_PAGES = 3  # always re-read the newest pages: new bookings land there
+
+
 def fetch_xano(cache, refresh):
-    """Every Xano booking, newest first. Cached per page; --refresh re-downloads."""
+    """Every Xano booking, newest first. Cached per page; --refresh re-downloads.
+    The first FRESH_PAGES are re-downloaded on every run regardless, so a booking
+    made since the last run is in the set before anything is judged."""
     os.makedirs(cache, exist_ok=True)
     rows, page = [], 1
     while True:
         path = os.path.join(cache, f"page_{page:03d}.json")
-        if os.path.exists(path) and not refresh:
+        if os.path.exists(path) and not refresh and page > FRESH_PAGES:
             d = json.load(open(path))
         else:
             for attempt in range(4):
@@ -98,7 +107,7 @@ def fetch_xano(cache, refresh):
 
 def fetch_supabase(url, key):
     """Every booking that came from Xano (legacy_id set)."""
-    cols = ("id,legacy_id,legacy_reference,public_token,starts_at,status,voided_at,"
+    cols = ("id,legacy_id,legacy_reference,public_token,starts_at,status,voided_at,created_at,"
             "source_channel,pax_adult,pax_child,pax_infant,customer:customers(full_name)")
     rows, offset, step = [], 0, 1000
     while True:
@@ -152,24 +161,34 @@ def main():
     reason = f"Deleted in the old system (reconciliation {now.date().isoformat()})"
     url, key = env_keys()
 
+    # Supabase first, then Xano: a booking that reaches Xano between the two reads
+    # is then in the Xano set (present) rather than only here (a false ghost).
+    print("reading Supabase...")
+    sb = fetch_supabase(url, key)
+    print(f"supabase rows from Xano: {len(sb):,}")
+
     print("reading Xano (public listing, read-only)...")
     xano = fetch_xano(args.cache, args.refresh)
     ids = {r["id"] for r in xano}
     print(f"xano rows: {len(xano):,} (ids {min(ids)}..{max(ids)}; {max(ids) - len(ids):,} ids gone = deleted over time)")
     keys, refs, tokens = xano_identities(xano)
+    # Nothing created here after the Xano read (less a margin) is judged at all.
+    xano_read_ms = max(r.get("created_at") or 0 for r in xano)
+    too_new = (datetime.datetime.fromtimestamp(xano_read_ms / 1000, datetime.timezone.utc)
+               - datetime.timedelta(minutes=30)).isoformat()
 
-    print("reading Supabase...")
-    sb = fetch_supabase(url, key)
-    print(f"supabase rows from Xano: {len(sb):,}")
-
-    ghosts, matched, matched_2nd = [], 0, 0
+    ghosts, matched, matched_2nd, skipped_new = [], 0, 0, 0
     for r in sb:
         if r["legacy_id"] in keys:
             matched += 1
         elif r.get("public_token") in tokens or r.get("legacy_reference") in refs:
             matched_2nd += 1
+        elif (r.get("created_at") or "") >= too_new:
+            skipped_new += 1
         else:
             ghosts.append(r)
+    if skipped_new:
+        print(f"skipped {skipped_new:,} rows created after the Xano read (judged next run)")
     active = [g for g in ghosts if g["status"] != "cancelled"]
     print(f"matched: {matched:,} by key, {matched_2nd:,} by token/reference; ghosts: {len(ghosts):,} "
           f"({len(ghosts) - len(active):,} already cancelled, {len(active):,} still counting, {sum(map(pax, active)):,} pax)")

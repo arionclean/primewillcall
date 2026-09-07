@@ -167,7 +167,9 @@ nothing on a delete, so a booking removed in Bubble lives on here and keeps coun
 `scripts/reconcile_xano_ghosts.py` diffs every Xano-sourced row against Xano's public
 booking listing (read-only) and, with `--live`, voids the ones Xano no longer has
 (`voided_by_staff_id` null, reason "Deleted in the old system (reconciliation <date>)").
-First run 2026-09-07: 278 bookings, all past tours.
+First run 2026-09-07: 278 bookings, all past tours (a first pass also caught 13 bookings
+made in the minutes between the two reads; they were restored at once, and the script now
+re-reads Xano's newest pages every run and never judges a row created after the Xano read).
 
 `due_cents` (default 0) is what the guest still owes at the desk, separate from the
 price in `total_cents`. The desk used to type it into the guest's name ("Alfred B Owes
