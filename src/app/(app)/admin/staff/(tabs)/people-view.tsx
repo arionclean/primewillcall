@@ -129,6 +129,7 @@ function AddEmployeeDialog({ onClose }: { onClose: () => void }) {
 
 function EmployeeCard({ employee }: { employee: EmployeeRow }) {
   const [changingPin, setChangingPin] = useState(false);
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
   const [pinState, pinAction] = useActionState(setEmployeePinAction, INITIAL);
   const activityHref = `/admin/staff/activity?person=${encodeURIComponent(personValue(employee.id, null))}`;
 
@@ -156,17 +157,29 @@ function EmployeeCard({ employee }: { employee: EmployeeRow }) {
                 <input type="hidden" name="active" value={employee.isActive ? "0" : "1"} />
                 <SubmitButton variant="outline" size="sm">{employee.isActive ? "Deactivate" : "Reactivate"}</SubmitButton>
               </form>
-              <form
-                action={deleteEmployeeAction}
-                onSubmit={(e) => {
-                  if (!window.confirm(`Remove ${employee.name}? Their past activity keeps the name.`)) e.preventDefault();
-                }}
-              >
-                <input type="hidden" name="employee_id" value={employee.id} />
-                <SubmitButton variant="ghost" size="sm" className="text-destructive">Remove</SubmitButton>
-              </form>
+              {/* The browser's own confirm box is blocked in some webviews, so the
+                  question is asked in the page. */}
+              <Button type="button" variant="ghost" size="sm" className="text-destructive" onClick={() => setConfirmingRemove(true)}>
+                Remove
+              </Button>
             </div>
           </div>
+
+          {confirmingRemove && (
+            <Dialog
+              title={`Remove ${employee.name}?`}
+              description="Their PIN stops working. Past activity keeps the name."
+              onClose={() => setConfirmingRemove(false)}
+            >
+              <form action={deleteEmployeeAction} className="flex items-center justify-end gap-2">
+                <input type="hidden" name="employee_id" value={employee.id} />
+                <Button type="button" variant="ghost" onClick={() => setConfirmingRemove(false)}>
+                  Keep
+                </Button>
+                <SubmitButton variant="destructive">Remove</SubmitButton>
+              </form>
+            </Dialog>
+          )}
 
           {changingPin && (
             <form action={pinAction} className="grid gap-3 border-t pt-3 sm:grid-cols-3">
