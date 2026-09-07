@@ -12,7 +12,7 @@
 //
 // Body: { kiosk, app_build?, device_id?, events: [{ event, level?, ref?, payload?, at? }] }
 
-import { json, kioskAuthorized, resolveKiosk, serviceClient } from "../_shared/kiosk-sale.ts";
+import { json, kioskAuthorized, resolveEmployee, resolveKiosk, serviceClient } from "../_shared/kiosk-sale.ts";
 
 const LEVELS = new Set(["debug", "info", "warn", "error"]);
 const MAX_EVENTS = 100;
@@ -23,6 +23,8 @@ interface IncomingEvent {
   ref?: string | null;
   payload?: unknown;
   at?: string | number | null;
+  employee_id?: string | null;
+  employee_name?: string | null;
 }
 
 function clientAt(v: unknown): string | null {
@@ -35,7 +37,14 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
   if (!kioskAuthorized(req)) return json({ error: "unauthorized" }, 401);
 
-  let body: { kiosk?: string; app_build?: string; device_id?: string; events?: IncomingEvent[] };
+  let body: {
+    kiosk?: string;
+    app_build?: string;
+    device_id?: string;
+    employee_id?: string;
+    employee_name?: string;
+    events?: IncomingEvent[];
+  };
   try {
     body = await req.json();
   } catch {
@@ -50,6 +59,16 @@ Deno.serve(async (req) => {
   const resolved = await resolveKiosk(sb, slug);
   if (!resolved) return json({ error: "unknown_kiosk" }, 404);
   const { kiosk } = resolved;
+
+  // Employees are checked once per distinct id in the batch; an id that does not
+  // check out keeps the name the tablet sent (a log, not a permission), no id.
+  const cache = new Map<string, string | null>();
+  const employeeIdFor = async (raw: unknown): Promise<string | null> => {
+    const id = String(raw ?? "").trim();
+    if (!id) return null;
+    if (!cache.has(id)) cache.set(id, (await resolveEmployee(sb, kiosk.business_id, id))?.id ?? null);
+    return cache.get(id) ?? null;
+  };
 
   const rows = [];
   for (const e of events) {
@@ -69,6 +88,8 @@ Deno.serve(async (req) => {
       app_build: body.app_build ?? null,
       device_id: body.device_id ?? null,
       client_at: clientAt(e.at),
+      employee_id: await employeeIdFor(e.employee_id ?? body.employee_id),
+      employee_name: String(e.employee_name ?? body.employee_name ?? "").trim().slice(0, 80) || null,
     });
   }
   if (rows.length === 0) return json({ ok: true, inserted: 0 }, 200);

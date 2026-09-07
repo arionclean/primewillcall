@@ -94,6 +94,45 @@ export type Database = {
           },
         ]
       }
+      booking_source_labels: {
+        Row: {
+          channel: string
+          label: string
+          updated_at: string
+        }
+        Insert: {
+          channel: string
+          label: string
+          updated_at?: string
+        }
+        Update: {
+          channel?: string
+          label?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      booking_source_options: {
+        Row: {
+          channel: string
+          is_active: boolean
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          channel: string
+          is_active?: boolean
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          channel?: string
+          is_active?: boolean
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       bookings: {
         Row: {
           awaiting_payment: boolean
@@ -105,11 +144,13 @@ export type Database = {
           created_by_staff_id: string | null
           currency: string
           customer_id: string
+          due_cents: number
           ends_at: string
           groupon_redeemed_at: string | null
           groupon_voucher_codes: string[]
           groupon_voucher_urls: string[]
           id: string
+          kiosk_employee_id: string | null
           legacy_id: string | null
           legacy_reference: string | null
           notes: string | null
@@ -137,11 +178,13 @@ export type Database = {
           created_by_staff_id?: string | null
           currency?: string
           customer_id: string
+          due_cents?: number
           ends_at: string
           groupon_redeemed_at?: string | null
           groupon_voucher_codes?: string[]
           groupon_voucher_urls?: string[]
           id?: string
+          kiosk_employee_id?: string | null
           legacy_id?: string | null
           legacy_reference?: string | null
           notes?: string | null
@@ -169,11 +212,13 @@ export type Database = {
           created_by_staff_id?: string | null
           currency?: string
           customer_id?: string
+          due_cents?: number
           ends_at?: string
           groupon_redeemed_at?: string | null
           groupon_voucher_codes?: string[]
           groupon_voucher_urls?: string[]
           id?: string
+          kiosk_employee_id?: string | null
           legacy_id?: string | null
           legacy_reference?: string | null
           notes?: string | null
@@ -225,6 +270,13 @@ export type Database = {
             columns: ["customer_id"]
             isOneToOne: false
             referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bookings_kiosk_employee_id_fkey"
+            columns: ["kiosk_employee_id"]
+            isOneToOne: false
+            referencedRelation: "kiosk_employees"
             referencedColumns: ["id"]
           },
         ]
@@ -385,6 +437,7 @@ export type Database = {
           business_id: string
           created_at: string
           dedup_key: string | null
+          employee_id: string | null
           id: string
           kiosk_id: string | null
           kiosk_slug: string | null
@@ -406,6 +459,7 @@ export type Database = {
           business_id: string
           created_at?: string
           dedup_key?: string | null
+          employee_id?: string | null
           id?: string
           kiosk_id?: string | null
           kiosk_slug?: string | null
@@ -427,6 +481,7 @@ export type Database = {
           business_id?: string
           created_at?: string
           dedup_key?: string | null
+          employee_id?: string | null
           id?: string
           kiosk_id?: string | null
           kiosk_slug?: string | null
@@ -453,6 +508,13 @@ export type Database = {
             columns: ["business_id"]
             isOneToOne: false
             referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cash_sales_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "kiosk_employees"
             referencedColumns: ["id"]
           },
           {
@@ -712,6 +774,56 @@ export type Database = {
           },
         ]
       }
+      kiosk_employees: {
+        Row: {
+          business_id: string
+          created_at: string
+          id: string
+          is_active: boolean
+          kiosk_ids: string[] | null
+          last_seen_at: string | null
+          last_seen_kiosk: string | null
+          name: string
+          pin_hash: string
+          pin_salt: string
+          updated_at: string
+        }
+        Insert: {
+          business_id: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          kiosk_ids?: string[] | null
+          last_seen_at?: string | null
+          last_seen_kiosk?: string | null
+          name: string
+          pin_hash: string
+          pin_salt: string
+          updated_at?: string
+        }
+        Update: {
+          business_id?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          kiosk_ids?: string[] | null
+          last_seen_at?: string | null
+          last_seen_kiosk?: string | null
+          name?: string
+          pin_hash?: string
+          pin_salt?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kiosk_employees_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       kiosk_events: {
         Row: {
           app_build: string | null
@@ -719,6 +831,8 @@ export type Database = {
           business_id: string | null
           client_at: string | null
           device_id: string | null
+          employee_id: string | null
+          employee_name: string | null
           event: string
           id: number
           kiosk_id: string | null
@@ -733,6 +847,8 @@ export type Database = {
           business_id?: string | null
           client_at?: string | null
           device_id?: string | null
+          employee_id?: string | null
+          employee_name?: string | null
           event: string
           id?: never
           kiosk_id?: string | null
@@ -747,6 +863,8 @@ export type Database = {
           business_id?: string | null
           client_at?: string | null
           device_id?: string | null
+          employee_id?: string | null
+          employee_name?: string | null
           event?: string
           id?: never
           kiosk_id?: string | null
@@ -761,6 +879,13 @@ export type Database = {
             columns: ["business_id"]
             isOneToOne: false
             referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kiosk_events_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "kiosk_employees"
             referencedColumns: ["id"]
           },
           {
@@ -784,6 +909,7 @@ export type Database = {
           created_at: string
           customer_name: string | null
           device_id: string | null
+          employee_id: string | null
           id: string
           kiosk_id: string
           kiosk_slug: string
@@ -813,6 +939,7 @@ export type Database = {
           created_at?: string
           customer_name?: string | null
           device_id?: string | null
+          employee_id?: string | null
           id?: string
           kiosk_id: string
           kiosk_slug: string
@@ -842,6 +969,7 @@ export type Database = {
           created_at?: string
           customer_name?: string | null
           device_id?: string | null
+          employee_id?: string | null
           id?: string
           kiosk_id?: string
           kiosk_slug?: string
@@ -880,6 +1008,13 @@ export type Database = {
             columns: ["cash_sale_id"]
             isOneToOne: false
             referencedRelation: "cash_sales"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kiosk_sales_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "kiosk_employees"
             referencedColumns: ["id"]
           },
           {
@@ -934,6 +1069,8 @@ export type Database = {
           last_seen_at: string | null
           name: string
           pairing_code: string
+          pin_idle_lock_seconds: number
+          pin_required: boolean
           reader_block_battery_pct: number
           reader_low_battery_pct: number
           revoked_at: string | null
@@ -953,6 +1090,8 @@ export type Database = {
           last_seen_at?: string | null
           name: string
           pairing_code: string
+          pin_idle_lock_seconds?: number
+          pin_required?: boolean
           reader_block_battery_pct?: number
           reader_low_battery_pct?: number
           revoked_at?: string | null
@@ -972,6 +1111,8 @@ export type Database = {
           last_seen_at?: string | null
           name?: string
           pairing_code?: string
+          pin_idle_lock_seconds?: number
+          pin_required?: boolean
           reader_block_battery_pct?: number
           reader_low_battery_pct?: number
           revoked_at?: string | null
@@ -2026,6 +2167,26 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      analytics_bookings: {
+        Args: {
+          p_business_id?: string
+          p_end: string
+          p_source?: string
+          p_start: string
+          p_tour?: string
+        }
+        Returns: {
+          business: string
+          created_at: string
+          customer: string
+          id: string
+          pax: number
+          source: string
+          starts_at: string
+          status: string
+          tour: string
+        }[]
+      }
       analytics_daily_by_tour: {
         Args: { p_end: string; p_start: string; p_tz: string }
         Returns: {
@@ -2098,6 +2259,7 @@ export type Database = {
           p_customer_name: string
           p_customer_phone?: string
           p_date: string
+          p_due_cents?: number
           p_groupon_voucher_codes?: string[]
           p_groupon_voucher_urls?: string[]
           p_legacy_reference?: string

@@ -26,6 +26,7 @@ import {
   kioskAuthorized,
   logEvent,
   paidPayload,
+  resolveEmployee,
   resolveKiosk,
   serviceClient,
   stripeConfigured,
@@ -40,6 +41,7 @@ interface CompleteBody {
   sdk_status?: string;
   app_build?: string;
   device_id?: string;
+  employee_id?: string;
 }
 
 Deno.serve(async (req) => {
@@ -68,12 +70,15 @@ Deno.serve(async (req) => {
   if (!sale) return json({ error: "unknown_sale", ref }, 404);
   if (sale.kiosk_id !== kiosk.id) return json({ error: "ref_conflict" }, 409);
 
+  const employee = await resolveEmployee(sb, kiosk.business_id, body.employee_id);
   const meta = {
     kioskId: kiosk.id,
     kioskSlug: kiosk.slug,
     businessId: kiosk.business_id,
     appBuild: body.app_build ?? null,
     deviceId: body.device_id ?? null,
+    employeeId: employee?.id ?? null,
+    employeeName: employee?.name ?? null,
   };
   const err =
     typeof body.error === "string" ? { message: body.error } : body.error ?? null;

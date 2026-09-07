@@ -390,6 +390,12 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   tablet through `kiosk-config`). Tablet events land in `kiosk_events` via `kiosk-log`.
   Server posts the Xano booking + cash_sales mirror for v2 card sales (the same write the
   tablet did). Design, rollout and SQL: [`docs/kiosk-card-flow-v2.md`](docs/kiosk-card-flow-v2.md).
+  **Employee PIN** (built 2026-09-07): `kiosk_employees` (4-digit PIN, hashed) + the
+  `kiosks.pin_required` switch; the tablet locks behind a keypad, auto-locks after
+  `pin_idle_lock_seconds`, and stamps the employee on every event, sale and booking
+  (`kiosk_events.employee_id`, `cash_sales.employee_id`, `bookings.kiosk_employee_id`).
+  Managed on `/admin/employees` (owner + manager) with a live activity log. See
+  [`docs/kiosk-employees.md`](docs/kiosk-employees.md).
 - **Payments (Stripe)** are largely built (Supabase-native replication of the live Xano
   Connect model; Xano is never written to). Model: Stripe Connect **direct charges** on each
   business's connected account with a platform `application_fee` (Prime's cut). Built:

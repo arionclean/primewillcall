@@ -42,6 +42,7 @@ import {
   kioskAuthorized,
   logEvent,
   paidPayload,
+  resolveEmployee,
   resolveKiosk,
   serviceClient,
   stripeConfigured,
@@ -61,6 +62,7 @@ interface StartBody {
   xano?: Record<string, unknown>;
   app_build?: string;
   device_id?: string;
+  employee_id?: string;
 }
 
 Deno.serve(async (req) => {
@@ -96,12 +98,15 @@ Deno.serve(async (req) => {
   const product = String(body.product ?? "").trim() || "ticket";
   const customerName =
     String(body.customer?.name ?? xano.customer_name ?? "").trim() || null;
+  const employee = await resolveEmployee(sb, kiosk.business_id, body.employee_id);
   const meta = {
     kioskId: kiosk.id,
     kioskSlug: kiosk.slug,
     businessId: kiosk.business_id,
     appBuild: body.app_build ?? null,
     deviceId: body.device_id ?? null,
+    employeeId: employee?.id ?? null,
+    employeeName: employee?.name ?? null,
   };
 
   // 1. The same sale again: a retry after an error, or a tablet that came back.
@@ -191,6 +196,9 @@ Deno.serve(async (req) => {
       return json({ error: "booking_failed", message: b.error }, 502);
     }
     bookingId = b.bookingId;
+    if (employee) {
+      await sb.from("bookings").update({ kiosk_employee_id: employee.id }).eq("id", bookingId);
+    }
   }
 
   if (!sale) {
@@ -211,6 +219,7 @@ Deno.serve(async (req) => {
         xano_payload: xano,
         app_build: body.app_build ?? null,
         device_id: body.device_id ?? null,
+        employee_id: employee?.id ?? null,
       })
       .select(SALE_COLUMNS)
       .single<SaleRow>();

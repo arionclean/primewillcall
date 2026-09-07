@@ -67,3 +67,14 @@ verify_jwt = false
 
 [functions.kiosk-log]
 verify_jwt = false
+
+# Employee PIN check (docs/kiosk-employees.md). Public like the other kiosk functions.
+[functions.kiosk-pin-verify]
+verify_jwt = false
+
+# The two original kiosk writers, now in the repo (they gained employee attribution).
+[functions.kiosk-cash-sale]
+verify_jwt = false
+
+[functions.kiosk-booking]
+verify_jwt = false

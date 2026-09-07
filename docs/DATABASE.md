@@ -410,6 +410,13 @@ business's current account.
   functions: reader connected/dropped/battery, sale started, card result with the SDK error,
   sale completed, Xano mirror results. `kiosk_slug`, `app_build`, `device_id`, and `ref` (the
   KS code) on every row. In the realtime publication. Same read policy as `cash_sales`.
+- `kiosk_employees` — the people who use the tablets (docs/kiosk-employees.md): `name`,
+  `business_id`, `pin_hash` + `pin_salt` (salted SHA-256 of a 4-digit PIN, unique among the
+  business's active employees), `is_active`, `last_seen_at` / `last_seen_kiosk`. Owner and
+  the business's manager read and write; check-in reads. Referenced by
+  `kiosk_events.employee_id` (+ `employee_name`), `kiosk_sales.employee_id`,
+  `cash_sales.employee_id` and `bookings.kiosk_employee_id`, all `on delete set null`.
+- `kiosks.pin_required` (default false) and `pin_idle_lock_seconds` (120): the PIN switch.
 - `kiosks.card_flow` (`v1` default, `v2`), `reader_low_battery_pct` (25),
   `reader_block_battery_pct` (10) — the per-kiosk rollout switch and battery thresholds the
   tablet reads through `kiosk-config`. An old build ignores them.

@@ -18,6 +18,7 @@ import {
   Tag,
   UserCog,
   Wallet,
+  KeyRound,
   Zap,
   type LucideIcon,
 } from "lucide-react";
@@ -169,6 +170,13 @@ const SECTIONS: NavSection[] = [
         icon: UserCog,
         roles: ["owner"],
         matchPrefix: "/admin/staff",
+      },
+      {
+        href: "/admin/employees",
+        label: "Employees",
+        icon: KeyRound,
+        roles: ["owner", "business_manager"],
+        matchPrefix: "/admin/employees",
       },
     ],
   },

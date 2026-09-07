@@ -80,6 +80,8 @@ export interface KioskRow {
   card_flow: string;
   reader_low_battery_pct: number;
   reader_block_battery_pct: number;
+  pin_required: boolean;
+  pin_idle_lock_seconds: number;
   simulated: boolean | null;
 }
 
@@ -92,7 +94,7 @@ export interface ResolvedKiosk {
 export async function resolveKiosk(sb: SupabaseClient, slug: string): Promise<ResolvedKiosk | null> {
   const { data: kiosk } = await sb
     .from("kiosks")
-    .select("id, slug, business_id, stripe_account_id, card_flow, reader_low_battery_pct, reader_block_battery_pct, simulated")
+    .select("id, slug, business_id, stripe_account_id, card_flow, reader_low_battery_pct, reader_block_battery_pct, pin_required, pin_idle_lock_seconds, simulated")
     .eq("slug", slug)
     .maybeSingle<KioskRow>();
   if (!kiosk) return null;
@@ -107,6 +109,36 @@ export async function resolveKiosk(sb: SupabaseClient, slug: string): Promise<Re
     account = biz?.stripe_account_id ?? null;
   }
   return { kiosk, account };
+}
+
+// ── employees (PIN) ───────────────────────────────────────────────────────────
+export interface EmployeeRef {
+  id: string;
+  name: string;
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The employee a tablet claims to be acting as, checked against the kiosk's business
+ * and the active flag. Returns null for anything that does not check out, and the
+ * caller then records the action without a person rather than refusing it: a stale
+ * or wrong id must never block a sale.
+ */
+export async function resolveEmployee(
+  sb: SupabaseClient,
+  businessId: string | null,
+  employeeId: unknown,
+): Promise<EmployeeRef | null> {
+  const id = String(employeeId ?? "").trim();
+  if (!id || !UUID_RE.test(id) || !businessId) return null;
+  const { data } = await sb
+    .from("kiosk_employees")
+    .select("id, name, is_active, business_id")
+    .eq("id", id)
+    .maybeSingle<{ id: string; name: string; is_active: boolean; business_id: string }>();
+  if (!data || !data.is_active || data.business_id !== businessId) return null;
+  return { id: data.id, name: data.name };
 }
 
 // ── Stripe (raw REST, same shape kiosk-payment-intent uses) ───────────────────
@@ -272,6 +304,8 @@ export interface KioskEvent {
   appBuild?: string | null;
   deviceId?: string | null;
   clientAt?: string | null;
+  employeeId?: string | null;
+  employeeName?: string | null;
 }
 
 /** Append one event. Best-effort: a logging failure never fails a sale. */
@@ -288,6 +322,8 @@ export async function logEvent(sb: SupabaseClient, e: KioskEvent): Promise<void>
       app_build: e.appBuild ?? null,
       device_id: e.deviceId ?? null,
       client_at: e.clientAt ?? null,
+      employee_id: e.employeeId ?? null,
+      employee_name: e.employeeName ?? null,
     });
   } catch {
     // never block a sale on logging
@@ -321,6 +357,7 @@ export interface SaleRow {
   tablet_acked_at: string | null;
   app_build: string | null;
   device_id: string | null;
+  employee_id: string | null;
   created_at: string;
 }
 
@@ -328,7 +365,7 @@ export const SALE_COLUMNS =
   "id, ref, kiosk_id, kiosk_slug, business_id, type, amount_cents, product, customer_name, status, " +
   "payment_intent_id, stripe_account_id, booking_id, cash_sale_id, xano_payload, xano_booking_id, " +
   "xano_payment_qr, xano_mirrored_at, xano_error, paid_at, completed_at, completed_by, tablet_acked_at, " +
-  "app_build, device_id, created_at";
+  "app_build, device_id, employee_id, created_at";
 
 export async function getSaleByRef(sb: SupabaseClient, ref: string): Promise<SaleRow | null> {
   const { data } = await sb.from("kiosk_sales").select(SALE_COLUMNS).eq("ref", ref).maybeSingle<SaleRow>();
@@ -585,6 +622,7 @@ export async function completeSale(
         source: "kiosk",
         kiosk_slug: current.kiosk_slug,
         dedup_key: `${current.ref}:card`,
+        employee_id: current.employee_id,
       },
       { onConflict: "dedup_key" },
     )

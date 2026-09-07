@@ -55,6 +55,8 @@ Deno.serve(async (req) => {
       card_flow: kiosk.card_flow,
       reader_low_battery_pct: kiosk.reader_low_battery_pct,
       reader_block_battery_pct: kiosk.reader_block_battery_pct,
+      pin_required: kiosk.pin_required,
+      pin_idle_lock_seconds: kiosk.pin_idle_lock_seconds,
       xano_mirror: xanoMirrorEnabled(),
       server_time: new Date().toISOString(),
     },
