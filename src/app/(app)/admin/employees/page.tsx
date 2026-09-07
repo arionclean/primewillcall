@@ -21,11 +21,13 @@ export default async function EmployeesPage({
   const supabase = await getSupabaseServerClient();
   const sp = await searchParams;
 
-  const day = parseLocalYmd(sp.day) ?? todayLocalIso(BUSINESS_TZ);
+  const today = todayLocalIso(BUSINESS_TZ);
+  const day = parseLocalYmd(sp.day) ?? today;
   const range = getLocalDateRange(day, BUSINESS_TZ);
   const group = isEventGroup(sp.group) ? sp.group : "";
   const filter: ActivityFilter = {
     day,
+    isToday: day === today,
     startUtc: range.startUtc,
     endUtcExclusive: range.endUtcExclusive,
     employee: /^[0-9a-f-]{36}$/i.test(sp.employee ?? "") ? (sp.employee as string) : "",
@@ -33,7 +35,6 @@ export default async function EmployeesPage({
     group,
     // The housekeeping group is nothing but debug rows, so asking for it means showing them.
     includeDebug: group === "tablet",
-    q: (sp.q ?? "").trim().slice(0, 80),
   };
   const args = {
     p_from: filter.startUtc,
@@ -42,7 +43,6 @@ export default async function EmployeesPage({
     p_kiosk: filter.kiosk || undefined,
     p_events: filter.group ? [...EVENT_GROUPS[filter.group].events] : undefined,
     p_include_debug: filter.includeDebug,
-    p_search: filter.q || undefined,
   };
 
   const [empRes, kioskRes, rowsRes, countRes] = await Promise.all([

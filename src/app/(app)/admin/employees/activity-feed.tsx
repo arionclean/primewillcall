@@ -7,7 +7,6 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { DateField } from "@/components/ui/date-field";
 import { Field } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { EVENT_GROUPS, eventDetail, eventLabel, PERSON_EVENTS, type EventGroup } from "@/lib/kiosk/events";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -28,6 +27,7 @@ export type ActivityRow = {
 /** The filter as the page resolved it from the URL: what the database was asked. */
 export type ActivityFilter = {
   day: string; // local YYYY-MM-DD
+  isToday: boolean;
   startUtc: string;
   endUtcExclusive: string;
   employee: string;
@@ -35,7 +35,6 @@ export type ActivityFilter = {
   group: EventGroup | "";
   /** Tablet housekeeping (debug rows) shows only when that group is picked. */
   includeDebug: boolean;
-  q: string;
 };
 
 export type PersonOption = { id: string; name: string };
@@ -66,13 +65,6 @@ function matches(row: ActivityRow, f: ActivityFilter): boolean {
   if (f.kiosk && row.kioskSlug !== f.kiosk) return false;
   if (f.group && !(EVENT_GROUPS[f.group].events as readonly string[]).includes(row.event)) return false;
   if (!f.includeDebug && row.level === "debug") return false;
-  if (f.q) {
-    const hay = [row.ref, row.employeeName, row.event, JSON.stringify(row.payload ?? {})]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-    if (!hay.includes(f.q.toLowerCase())) return false;
-  }
   return true;
 }
 
@@ -84,7 +76,6 @@ function rpcArgs(f: ActivityFilter) {
     p_kiosk: f.kiosk || undefined,
     p_events: f.group ? [...EVENT_GROUPS[f.group].events] : undefined,
     p_include_debug: f.includeDebug,
-    p_search: f.q || undefined,
   };
 }
 
@@ -142,6 +133,7 @@ export function ActivityFeed({ rows: initialRows, total: initialTotal, pageSize,
   }, [filterKey]);
 
   const live = new Date(filter.endUtcExclusive).getTime() > Date.now();
+  const filtered = Boolean(filter.employee || filter.kiosk || filter.group) || !filter.isToday;
 
   useEffect(() => {
     if (!live) return;
@@ -208,7 +200,13 @@ export function ActivityFeed({ rows: initialRows, total: initialTotal, pageSize,
 
       <Card>
         <CardContent className="space-y-4 py-5">
-          <form method="get" action="#activity" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {/* No Show button: picking a value applies it. */}
+          <form
+            method="get"
+            action="#activity"
+            onChange={(e) => e.currentTarget.requestSubmit()}
+            className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"
+          >
             <Field label="Day" htmlFor="act-day">
               <DateField id="act-day" name="day" defaultValue={filter.day} />
             </Field>
@@ -242,17 +240,13 @@ export function ActivityFeed({ rows: initialRows, total: initialTotal, pageSize,
                 ))}
               </Select>
             </Field>
-            <Field label="Search" htmlFor="act-q" hint="A code, a guest name, an amount">
-              <Input id="act-q" name="q" defaultValue={filter.q} placeholder="KS-1234 or Maria" autoComplete="off" />
-            </Field>
-            <div className="flex items-end gap-2">
-              <Button type="submit" variant="outline">
-                Show
-              </Button>
-              <a href="?#activity" className={buttonVariants({ variant: "ghost" })}>
-                Reset
-              </a>
-            </div>
+            {filtered && (
+              <div className="flex items-end">
+                <a href="?#activity" className={buttonVariants({ variant: "ghost" })}>
+                  Reset
+                </a>
+              </div>
+            )}
           </form>
 
           {loadError && (
