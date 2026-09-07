@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { DateField } from "@/components/ui/date-field";
@@ -184,17 +183,11 @@ export function ActivityFeed({ rows: initialRows, total: initialTotal, pageSize,
 
   return (
     <section id="activity" className="space-y-3">
-      <div className="flex flex-wrap items-end justify-between gap-2 px-1">
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight">Activity</h2>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            What the tablets recorded that day, newest first.
-            {live ? " New actions appear as they happen." : ""}
-          </p>
-        </div>
-        <p className="text-sm tabular-nums text-muted-foreground">
-          {total.toLocaleString("en-US")} {total === 1 ? "action" : "actions"}
-          {live && <Badge tone="success" className="ml-2">Live</Badge>}
+      <div className="px-1">
+        <h2 className="text-lg font-semibold tracking-tight">Activity</h2>
+        <p className="mt-0.5 text-sm text-muted-foreground">
+          What the tablets recorded that day, newest first.
+          {live ? " New actions appear as they happen." : ""}
         </p>
       </div>
 
