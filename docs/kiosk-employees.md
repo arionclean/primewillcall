@@ -19,8 +19,8 @@ which iPad; the employee PIN says who.
   and every write it makes carries the employee: `cash_sales.employee_id`,
   `kiosk_sales.employee_id`, `bookings.kiosk_employee_id`. Check-ins are recorded as
   `check_in` / `check_in_undo` events with the booking reference.
-- **Brute force.** Five wrong PINs on a kiosk within a minute lock that kiosk's PIN entry
-  for the rest of the minute (`pin_locked`), and every attempt is an event.
+- **Wrong PINs** never lock anyone out (owner's choice); each attempt is an event
+  (`pin_failed`), so a run of them is visible on the Employees page.
 - **Old builds** never call `kiosk-pin-verify` or read `pin_required`; nothing changes for
   them. Builds 9+ support it.
 

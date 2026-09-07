@@ -5,17 +5,15 @@
 // _shared/kiosk-pin.ts) and are unique among the active employees of a business, so a
 // PIN alone identifies the person on that business's kiosks.
 //
-// Brute force is bounded per kiosk: after 5 wrong PINs within a minute the kiosk is
-// refused for the rest of that minute ("locked"). Every attempt, good or bad, is an
-// event in kiosk_events, so a run of failures is visible to the owner.
+// No lockout, by the owner's choice: a wrong PIN just says so and the person tries
+// again. Every attempt, good or bad, is an event in kiosk_events, so a run of
+// failures is still visible on the Employees page.
 //
 // Body: { kiosk, pin, app_build?, device_id? }
-// 200 { ok, employee: { id, name }, idle_lock_seconds } | 401 bad_pin | 429 locked
+// 200 { ok, employee: { id, name }, idle_lock_seconds } | 401 bad_pin
 
 import { hashPin, PIN_RE } from "../_shared/kiosk-pin.ts";
 import { json, kioskAuthorized, logEvent, resolveKiosk, serviceClient } from "../_shared/kiosk-sale.ts";
-
-const MAX_FAILURES_PER_MINUTE = 5;
 
 interface EmployeeRow {
   id: string;
@@ -23,6 +21,17 @@ interface EmployeeRow {
   pin_hash: string;
   pin_salt: string;
   kiosk_ids: string[] | null;
+}
+
+// Runs `work` after the response has been sent. Supabase's runtime keeps the
+// isolate alive for a promise handed to EdgeRuntime.waitUntil; without it the
+// promise is simply awaited inline, so the function never loses a write.
+function afterReply(work: Promise<unknown>) {
+  const runtime = (globalThis as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } })
+    .EdgeRuntime;
+  const settled = work.catch((e) => console.error("kiosk-pin-verify: deferred write failed", e));
+  if (runtime?.waitUntil) runtime.waitUntil(settled);
+  else return settled;
 }
 
 Deno.serve(async (req) => {
@@ -54,19 +63,6 @@ Deno.serve(async (req) => {
     deviceId: body.device_id ?? null,
   };
 
-  // Per-kiosk attempt limit.
-  const since = new Date(Date.now() - 60_000).toISOString();
-  const { count } = await sb
-    .from("kiosk_events")
-    .select("id", { count: "exact", head: true })
-    .eq("kiosk_id", kiosk.id)
-    .eq("event", "pin_failed")
-    .gte("at", since);
-  if ((count ?? 0) >= MAX_FAILURES_PER_MINUTE) {
-    await logEvent(sb, { ...meta, event: "pin_locked", level: "warn" });
-    return json({ error: "locked", retry_in_seconds: 60 }, 429);
-  }
-
   const { data: employees } = await sb
     .from("kiosk_employees")
     .select("id, name, pin_hash, pin_salt, kiosk_ids")
@@ -83,16 +79,23 @@ Deno.serve(async (req) => {
     }
   }
 
+  // The answer goes back before the bookkeeping writes: the person at the
+  // tablet is waiting on this reply, and neither the event nor last_seen_at
+  // changes it. `afterReply` keeps the function alive until they finish.
   if (!match) {
-    await logEvent(sb, { ...meta, event: "pin_failed", level: "warn" });
+    afterReply(logEvent(sb, { ...meta, event: "pin_failed", level: "warn" }));
     return json({ error: "bad_pin" }, 401);
   }
 
-  await sb
-    .from("kiosk_employees")
-    .update({ last_seen_at: new Date().toISOString(), last_seen_kiosk: kiosk.slug })
-    .eq("id", match.id);
-  await logEvent(sb, { ...meta, event: "pin_ok", employeeId: match.id, employeeName: match.name });
+  afterReply(
+    Promise.all([
+      sb
+        .from("kiosk_employees")
+        .update({ last_seen_at: new Date().toISOString(), last_seen_kiosk: kiosk.slug })
+        .eq("id", match.id),
+      logEvent(sb, { ...meta, event: "pin_ok", employeeId: match.id, employeeName: match.name }),
+    ]),
+  );
 
   return json(
     {
