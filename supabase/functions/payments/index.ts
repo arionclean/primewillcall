@@ -21,6 +21,7 @@ import {
   STRIPE_META,
   stripeErrorMessage,
 } from "../_shared/stripe.ts";
+import { employeeFromRequest, logStaffAction } from "../_shared/audit.ts";
 import { corsHeaders, db, json, SUPABASE_URL } from "../_shared/sms.ts";
 import { requireStaff, type Staff } from "../_shared/staff-auth.ts";
 import { withSentry } from "../_shared/sentry.ts";
@@ -119,6 +120,10 @@ Deno.serve(withSentry("payments", async (req) => {
     if (pinError) return json({ error: pinError }, 403);
   }
 
+  // Writes below run as the system, so the activity log is written by hand here:
+  // the staff account requireStaff verified, plus the employee behind a shared login.
+  const employee = await employeeFromRequest(db, req);
+
   switch (action) {
     /**
      * Refund a recorded Stripe charge, full or partial.
@@ -185,6 +190,16 @@ Deno.serve(withSentry("payments", async (req) => {
           })
           .eq("id", txn.id);
 
+        await logStaffAction(db, {
+          staffId: staff.id,
+          businessId: txn.business_id,
+          employee,
+          entity: "stripe_refunds",
+          entityId: refund.id,
+          action: "created",
+          payload: { amount_cents: refund.amount ?? checked.amount, transaction_id: txn.id, booking_id: txn.booking_id },
+        });
+
         return json({ ok: true });
       } catch (err) {
         // Stripe's wording carries charge ids and API terms, so it stays in the
@@ -225,6 +240,15 @@ Deno.serve(withSentry("payments", async (req) => {
         console.error("[payments] cash refund failed:", error);
         return json({ error: "Could not record the refund. Try again." }, 500);
       }
+      await logStaffAction(db, {
+        staffId: staff.id,
+        businessId: sale.business_id,
+        employee,
+        entity: "cash_sales",
+        entityId: sale.id,
+        action: "refunded",
+        payload: { amount_cents: checked.amount },
+      });
       return json({ ok: true });
     }
 
@@ -267,6 +291,15 @@ Deno.serve(withSentry("payments", async (req) => {
           console.error("[payments] move sale failed:", error);
           return json({ error: "Could not move the sale. Try again." }, 500);
         }
+        await logStaffAction(db, {
+          staffId: staff.id,
+          businessId: sale.business_id,
+          employee,
+          entity: "cash_sales",
+          entityId: sale.id,
+          action: "moved",
+          payload: { from: sale.kiosk_slug, to: target },
+        });
         return json({ ok: true });
       }
 
@@ -294,6 +327,15 @@ Deno.serve(withSentry("payments", async (req) => {
         console.error("[payments] move sale failed:", error);
         return json({ error: "Could not move the sale. Try again." }, 500);
       }
+      await logStaffAction(db, {
+        staffId: staff.id,
+        businessId: sale.business_id,
+        employee,
+        entity: "stripe_transactions",
+        entityId: sale.id,
+        action: "moved",
+        payload: { from: sale.source, to: target },
+      });
       return json({ ok: true });
     }
 

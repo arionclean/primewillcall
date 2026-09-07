@@ -7,44 +7,25 @@ import { Card, CardContent } from "@/components/ui/card";
 import { DateField } from "@/components/ui/date-field";
 import { Field } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
-import { EVENT_GROUPS, eventDetail, eventLabel, PERSON_EVENTS, type EventGroup } from "@/lib/kiosk/events";
+import { EVENT_GROUPS, eventDetail, eventLabel, isPersonEvent, type EventGroup } from "@/lib/kiosk/events";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
-export type ActivityRow = {
-  id: number;
-  at: string;
-  event: string;
-  level: string;
-  ref: string | null;
-  payload: Record<string, unknown> | null;
-  kioskSlug: string | null;
-  employeeId: string | null;
-  employeeName: string | null;
-  appBuild: string | null;
-};
-
-/** The filter as the page resolved it from the URL: what the database was asked. */
-export type ActivityFilter = {
-  day: string; // local YYYY-MM-DD
-  isToday: boolean;
-  startUtc: string;
-  endUtcExclusive: string;
-  employee: string;
-  kiosk: string;
-  group: EventGroup | "";
-  /** Tablet housekeeping (debug rows) shows only when that group is picked. */
-  includeDebug: boolean;
-};
-
-export type PersonOption = { id: string; name: string };
-export type KioskOption = { id: string; slug: string; name: string };
+import {
+  personParts,
+  rpcArgs,
+  toRow,
+  type ActivityFilter,
+  type ActivityRow,
+  type KioskOption,
+  type PersonOption,
+} from "./activity-shared";
 
 type Props = {
   rows: ActivityRow[];
-  total: number;
   pageSize: number;
   filter: ActivityFilter;
   employees: PersonOption[];
+  accounts: PersonOption[];
   kiosks: KioskOption[];
   loadError: boolean;
 };
@@ -60,90 +41,95 @@ const timeFmt = new Intl.DateTimeFormat("en-US", {
 function matches(row: ActivityRow, f: ActivityFilter): boolean {
   const t = new Date(row.at).getTime();
   if (t < new Date(f.startUtc).getTime() || t >= new Date(f.endUtcExclusive).getTime()) return false;
-  if (f.employee && row.employeeId !== f.employee) return false;
+  if (f.source && row.source !== f.source) return false;
+  const who = personParts(f.person);
+  if (who.employee && row.employeeId !== who.employee) return false;
+  if (who.staff && row.actorStaffId !== who.staff) return false;
   if (f.kiosk && row.kioskSlug !== f.kiosk) return false;
   if (f.group && !(EVENT_GROUPS[f.group].events as readonly string[]).includes(row.event)) return false;
   if (!f.includeDebug && row.level === "debug") return false;
   return true;
 }
 
-function rpcArgs(f: ActivityFilter) {
-  return {
-    p_from: f.startUtc,
-    p_to: f.endUtcExclusive,
-    p_employee: f.employee || undefined,
-    p_kiosk: f.kiosk || undefined,
-    p_events: f.group ? [...EVENT_GROUPS[f.group].events] : undefined,
-    p_include_debug: f.includeDebug,
-  };
-}
-
-function toRow(r: {
-  id: number;
-  at: string;
-  event: string;
-  level: string;
-  ref: string | null;
-  payload: unknown;
-  kiosk_slug: string | null;
-  employee_id: string | null;
-  employee_name: string | null;
-  app_build: string | null;
-}): ActivityRow {
-  return {
-    id: r.id,
-    at: r.at,
-    event: r.event,
-    level: r.level,
-    ref: r.ref,
-    payload: (r.payload as Record<string, unknown> | null) ?? null,
-    kioskSlug: r.kiosk_slug,
-    employeeId: r.employee_id,
-    employeeName: r.employee_name,
-    appBuild: r.app_build,
-  };
-}
-
 /**
- * The activity log. The server rendered the first page for the filter in the URL;
- * this holds the rows, pages further back through the `kiosk_activity` RPC (keyset
- * on `at, id`, so page 40 costs what page 1 does), and, while the day is today,
- * prepends rows as the tablets post them (one Realtime INSERT subscription,
- * filtered here the same way the database filtered the page). Nothing here
- * re-renders the rest of the page.
+ * The activity log, tablets and web in one stream. The server rendered the first
+ * page for the filter in the URL; this holds the rows, pages further back through
+ * the `activity_feed` RPC (keyset on `at, key`, so page 40 costs what page 1 does),
+ * and, while the day is today, prepends rows as they land (one Realtime INSERT
+ * subscription per source, filtered here the same way the database filtered the
+ * page). Nothing here re-renders the rest of the page.
  */
-export function ActivityFeed({ rows: initialRows, total: initialTotal, pageSize, filter, employees, kiosks, loadError }: Props) {
+export function ActivityFeed({ rows: initialRows, pageSize, filter, employees, accounts, kiosks, loadError }: Props) {
   const [rows, setRows] = useState<ActivityRow[]>(initialRows);
-  const [total, setTotal] = useState(initialTotal);
   const [hasMore, setHasMore] = useState(initialRows.length >= pageSize);
   const [loading, setLoading] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState(false);
   const filterRef = useRef(filter);
   filterRef.current = filter;
+  const accountName = useRef(new Map(accounts.map((a) => [a.id, a.name])));
+  accountName.current = new Map(accounts.map((a) => [a.id, a.name]));
 
   // A new server render (filters changed) replaces what is held here.
   const filterKey = JSON.stringify(filter);
   useEffect(() => {
     setRows(initialRows);
-    setTotal(initialTotal);
     setHasMore(initialRows.length >= pageSize);
     setLoadMoreError(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterKey]);
 
   const live = new Date(filter.endUtcExclusive).getTime() > Date.now();
-  const filtered = Boolean(filter.employee || filter.kiosk || filter.group) || !filter.isToday;
+  const filtered = Boolean(filter.source || filter.person || filter.kiosk || filter.group) || !filter.isToday;
 
   useEffect(() => {
     if (!live) return;
     const supabase = getSupabaseBrowserClient();
+    const add = (row: ActivityRow) => {
+      if (!matches(row, filterRef.current)) return;
+      setRows((prev) => (prev.some((r) => r.key === row.key) ? prev : [row, ...prev]));
+    };
     const channel = supabase
       .channel("employees-activity-feed")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "kiosk_events" }, (msg) => {
-        const row = toRow(msg.new as Parameters<typeof toRow>[0]);
-        if (!matches(row, filterRef.current)) return;
-        setRows((prev) => (prev.some((r) => r.id === row.id) ? prev : [row, ...prev]));
-        setTotal((n) => n + 1);
+        const n = msg.new as Record<string, unknown>;
+        add(
+          toRow({
+            key: `tablet:${String(n.id).padStart(14, "0")}`,
+            source: "tablet",
+            at: String(n.at),
+            event: String(n.event),
+            level: String(n.level ?? "info"),
+            ref: (n.ref as string | null) ?? null,
+            payload: n.payload,
+            kiosk_slug: (n.kiosk_slug as string | null) ?? null,
+            employee_id: (n.employee_id as string | null) ?? null,
+            employee_name: (n.employee_name as string | null) ?? null,
+            actor_staff_id: null,
+            actor_name: null,
+            changed: [],
+          }),
+        );
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "audit_log" }, (msg) => {
+        const n = msg.new as Record<string, unknown>;
+        const staffId = (n.actor_staff_id as string | null) ?? null;
+        add(
+          toRow({
+            key: `web:${String(n.id).padStart(14, "0")}`,
+            source: "web",
+            at: String(n.occurred_at),
+            event: `${String(n.entity)}.${String(n.action)}`,
+            level: n.action === "wrong_pin" ? "warn" : "info",
+            ref: ((n.payload as Record<string, unknown> | null)?.ref as string | null) ?? null,
+            payload: n.payload,
+            kiosk_slug: null,
+            employee_id: (n.employee_id as string | null) ?? null,
+            employee_name: (n.employee_name as string | null) ?? null,
+            actor_staff_id: staffId,
+            actor_name: staffId ? (accountName.current.get(staffId) ?? null) : null,
+            changed: (n.changed as string[] | null) ?? [],
+          }),
+        );
       })
       .subscribe((status, err) => {
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
@@ -161,10 +147,10 @@ export function ActivityFeed({ rows: initialRows, total: initialTotal, pageSize,
     setLoading(true);
     setLoadMoreError(false);
     const supabase = getSupabaseBrowserClient();
-    const { data, error } = await supabase.rpc("kiosk_activity", {
+    const { data, error } = await supabase.rpc("activity_feed", {
       ...rpcArgs(filterRef.current),
       p_before_at: last.at,
-      p_before_id: last.id,
+      p_before_key: last.key,
       p_limit: pageSize,
     });
     setLoading(false);
@@ -175,8 +161,8 @@ export function ActivityFeed({ rows: initialRows, total: initialTotal, pageSize,
     }
     const more = (data ?? []).map(toRow);
     setRows((prev) => {
-      const seen = new Set(prev.map((r) => r.id));
-      return [...prev, ...more.filter((r) => !seen.has(r.id))];
+      const seen = new Set(prev.map((r) => r.key));
+      return [...prev, ...more.filter((r) => !seen.has(r.key))];
     });
     setHasMore(more.length >= pageSize);
   }
@@ -186,7 +172,7 @@ export function ActivityFeed({ rows: initialRows, total: initialTotal, pageSize,
       <div className="px-1">
         <h2 className="text-lg font-semibold tracking-tight">Activity</h2>
         <p className="mt-0.5 text-sm text-muted-foreground">
-          What the tablets recorded that day, newest first.
+          What the tablets and the web app recorded that day, newest first.
           {live ? " New actions appear as they happen." : ""}
         </p>
       </div>
@@ -198,19 +184,39 @@ export function ActivityFeed({ rows: initialRows, total: initialTotal, pageSize,
             method="get"
             action="#activity"
             onChange={(e) => e.currentTarget.requestSubmit()}
-            className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"
+            className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6"
           >
             <Field label="Day" htmlFor="act-day">
               <DateField id="act-day" name="day" defaultValue={filter.day} />
             </Field>
-            <Field label="Employee" htmlFor="act-emp">
-              <Select id="act-emp" name="employee" defaultValue={filter.employee}>
+            <Field label="Where" htmlFor="act-source">
+              <Select id="act-source" name="source" defaultValue={filter.source}>
+                <option value="">Tablets and web</option>
+                <option value="tablet">Tablets</option>
+                <option value="web">Web</option>
+              </Select>
+            </Field>
+            <Field label="Person" htmlFor="act-person">
+              <Select id="act-person" name="person" defaultValue={filter.person}>
                 <option value="">Everyone</option>
-                {employees.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.name}
-                  </option>
-                ))}
+                {employees.length > 0 && (
+                  <optgroup label="Employees">
+                    {employees.map((e) => (
+                      <option key={e.id} value={`e:${e.id}`}>
+                        {e.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {accounts.length > 0 && (
+                  <optgroup label="Web logins">
+                    {accounts.map((a) => (
+                      <option key={a.id} value={`s:${a.id}`}>
+                        {a.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </Select>
             </Field>
             <Field label="Tablet" htmlFor="act-kiosk">
@@ -259,30 +265,36 @@ export function ActivityFeed({ rows: initialRows, total: initialTotal, pageSize,
                   <tr>
                     <th className="py-2 pr-3 font-medium">Time</th>
                     <th className="py-2 pr-3 font-medium">Who</th>
-                    <th className="py-2 pr-3 font-medium">Tablet</th>
+                    <th className="py-2 pr-3 font-medium">Where</th>
                     <th className="py-2 pr-3 font-medium">What</th>
                     <th className="py-2 font-medium">Details</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
                   {rows.map((a) => {
-                    const person = PERSON_EVENTS.has(a.event);
+                    const person = isPersonEvent(a.event);
+                    const who = a.employeeName ?? a.actorName;
                     const detail = [eventDetail(a.event, a.payload), a.ref].filter(Boolean).join(" · ");
                     return (
                       <tr
-                        key={a.id}
+                        key={a.key}
                         className={a.level === "error" ? "bg-red-50/60 dark:bg-red-950/20" : a.level === "warn" ? "bg-amber-50/60 dark:bg-amber-950/20" : ""}
                       >
                         <td className="whitespace-nowrap py-2 pr-3 tabular-nums text-muted-foreground">{timeFmt.format(new Date(a.at))}</td>
                         <td className="whitespace-nowrap py-2 pr-3">
-                          {a.employeeName ? (
-                            <span className={person ? "font-medium" : ""}>{a.employeeName}</span>
+                          {who ? (
+                            <span className={person ? "font-medium" : ""}>
+                              {who}
+                              {a.employeeName && a.actorName && (
+                                <span className="ml-1 text-xs font-normal text-muted-foreground">on {a.actorName}</span>
+                              )}
+                            </span>
                           ) : (
-                            <span className="text-muted-foreground">Tablet</span>
+                            <span className="text-muted-foreground">{a.source === "web" ? "Web" : "Tablet"}</span>
                           )}
                         </td>
-                        <td className="whitespace-nowrap py-2 pr-3 text-muted-foreground">{a.kioskSlug ?? ""}</td>
-                        <td className="py-2 pr-3">{eventLabel(a.event)}</td>
+                        <td className="whitespace-nowrap py-2 pr-3 text-muted-foreground">{a.source === "web" ? "Web" : (a.kioskSlug ?? "Tablet")}</td>
+                        <td className="py-2 pr-3">{eventLabel(a.event, a.changed, a.payload)}</td>
                         <td className="py-2 text-muted-foreground">{detail}</td>
                       </tr>
                     );
@@ -297,9 +309,7 @@ export function ActivityFeed({ rows: initialRows, total: initialTotal, pageSize,
               <Button type="button" variant="outline" size="sm" onClick={loadMore} disabled={loading}>
                 {loading ? "Loading" : "Load more"}
               </Button>
-              <span className="text-xs text-muted-foreground">
-                Showing {rows.length.toLocaleString("en-US")} of {total.toLocaleString("en-US")}
-              </span>
+              <span className="text-xs text-muted-foreground">Showing {rows.length.toLocaleString("en-US")}</span>
               {loadMoreError && <span className="text-xs text-destructive">Could not load more. Try again.</span>}
             </div>
           )}

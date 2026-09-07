@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { Database } from "@/lib/supabase/database.types";
 
+import { EmployeeChip } from "./employee-chip";
 import { MobileNav } from "./mobile-nav";
 
 type StaffRole = Database["public"]["Enums"]["staff_role"];
@@ -26,6 +27,7 @@ type AppTopbarProps = {
   canCreateBookings: boolean;
   canUseCaja: boolean;
   businessId: string | null;
+  employee: { name: string } | null;
 };
 
 export function AppTopbar({
@@ -34,6 +36,7 @@ export function AppTopbar({
   canCreateBookings,
   canUseCaja,
   businessId,
+  employee,
 }: AppTopbarProps) {
   return (
     <header className="border-b bg-background/80 backdrop-blur">
@@ -53,6 +56,7 @@ export function AppTopbar({
           </Link>
         </div>
         <div className="flex items-center gap-3">
+          {employee && <EmployeeChip name={employee.name} />}
           <div className="hidden text-right text-xs leading-tight sm:block">
             <div className="font-medium">{fullName}</div>
             <div className="text-muted-foreground">{ROLE_LABEL[role]}</div>

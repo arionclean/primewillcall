@@ -73,6 +73,7 @@ type Props = {
     can_redeem_groupon: boolean;
     can_view_details: boolean;
     can_use_caja: boolean;
+    pin_required: boolean;
   };
   businesses: { id: string; name: string }[];
   tours: { id: string; name: string }[];
@@ -356,6 +357,29 @@ export function EditStaffForm({
               </span>
             </label>
           ))}
+        </FormSection>
+
+        <FormSection
+          title="Shared computer"
+          description="For a login that several people use on one computer."
+        >
+          <label className="flex cursor-pointer items-start gap-2.5 rounded-md border px-3 py-2.5 text-sm transition hover:bg-muted/50">
+            <input
+              type="checkbox"
+              name="pin_required"
+              value="1"
+              defaultChecked={staff.pin_required}
+              className="mt-0.5 h-4 w-4 accent-primary"
+            />
+            <span>
+              <span className="block font-medium">Ask for an employee PIN</span>
+              <span className="block text-xs text-muted-foreground">
+                Each person unlocks the screen with their own PIN, the same one as on the
+                tablets, and the activity log shows who did what. Leave it off for a login
+                only one person uses; their actions are still logged under the account.
+              </span>
+            </span>
+          </label>
         </FormSection>
 
         {role === "check_in" && (

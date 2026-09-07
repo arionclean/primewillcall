@@ -19,31 +19,46 @@ export type Database = {
           action: string
           actor_kiosk_id: string | null
           actor_staff_id: string | null
+          business_id: string | null
+          changed: string[]
+          employee_id: string | null
+          employee_name: string | null
           entity: string
           entity_id: string | null
           id: number
           occurred_at: string
           payload: Json
+          source: string
         }
         Insert: {
           action: string
           actor_kiosk_id?: string | null
           actor_staff_id?: string | null
+          business_id?: string | null
+          changed?: string[]
+          employee_id?: string | null
+          employee_name?: string | null
           entity: string
           entity_id?: string | null
           id?: number
           occurred_at?: string
           payload?: Json
+          source?: string
         }
         Update: {
           action?: string
           actor_kiosk_id?: string | null
           actor_staff_id?: string | null
+          business_id?: string | null
+          changed?: string[]
+          employee_id?: string | null
+          employee_name?: string | null
           entity?: string
           entity_id?: string | null
           id?: number
           occurred_at?: string
           payload?: Json
+          source?: string
         }
         Relationships: [
           {
@@ -58,6 +73,20 @@ export type Database = {
             columns: ["actor_staff_id"]
             isOneToOne: false
             referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "audit_log_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "audit_log_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "kiosk_employees"
             referencedColumns: ["id"]
           },
         ]
@@ -1527,6 +1556,7 @@ export type Database = {
           is_active: boolean
           kiosk_slug: string | null
           phone: string | null
+          pin_required: boolean
           role: Database["public"]["Enums"]["staff_role"]
           updated_at: string
           user_id: string | null
@@ -1549,6 +1579,7 @@ export type Database = {
           is_active?: boolean
           kiosk_slug?: string | null
           phone?: string | null
+          pin_required?: boolean
           role: Database["public"]["Enums"]["staff_role"]
           updated_at?: string
           user_id?: string | null
@@ -1571,6 +1602,7 @@ export type Database = {
           is_active?: boolean
           kiosk_slug?: string | null
           phone?: string | null
+          pin_required?: boolean
           role?: Database["public"]["Enums"]["staff_role"]
           updated_at?: string
           user_id?: string | null
@@ -2156,6 +2188,38 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      activity_feed: {
+        Args: {
+          p_before_at?: string
+          p_before_key?: string
+          p_employee?: string
+          p_events?: string[]
+          p_from: string
+          p_include_debug?: boolean
+          p_kiosk?: string
+          p_limit?: number
+          p_source?: string
+          p_staff?: string
+          p_to: string
+        }
+        Returns: {
+          actor_name: string
+          actor_staff_id: string
+          at: string
+          changed: string[]
+          employee_id: string
+          employee_name: string
+          entity: string
+          entity_id: string
+          event: string
+          key: string
+          kiosk_slug: string
+          level: string
+          payload: Json
+          ref: string
+          source: string
+        }[]
+      }
       analytics_bookings: {
         Args: {
           p_business_id?: string
@@ -2354,46 +2418,6 @@ export type Database = {
           isSetofReturn: false
         }
       }
-      kiosk_activity: {
-        Args: {
-          p_before_at?: string
-          p_before_id?: number
-          p_employee?: string
-          p_events?: string[]
-          p_from: string
-          p_include_debug?: boolean
-          p_kiosk?: string
-          p_limit?: number
-          p_problems?: boolean
-          p_search?: string
-          p_to: string
-        }
-        Returns: {
-          app_build: string
-          at: string
-          employee_id: string
-          employee_name: string
-          event: string
-          id: number
-          kiosk_slug: string
-          level: string
-          payload: Json
-          ref: string
-        }[]
-      }
-      kiosk_activity_count: {
-        Args: {
-          p_employee?: string
-          p_events?: string[]
-          p_from: string
-          p_include_debug?: boolean
-          p_kiosk?: string
-          p_problems?: boolean
-          p_search?: string
-          p_to: string
-        }
-        Returns: number
-      }
       kiosk_pin_in_use: {
         Args: { p_except?: string; p_pin: string }
         Returns: boolean
@@ -2529,6 +2553,13 @@ export type Database = {
           refunded: number
         }[]
       }
+      request_employee: {
+        Args: never
+        Returns: {
+          id: string
+          name: string
+        }[]
+      }
       resolve_email_match: {
         Args: { p_queue_id: string; p_tour_id: string }
         Returns: {
@@ -2575,6 +2606,14 @@ export type Database = {
           refunded: number
           stripe_fees: number
           txn_count: number
+        }[]
+      }
+      web_employee_lock: { Args: { p_employee: string }; Returns: undefined }
+      web_employee_unlock: {
+        Args: { p_pin: string }
+        Returns: {
+          id: string
+          name: string
         }[]
       }
       whatsapp_window_open: { Args: { p_phone: string }; Returns: boolean }

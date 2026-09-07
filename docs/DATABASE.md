@@ -195,8 +195,15 @@ The `on_native_booking_created` trigger still fires from the insert inside the f
 `staff_id, tour_id, created_at` — which tours a `check_in` staffer is assigned to.
 
 ### audit_log
-`id bigint pk, occurred_at, actor_staff_id?, actor_kiosk_id?, entity, entity_id?,
-action, payload jsonb` — append-only audit trail.
+`id bigint pk, occurred_at, actor_staff_id?, actor_kiosk_id?, business_id?, employee_id?,
+employee_name?, entity, entity_id? (text), action, changed text[], payload jsonb, source`
+— what staff did in the web app, written by the `log_staff_change` trigger on every
+table staff edit (only for a real staff session; system writes are skipped) and by the
+`payments` function for its own writes. `employee_id` is the person behind a shared
+login (`staff.pin_required`), read from the `x-employee-id` request header. Read with
+`kiosk_events` through `activity_feed()` on `/admin/employees`. Owner reads all; a
+manager their business's rows and their own; check-in their own. See
+docs/kiosk-employees.md "The web app".
 
 ### Legacy / unused
 `kiosk_tours` remains from the original schema but nothing in the app reads it. Slated for

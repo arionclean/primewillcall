@@ -15,6 +15,8 @@ type AppShellProps = {
   canCreateBookings: boolean;
   canUseCaja: boolean;
   businessId: string | null;
+  /** The person unlocked on a shared login; null on a personal one. */
+  employee: { name: string } | null;
   children: React.ReactNode;
 };
 
@@ -24,6 +26,7 @@ export function AppShell({
   canCreateBookings,
   canUseCaja,
   businessId,
+  employee,
   children,
 }: AppShellProps) {
   return (
@@ -34,6 +37,7 @@ export function AppShell({
         canCreateBookings={canCreateBookings}
         canUseCaja={canUseCaja}
         businessId={businessId}
+        employee={employee}
       />
       <div className="mx-auto grid w-full max-w-7xl gap-6 px-6 py-8 md:grid-cols-[200px_1fr]">
         {/* Sticky, and capped to the viewport so a long list (the check-in

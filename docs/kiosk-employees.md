@@ -77,6 +77,36 @@ reconnecting, disconnected by staff, battery; and the housekeeping (app opened,
 foreground, background, settings check). Every row carries the tablet, the app build
 and, when someone is signed in, the employee.
 
+## The web app
+
+The same log covers the web app, without a log call in any screen:
+
+- **`audit_log`** is written by one generic trigger, `log_staff_change()`, attached to
+  every table staff edit from the web (bookings, customers, cash sales, refunds, closed
+  times, tours, prices, businesses, team, employees, message rules, tablets). One row per
+  created / updated / deleted row: the staff login, the business, the table and row,
+  which columns changed and a before/after diff (`payload.diff`; the full row for a
+  create or delete, minus secrets), plus the guest's name on a booking. It fires only
+  for a real staff session (`auth.uid()` set): the Xano sync, Stripe webhooks, the kiosk
+  functions and cron run as the system and are not staff actions. The `payments`
+  function writes as the system on a staffer's behalf, so it records its refunds and
+  sale moves itself (`_shared/audit.ts`).
+- **Shared logins.** `staff.pin_required` (owner-set, "Shared computer" on
+  `/admin/staff/[id]`) marks a login several people use on one computer. The web then
+  shows the keypad (`components/app/web-pin-lock.tsx`) until someone types their PIN,
+  the same PIN as on the tablets (`web_employee_unlock`), and shows their name with a
+  Lock chip in the top bar. Who they are lives in two cookies until Lock
+  (`lib/employee-session.ts`): a signed httpOnly one the server trusts, and a plain id
+  the browser Supabase client reads to send `x-employee-id` on every request. The
+  trigger reads that header (`request_employee()`), so a direct edit from the bookings
+  page is attributed the same way a server action is. Personal logins never see the
+  keypad; their actions are logged under the account.
+- **One feed.** `activity_feed()` unions `kiosk_events` and `audit_log` with one set of
+  filters (day, where: tablets / web, person: employee or web login, tablet, action
+  group) and keyset paging on `(at, key)`. Web rows are named `entity.action`
+  (`bookings.updated`) and the page turns the diff into words in
+  `src/lib/kiosk/events.ts` (`checked_in_at` set means "Checked a guest in").
+
 ## Switch
 
 ```sql
@@ -95,6 +125,9 @@ screen re-checks every few seconds), so no reinstall.
 | `supabase/functions/kiosk-pin-verify` | the server-side PIN check; records the sign-in |
 | `supabase/functions/kiosk-config` | carries the employee list (hashes) for the local check |
 | `kiosk-sale-start`, `kiosk-sale-complete`, `kiosk-log`, `kiosk-cash-sale`, `kiosk-booking` | accept `employee_id` |
-| `supabase/migrations/20260907192526_kiosk_activity_feed.sql` | `kiosk_activity` + `kiosk_activity_count` RPCs, partial indexes |
+| `supabase/migrations/20260907192526_kiosk_activity_feed.sql` | tablet-only feed RPCs (since replaced), partial indexes |
+| `supabase/migrations/20260907195532_web_activity_log.sql` | `audit_log` trigger, `staff.pin_required`, web PIN functions, `activity_feed` |
+| `src/lib/employee-session.ts`, `src/app/(app)/employee-actions.ts`, `components/app/web-pin-lock.tsx`, `employee-chip.tsx` | the web PIN |
+| `supabase/functions/_shared/audit.ts` | explicit log rows from service-role functions (`payments`) |
 | `src/app/(app)/admin/employees/*`, `src/lib/kiosk/pin.ts`, `src/lib/kiosk/events.ts` | the admin page (`activity-feed.tsx` is the log) |
 | PrimeKiosk `src/services/EmployeeSession.ts`, `src/context/EmployeeSessionContext.tsx` | session, keypad, pill |

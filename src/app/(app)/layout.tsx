@@ -2,7 +2,9 @@ import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app/app-shell";
 import { StaffClaimsSync } from "@/components/app/staff-claims-sync";
+import { WebPinLock } from "@/components/app/web-pin-lock";
 import { getCurrentStaff, staffCapabilities } from "@/lib/auth";
+import { getWebEmployee } from "@/lib/employee-session";
 import { QueryProvider } from "@/lib/query/provider";
 
 export default async function AppLayout({
@@ -19,6 +21,18 @@ export default async function AppLayout({
     return <>{children}</>;
   }
 
+  // A shared login (one computer, several people) shows the keypad until someone
+  // has typed their PIN; that person then rides on every write for the log.
+  const employee = staff.pin_required ? await getWebEmployee() : null;
+  if (staff.pin_required && !employee) {
+    return (
+      <>
+        <StaffClaimsSync staffId={staff.id} />
+        <WebPinLock accountName={staff.full_name} />
+      </>
+    );
+  }
+
   return (
     <QueryProvider>
       <StaffClaimsSync staffId={staff.id} />
@@ -28,6 +42,7 @@ export default async function AppLayout({
         canCreateBookings={staffCapabilities(staff).canCreateBookings}
         canUseCaja={staffCapabilities(staff).canUseCaja}
         businessId={staff.business_id}
+        employee={employee}
       >
         {children}
       </AppShell>

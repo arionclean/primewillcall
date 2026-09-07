@@ -412,8 +412,12 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   unlocked until the person taps Lock (no idle or background lock, no lockout on wrong
   PINs, by the owner's choice), and stamps the employee on every event, sale and booking
   (`kiosk_events.employee_id`, `cash_sales.employee_id`, `bookings.kiosk_employee_id`).
-  Managed on `/admin/employees` (owner + manager) with a live activity log. See
-  [`docs/kiosk-employees.md`](docs/kiosk-employees.md).
+  Managed on `/admin/employees` (owner + manager) with a live activity log. The **web
+  app is tracked too**: the `log_staff_change` trigger writes `audit_log` for every
+  staff edit (who, table, row, diff; system writes skipped), a login marked
+  `staff.pin_required` ("Shared computer") gets the same PIN keypad and stamps the
+  employee through the `x-employee-id` header, and `activity_feed()` shows tablets and
+  web as one stream. See [`docs/kiosk-employees.md`](docs/kiosk-employees.md).
 - **Payments (Stripe)** are largely built (Supabase-native replication of the live Xano
   Connect model; Xano is never written to). Model: Stripe Connect **direct charges** on each
   business's connected account with a platform `application_fee` (Prime's cut). Built:

@@ -22,6 +22,8 @@ export type CurrentStaff = {
   can_redeem_groupon: boolean;
   can_view_details: boolean;
   can_use_caja: boolean;
+  /** A shared login: the web asks for an employee PIN before use. */
+  pin_required: boolean;
 };
 
 /**
@@ -40,7 +42,7 @@ function staffFromClaims(claims: Record<string, unknown>): CurrentStaff | null |
   // A token minted before a permission column existed says nothing about it,
   // so it is treated like one that predates the hook. Point this at the
   // newest column whenever one ships.
-  if (!("can_use_caja" in s)) return undefined;
+  if (!("pin_required" in s)) return undefined;
   return {
     id: s.id,
     full_name: typeof s.full_name === "string" ? s.full_name : "",
@@ -57,6 +59,7 @@ function staffFromClaims(claims: Record<string, unknown>): CurrentStaff | null |
     can_redeem_groupon: s.can_redeem_groupon === true,
     can_view_details: s.can_view_details === true,
     can_use_caja: s.can_use_caja === true,
+    pin_required: s.pin_required === true,
   };
 }
 
@@ -100,7 +103,7 @@ export const getCurrentStaff = cache(async () => {
   const { data: staff } = await supabase
     .from("staff")
     .select(
-      "id, full_name, role, business_id, is_active, kiosk_slug, can_create_bookings, can_edit_bookings, can_check_in, can_delete_bookings, can_add_to_peek, can_view_attachments, can_redeem_groupon, can_view_details, can_use_caja",
+      "id, full_name, role, business_id, is_active, kiosk_slug, can_create_bookings, can_edit_bookings, can_check_in, can_delete_bookings, can_add_to_peek, can_view_attachments, can_redeem_groupon, can_view_details, can_use_caja, pin_required",
     )
     .eq("user_id", user.id)
     .maybeSingle();

@@ -125,7 +125,7 @@ function EmployeeCard({ employee }: { employee: EmployeeRow }) {
               <p className="text-xs text-muted-foreground">{lastSeen(employee)}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <a href={`?employee=${employee.id}#activity`} className={buttonVariants({ variant: "ghost", size: "sm" })}>
+              <a href={`?person=e:${employee.id}#activity`} className={buttonVariants({ variant: "ghost", size: "sm" })}>
                 Activity
               </a>
               <Button type="button" variant="outline" size="sm" onClick={() => setChangingPin((v) => !v)}>

@@ -1,12 +1,17 @@
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
+
+import { EMPLOYEE_HEADER, getWebEmployeeIdForHeader } from "@/lib/employee-session";
+
 import type { Database } from "./database.types";
 
 /**
  * Server-side Supabase client for Server Components, Route Handlers, and Server Actions.
  * Each call returns a fresh client bound to the current request's cookies, so RLS sees
- * the authenticated user.
+ * the authenticated user. On a shared login with someone unlocked, every request also
+ * carries the employee header, which the activity-log trigger stamps on each change
+ * (see lib/employee-session.ts).
  */
 export async function getSupabaseServerClient(): Promise<SupabaseClient<Database>> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -19,8 +24,10 @@ export async function getSupabaseServerClient(): Promise<SupabaseClient<Database
   }
 
   const cookieStore = await cookies();
+  const employeeId = await getWebEmployeeIdForHeader();
 
   return createServerClient<Database>(url, anonKey, {
+    ...(employeeId ? { global: { headers: { [EMPLOYEE_HEADER]: employeeId } } } : {}),
     cookies: {
       getAll() {
         return cookieStore.getAll();
