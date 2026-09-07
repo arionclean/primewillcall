@@ -51,10 +51,11 @@ activity keeps the name), and **Activity**, built for volume:
   takes a range, the page just asks for one day), employee, tablet, **action group** (`EVENT_GROUPS` in
   `src/lib/kiosk/events.ts`: sales, guests and bookings, sign-ins, card reader,
   tablet housekeeping; each maps to exact event names so the filter is an index
-  lookup), problems only (warn + error), search (code, name, amount, anything in
-  the payload). Tablet housekeeping (`level = 'debug'`: foreground, background,
-  settings checks) is hidden unless asked for; that is what keeps the default view
-  readable. Partial indexes cover the default and the problems view.
+  lookup), search (code, name, amount, anything in the payload). Tablet
+  housekeeping (`level = 'debug'`: foreground, background, settings checks) shows
+  only when that group is picked; that is what keeps the default view readable. The
+  RPC also takes a problems-only switch (warn + error) that the page does not expose,
+  by the owner's choice; a partial index covers it for the day it is wanted.
 - Live: while the range includes now, the client (`activity-feed.tsx`) holds one
   Realtime INSERT subscription on `kiosk_events` and prepends rows that pass the same
   filter, so a new action shows within a second without re-rendering the page.

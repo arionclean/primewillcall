@@ -33,7 +33,7 @@ export type ActivityFilter = {
   employee: string;
   kiosk: string;
   group: EventGroup | "";
-  problems: boolean;
+  /** Tablet housekeeping (debug rows) shows only when that group is picked. */
   includeDebug: boolean;
   q: string;
 };
@@ -65,7 +65,6 @@ function matches(row: ActivityRow, f: ActivityFilter): boolean {
   if (f.employee && row.employeeId !== f.employee) return false;
   if (f.kiosk && row.kioskSlug !== f.kiosk) return false;
   if (f.group && !(EVENT_GROUPS[f.group].events as readonly string[]).includes(row.event)) return false;
-  if (f.problems && row.level !== "warn" && row.level !== "error") return false;
   if (!f.includeDebug && row.level === "debug") return false;
   if (f.q) {
     const hay = [row.ref, row.employeeName, row.event, JSON.stringify(row.payload ?? {})]
@@ -84,7 +83,6 @@ function rpcArgs(f: ActivityFilter) {
     p_employee: f.employee || undefined,
     p_kiosk: f.kiosk || undefined,
     p_events: f.group ? [...EVENT_GROUPS[f.group].events] : undefined,
-    p_problems: f.problems,
     p_include_debug: f.includeDebug,
     p_search: f.q || undefined,
   };
@@ -247,16 +245,6 @@ export function ActivityFeed({ rows: initialRows, total: initialTotal, pageSize,
             <Field label="Search" htmlFor="act-q" hint="A code, a guest name, an amount">
               <Input id="act-q" name="q" defaultValue={filter.q} placeholder="KS-1234 or Maria" autoComplete="off" />
             </Field>
-            <div className="flex flex-col justify-end gap-2 text-sm sm:col-span-2">
-              <label htmlFor="act-problems" className="flex items-center gap-2">
-                <input id="act-problems" type="checkbox" name="problems" value="1" defaultChecked={filter.problems} className="size-4" />
-                Only things that went wrong (wrong PINs, card errors, reader drops)
-              </label>
-              <label htmlFor="act-debug" className="flex items-center gap-2">
-                <input id="act-debug" type="checkbox" name="debug" value="1" defaultChecked={filter.includeDebug} className="size-4" />
-                Also show the tablet&apos;s automatic events (app opened or closed, settings checks)
-              </label>
-            </div>
             <div className="flex items-end gap-2">
               <Button type="submit" variant="outline">
                 Show

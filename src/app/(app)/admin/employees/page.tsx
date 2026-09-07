@@ -31,9 +31,8 @@ export default async function EmployeesPage({
     employee: /^[0-9a-f-]{36}$/i.test(sp.employee ?? "") ? (sp.employee as string) : "",
     kiosk: (sp.kiosk ?? "").slice(0, 64),
     group,
-    problems: sp.problems === "1",
     // The housekeeping group is nothing but debug rows, so asking for it means showing them.
-    includeDebug: sp.debug === "1" || group === "tablet",
+    includeDebug: group === "tablet",
     q: (sp.q ?? "").trim().slice(0, 80),
   };
   const args = {
@@ -42,7 +41,6 @@ export default async function EmployeesPage({
     p_employee: filter.employee || undefined,
     p_kiosk: filter.kiosk || undefined,
     p_events: filter.group ? [...EVENT_GROUPS[filter.group].events] : undefined,
-    p_problems: filter.problems,
     p_include_debug: filter.includeDebug,
     p_search: filter.q || undefined,
   };
