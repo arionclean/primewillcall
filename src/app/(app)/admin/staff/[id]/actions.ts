@@ -55,6 +55,7 @@ export async function updateStaffAction(
   const can_view_attachments = formData.get("can_view_attachments") === "1";
   const can_redeem_groupon = formData.get("can_redeem_groupon") === "1";
   const can_view_details = formData.get("can_view_details") === "1";
+  const can_use_caja = formData.get("can_use_caja") === "1";
   const tour_ids = formData
     .getAll("tour_ids")
     .map((v) => String(v))
@@ -90,6 +91,7 @@ export async function updateStaffAction(
       can_view_attachments,
       can_redeem_groupon,
       can_view_details,
+      can_use_caja,
     })
     .eq("id", id);
   if (updErr) return { error: updErr.message };

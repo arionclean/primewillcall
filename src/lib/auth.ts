@@ -21,6 +21,7 @@ export type CurrentStaff = {
   can_view_attachments: boolean;
   can_redeem_groupon: boolean;
   can_view_details: boolean;
+  can_use_caja: boolean;
 };
 
 /**
@@ -39,7 +40,7 @@ function staffFromClaims(claims: Record<string, unknown>): CurrentStaff | null |
   // A token minted before a permission column existed says nothing about it,
   // so it is treated like one that predates the hook. Point this at the
   // newest column whenever one ships.
-  if (!("can_view_details" in s)) return undefined;
+  if (!("can_use_caja" in s)) return undefined;
   return {
     id: s.id,
     full_name: typeof s.full_name === "string" ? s.full_name : "",
@@ -55,6 +56,7 @@ function staffFromClaims(claims: Record<string, unknown>): CurrentStaff | null |
     can_view_attachments: s.can_view_attachments === true,
     can_redeem_groupon: s.can_redeem_groupon === true,
     can_view_details: s.can_view_details === true,
+    can_use_caja: s.can_use_caja === true,
   };
 }
 
@@ -98,7 +100,7 @@ export const getCurrentStaff = cache(async () => {
   const { data: staff } = await supabase
     .from("staff")
     .select(
-      "id, full_name, role, business_id, is_active, kiosk_slug, can_create_bookings, can_edit_bookings, can_check_in, can_delete_bookings, can_add_to_peek, can_view_attachments, can_redeem_groupon, can_view_details",
+      "id, full_name, role, business_id, is_active, kiosk_slug, can_create_bookings, can_edit_bookings, can_check_in, can_delete_bookings, can_add_to_peek, can_view_attachments, can_redeem_groupon, can_view_details, can_use_caja",
     )
     .eq("user_id", user.id)
     .maybeSingle();
@@ -118,6 +120,8 @@ export type StaffCapabilities = {
   canRedeemGroupon: boolean;
   /** Off: only ID, name, phone, guests and check-in status. Screen-level. */
   canViewDetails: boolean;
+  /** Open Caja, the desk's own cash + card for the day. Check-in logins. */
+  canUseCaja: boolean;
 };
 
 /**
@@ -137,6 +141,7 @@ export function staffCapabilities(staff: {
   can_view_attachments: boolean;
   can_redeem_groupon: boolean;
   can_view_details: boolean;
+  can_use_caja: boolean;
 }): StaffCapabilities {
   if (staff.role === "owner") {
     return {
@@ -148,6 +153,7 @@ export function staffCapabilities(staff: {
       canViewAttachments: true,
       canRedeemGroupon: true,
       canViewDetails: true,
+      canUseCaja: true,
     };
   }
   return {
@@ -159,5 +165,6 @@ export function staffCapabilities(staff: {
     canViewAttachments: staff.can_view_attachments,
     canRedeemGroupon: staff.can_redeem_groupon,
     canViewDetails: staff.can_view_details,
+    canUseCaja: staff.can_use_caja,
   };
 }

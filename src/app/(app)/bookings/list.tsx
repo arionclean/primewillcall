@@ -548,8 +548,9 @@ type Group = {
   checkedPax: number;
 };
 
+/** Seats: adults + children. Infants ride on a lap and are not counted here. */
 function paxOf(b: BookingRow): number {
-  return (b.pax_adult ?? 0) + (b.pax_child ?? 0) + (b.pax_infant ?? 0);
+  return (b.pax_adult ?? 0) + (b.pax_child ?? 0);
 }
 
 function groupByTime(rows: BookingRow[]): Group[] {
@@ -1510,7 +1511,8 @@ function BookingRowItem({
   const canEdit = caps.canEditBookings && caps.canViewDetails;
   const photoUrls = caps.canViewAttachments ? booking.groupon_voucher_urls : [];
 
-  const totalPax = booking.pax_adult + booking.pax_child + booking.pax_infant;
+  // Seats (adults + children); the infant count has its own slot in the row.
+  const totalPax = booking.pax_adult + booking.pax_child;
   // What the guest still owes at the desk; shown to every role, the desk
   // collects it. Replaces the old "Owes $36" typed into the name.
   const owes = booking.due_cents > 0 ? formatCents(booking.due_cents) : null;

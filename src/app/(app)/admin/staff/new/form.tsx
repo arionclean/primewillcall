@@ -61,7 +61,8 @@ type CapabilityName =
   | "can_add_to_peek"
   | "can_view_attachments"
   | "can_redeem_groupon"
-  | "can_view_details";
+  | "can_view_details"
+  | "can_use_caja";
 
 const CAPABILITY_OPTIONS: {
   name: CapabilityName;
@@ -99,6 +100,11 @@ const CAPABILITY_OPTIONS: {
     hint: "Show the Redemption Codes and the Redeem toggle on Groupon bookings.",
   },
   {
+    name: "can_use_caja",
+    label: "Use Caja",
+    hint: "Open Caja: the desk's own cash and card for the day, and the end-of-night count. Check-in logins only.",
+  },
+  {
     name: "can_view_details",
     label: "See full booking details",
     hint: "Off: only the ID, name, phone, guests and check-in status show. Notes, emails and the edit form stay hidden.",
@@ -134,6 +140,7 @@ export function NewStaffForm({ businesses, tours }: Props) {
     can_view_attachments: true,
     can_redeem_groupon: false,
     can_view_details: true,
+    can_use_caja: true,
   });
   const [password, setPassword] = useState<string>("");
   const [copied, setCopied] = useState(false);

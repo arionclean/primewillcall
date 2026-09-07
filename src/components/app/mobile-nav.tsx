@@ -22,10 +22,12 @@ type StaffRole = Database["public"]["Enums"]["staff_role"];
 export function MobileNav({
   role,
   canCreateBookings,
+  canUseCaja,
   businessId,
 }: {
   role: StaffRole;
   canCreateBookings: boolean;
+  canUseCaja: boolean;
   businessId: string | null;
 }) {
   const [open, setOpen] = useState(false);
@@ -82,6 +84,7 @@ export function MobileNav({
                 <AppSidebar
                   role={role}
                   canCreateBookings={canCreateBookings}
+                  canUseCaja={canUseCaja}
                   onNavigate={() => setOpen(false)}
                 />
                 {role === "check_in" && (

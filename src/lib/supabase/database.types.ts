@@ -1246,6 +1246,7 @@ export type Database = {
           can_redeem_groupon: boolean
           can_view_attachments: boolean
           can_view_details: boolean
+          can_use_caja: boolean
           created_at: string
           email: string
           full_name: string
@@ -1267,6 +1268,7 @@ export type Database = {
           can_redeem_groupon?: boolean
           can_view_attachments?: boolean
           can_view_details?: boolean
+          can_use_caja?: boolean
           created_at?: string
           email: string
           full_name: string
@@ -1288,6 +1290,7 @@ export type Database = {
           can_redeem_groupon?: boolean
           can_view_attachments?: boolean
           can_view_details?: boolean
+          can_use_caja?: boolean
           created_at?: string
           email?: string
           full_name?: string

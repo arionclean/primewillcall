@@ -45,7 +45,7 @@ booking page (`/booking/<token>`).
 `id uuid pk, user_id? (-> auth.users), business_id? (-> businesses), role enum,
 full_name, email, phone?, is_active, can_create_bookings, can_edit_bookings,
 can_check_in, can_delete_bookings, can_add_to_peek, can_view_attachments,
-can_redeem_groupon, can_view_details, created_at, updated_at`
+can_redeem_groupon, can_view_details, can_use_caja, created_at, updated_at`
 Role enum (`staff_role`): `owner`, `business_manager`, `check_in`. `owner` has no
 `business_id`. A trigger links a new `auth.users` row to its `staff` row by email.
 
@@ -73,7 +73,14 @@ of both the server read and the browser refetch, and the Realtime patch drops th
 from change payloads. A change payload on the wire still carries every column the
 row policy allows; treat the view switches as privacy on the device, not a boundary.
 
-Defaults: create/edit/check-in/peek/attachments/details on, delete and redeem off
+**Caja switch** (`can_use_caja`, default on) decides whether a check-in login gets
+`/caja` (the desk's own cash + card for the day and the end-of-night count). The
+sidebar hides the link and the page redirects without it, and RLS backs it:
+`current_kiosk_slug()` returns NULL for an account without the switch, so the
+per-kiosk `cash_sales` / `stripe_transactions` read policies match nothing. Owners
+and managers are unaffected (they use `/admin/payments`).
+
+Defaults: create/edit/check-in/peek/attachments/details/caja on, delete and redeem off
 (new managers get delete on from the New team member form). Redeem was owner-only
 before the switch existed, so the default preserves that.
 `bookings.peek` marks a booking as manually entered into Peek (the boat's

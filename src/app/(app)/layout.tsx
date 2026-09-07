@@ -26,6 +26,7 @@ export default async function AppLayout({
         role={staff.role}
         fullName={staff.full_name}
         canCreateBookings={staffCapabilities(staff).canCreateBookings}
+        canUseCaja={staffCapabilities(staff).canUseCaja}
         businessId={staff.business_id}
       >
         {children}
