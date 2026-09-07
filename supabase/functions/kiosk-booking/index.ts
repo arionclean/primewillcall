@@ -99,13 +99,7 @@ Deno.serve(withSentry("kiosk-booking", async (req) => {
         .filter((x: { ok?: boolean; legacy_id?: string | null }) => x?.ok && x.legacy_id)
         .map((x: { legacy_id: string }) => x.legacy_id);
       if (keys.length > 0) {
-        const { data: kiosk } = await sb
-          .from("bookings")
-          .select("business_id")
-          .in("legacy_id", keys)
-          .limit(1)
-          .maybeSingle<{ business_id: string }>();
-        const employee = await resolveEmployee(sb, kiosk?.business_id ?? null, employeeId);
+        const employee = await resolveEmployee(sb, employeeId);
         if (employee) {
           await sb
             .from("bookings")

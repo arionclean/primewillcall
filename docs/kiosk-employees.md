@@ -5,11 +5,13 @@ which iPad; the employee PIN says who.
 
 ## How it works
 
-- **People.** `kiosk_employees`: name, business, active flag, and a 4-digit PIN stored as a
-  salted SHA-256 (`sha256(salt:business_id:pin)`, identical code in
-  `supabase/functions/_shared/kiosk-pin.ts` and `src/lib/kiosk/pin.ts`). PINs are unique
-  among the active employees of a business, so a PIN alone identifies the person on that
-  business's tablets.
+- **People.** `kiosk_employees`: name, active flag, and a 4-digit PIN stored as a salted
+  SHA-256 (`sha256(salt:pin)`, identical code in `supabase/functions/_shared/kiosk-pin.ts`,
+  `src/lib/kiosk/pin.ts` and the tablet). Employees are **one pool shared by every
+  business**: the businesses sit next to each other and people cover for each other, so
+  by the owner's choice there is no "works at" and any employee may unlock any tablet.
+  PINs are unique across the pool (the `kiosk_pin_in_use` definer function checks), so a
+  PIN alone identifies the person on every tablet.
 - **The tablet.** When `kiosks.pin_required` is on, the app shows a keypad over everything
   until a valid PIN is typed. The check is **local and immediate**: `kiosk-config` carries
   the kiosk's eligible employees (id, name, salted hash, never the PIN), the tablet hashes
@@ -36,7 +38,8 @@ which iPad; the employee PIN says who.
 
 ## The admin page
 
-`/admin/employees` (owner and business manager; a manager sees only their business):
+`/admin/employees` (owner and any business manager manage the shared pool; check-in
+accounts are redirected away):
 add an employee (name, business, PIN), change a PIN, deactivate or reactivate, remove
 (past activity keeps the name), the PIN on/off state of each tablet (read-only, flipped
 by SQL on request), and **Activity**: every event of a day, filterable by person and

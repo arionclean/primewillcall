@@ -67,7 +67,7 @@ Deno.serve(withSentry("kiosk-log", async (req) => {
   const employeeIdFor = async (raw: unknown): Promise<string | null> => {
     const id = String(raw ?? "").trim();
     if (!id) return null;
-    if (!cache.has(id)) cache.set(id, (await resolveEmployee(sb, kiosk.business_id, id))?.id ?? null);
+    if (!cache.has(id)) cache.set(id, (await resolveEmployee(sb, id))?.id ?? null);
     return cache.get(id) ?? null;
   };
 

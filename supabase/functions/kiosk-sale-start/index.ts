@@ -99,7 +99,7 @@ Deno.serve(withSentry("kiosk-sale-start", async (req) => {
   const product = String(body.product ?? "").trim() || "ticket";
   const customerName =
     String(body.customer?.name ?? xano.customer_name ?? "").trim() || null;
-  const employee = await resolveEmployee(sb, kiosk.business_id, body.employee_id);
+  const employee = await resolveEmployee(sb, body.employee_id);
   const meta = {
     kioskId: kiosk.id,
     kioskSlug: kiosk.slug,

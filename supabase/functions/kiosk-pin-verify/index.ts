@@ -2,8 +2,8 @@
 //
 // The tablet sends the 4 digits typed on its lock screen; we answer with the employee
 // (id + name) they belong to, or a failure. PINs are stored hashed (see
-// _shared/kiosk-pin.ts) and are unique among the active employees of a business, so a
-// PIN alone identifies the person on that business's kiosks.
+// _shared/kiosk-pin.ts) and are unique among all active employees, so a PIN alone
+// identifies the person; employees are one pool and any of them may use any tablet.
 //
 // No lockout, by the owner's choice: a wrong PIN just says so and the person tries
 // again. Every attempt, good or bad, is an event in kiosk_events, so a run of
@@ -21,7 +21,6 @@ interface EmployeeRow {
   name: string;
   pin_hash: string;
   pin_salt: string;
-  kiosk_ids: string[] | null;
 }
 
 // Runs `work` after the response has been sent. Supabase's runtime keeps the
@@ -66,15 +65,13 @@ Deno.serve(withSentry("kiosk-pin-verify", async (req) => {
 
   const { data: employees } = await sb
     .from("kiosk_employees")
-    .select("id, name, pin_hash, pin_salt, kiosk_ids")
-    .eq("business_id", kiosk.business_id)
+    .select("id, name, pin_hash, pin_salt")
     .eq("is_active", true)
     .returns<EmployeeRow[]>();
 
   let match: EmployeeRow | null = null;
   for (const e of employees ?? []) {
-    if (e.kiosk_ids && e.kiosk_ids.length > 0 && !e.kiosk_ids.includes(kiosk.id)) continue;
-    if ((await hashPin(e.pin_salt, kiosk.business_id, pin)) === e.pin_hash) {
+    if ((await hashPin(e.pin_salt, pin)) === e.pin_hash) {
       match = e;
       break;
     }

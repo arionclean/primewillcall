@@ -83,7 +83,7 @@ Deno.serve(withSentry("kiosk-cash-sale", async (req) => {
   const dedupKey =
     String(body.idempotency_key ?? "").trim() ||
     (bookingRef ? `${kiosk}:${bookingRef}:${type}:${amountCents}` : null);
-  const employee = await resolveEmployee(sb, kioskRow.business_id as string, body.employee_id);
+  const employee = await resolveEmployee(sb, body.employee_id);
 
   const row = {
     business_id: kioskRow.business_id,

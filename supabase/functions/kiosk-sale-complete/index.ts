@@ -71,7 +71,7 @@ Deno.serve(withSentry("kiosk-sale-complete", async (req) => {
   if (!sale) return json({ error: "unknown_sale", ref }, 404);
   if (sale.kiosk_id !== kiosk.id) return json({ error: "ref_conflict" }, 409);
 
-  const employee = await resolveEmployee(sb, kiosk.business_id, body.employee_id);
+  const employee = await resolveEmployee(sb, body.employee_id);
   const meta = {
     kioskId: kiosk.id,
     kioskSlug: kiosk.slug,

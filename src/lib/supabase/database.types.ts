@@ -776,11 +776,9 @@ export type Database = {
       }
       kiosk_employees: {
         Row: {
-          business_id: string
           created_at: string
           id: string
           is_active: boolean
-          kiosk_ids: string[] | null
           last_seen_at: string | null
           last_seen_kiosk: string | null
           name: string
@@ -789,11 +787,9 @@ export type Database = {
           updated_at: string
         }
         Insert: {
-          business_id: string
           created_at?: string
           id?: string
           is_active?: boolean
-          kiosk_ids?: string[] | null
           last_seen_at?: string | null
           last_seen_kiosk?: string | null
           name: string
@@ -802,11 +798,9 @@ export type Database = {
           updated_at?: string
         }
         Update: {
-          business_id?: string
           created_at?: string
           id?: string
           is_active?: boolean
-          kiosk_ids?: string[] | null
           last_seen_at?: string | null
           last_seen_kiosk?: string | null
           name?: string
@@ -814,15 +808,7 @@ export type Database = {
           pin_salt?: string
           updated_at?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "kiosk_employees_business_id_fkey"
-            columns: ["business_id"]
-            isOneToOne: false
-            referencedRelation: "businesses"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       kiosk_events: {
         Row: {
@@ -2367,6 +2353,10 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      kiosk_pin_in_use: {
+        Args: { p_except?: string; p_pin: string }
+        Returns: boolean
       }
       match_ota_tour: {
         Args: {

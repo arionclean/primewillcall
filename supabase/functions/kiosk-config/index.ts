@@ -42,18 +42,16 @@ Deno.serve(withSentry("kiosk-config", async (req) => {
   // kiosk-pin-verify then confirms it in the background and records the event.
   // A PIN is attribution on a trusted device, not a secret guarding money, which
   // is why the hashes may live on the tablet.
-  type EmployeeRow = { id: string; name: string; pin_hash: string; pin_salt: string; kiosk_ids: string[] | null };
-  let employees: Omit<EmployeeRow, "kiosk_ids">[] = [];
+  // Employees are one pool shared by every business, so every active one rides along.
+  type EmployeeRow = { id: string; name: string; pin_hash: string; pin_salt: string };
+  let employees: EmployeeRow[] = [];
   if (kiosk.pin_required) {
     const { data } = await sb
       .from("kiosk_employees")
-      .select("id, name, pin_hash, pin_salt, kiosk_ids")
-      .eq("business_id", kiosk.business_id)
+      .select("id, name, pin_hash, pin_salt")
       .eq("is_active", true)
       .returns<EmployeeRow[]>();
-    employees = (data ?? [])
-      .filter((e) => !e.kiosk_ids || e.kiosk_ids.length === 0 || e.kiosk_ids.includes(kiosk.id))
-      .map(({ id, name, pin_hash, pin_salt }) => ({ id, name, pin_hash, pin_salt }));
+    employees = data ?? [];
   }
 
   await sb.from("kiosks").update({ last_seen_at: new Date().toISOString() }).eq("id", kiosk.id);

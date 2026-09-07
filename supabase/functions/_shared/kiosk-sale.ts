@@ -120,24 +120,24 @@ export interface EmployeeRef {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * The employee a tablet claims to be acting as, checked against the kiosk's business
- * and the active flag. Returns null for anything that does not check out, and the
- * caller then records the action without a person rather than refusing it: a stale
- * or wrong id must never block a sale.
+ * The employee a tablet claims to be acting as, checked for existence and the active
+ * flag (employees are one pool shared by every business, so there is no business
+ * check). Returns null for anything that does not check out, and the caller then
+ * records the action without a person rather than refusing it: a stale or wrong id
+ * must never block a sale.
  */
 export async function resolveEmployee(
   sb: SupabaseClient,
-  businessId: string | null,
   employeeId: unknown,
 ): Promise<EmployeeRef | null> {
   const id = String(employeeId ?? "").trim();
-  if (!id || !UUID_RE.test(id) || !businessId) return null;
+  if (!id || !UUID_RE.test(id)) return null;
   const { data } = await sb
     .from("kiosk_employees")
-    .select("id, name, is_active, business_id")
+    .select("id, name, is_active")
     .eq("id", id)
-    .maybeSingle<{ id: string; name: string; is_active: boolean; business_id: string }>();
-  if (!data || !data.is_active || data.business_id !== businessId) return null;
+    .maybeSingle<{ id: string; name: string; is_active: boolean }>();
+  if (!data || !data.is_active) return null;
   return { id: data.id, name: data.name };
 }
 

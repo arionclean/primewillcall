@@ -21,22 +21,14 @@ import {
   type EmployeeActionState,
 } from "./actions";
 
-export type BusinessOption = { id: string; name: string };
 export type EmployeeRow = {
   id: string;
   name: string;
-  businessId: string;
   isActive: boolean;
   lastSeenAt: string | null;
   lastSeenKiosk: string | null;
 };
-export type KioskOption = {
-  id: string;
-  slug: string;
-  name: string;
-  businessId: string | null;
-  pinRequired: boolean;
-};
+export type KioskOption = { id: string; slug: string; name: string };
 export type ActivityRow = {
   id: number;
   at: string;
@@ -51,9 +43,6 @@ export type ActivityRow = {
 };
 
 type Props = {
-  isOwner: boolean;
-  managerBusinessId: string | null;
-  businesses: BusinessOption[];
   employees: EmployeeRow[];
   kiosks: KioskOption[];
   activity: ActivityRow[];
@@ -82,32 +71,19 @@ function lastSeen(e: EmployeeRow): string {
   return `${whenFmt.format(new Date(e.lastSeenAt))}${e.lastSeenKiosk ? ` on ${e.lastSeenKiosk}` : ""}`;
 }
 
-export function EmployeesView({
-  isOwner,
-  managerBusinessId,
-  businesses,
-  employees,
-  kiosks,
-  activity,
-  filters,
-  loadError,
-}: Props) {
+export function EmployeesView({ employees, kiosks, activity, filters, loadError }: Props) {
   // New events land within a second; the server re-renders with the same filters.
   useLiveRefresh("employees-activity", [{ table: "kiosk_events", event: "INSERT" }]);
 
   const [createState, createAction] = useActionState(createEmployeeAction, INITIAL);
-  const businessName = (id: string) => businesses.find((b) => b.id === id)?.name ?? "Unknown business";
-  const grouped = businesses
-    .map((b) => ({ business: b, people: employees.filter((e) => e.businessId === b.id) }))
-    .filter((g) => g.people.length > 0 || isOwner || g.business.id === managerBusinessId);
 
   return (
     <div className="space-y-8">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Employees</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          The people who use the tablets. Each one has a 4-digit PIN; every sale, check-in
-          and card action on a tablet is recorded under whoever typed it.
+          The people who use the tablets, at any business. Each one has a 4-digit PIN;
+          every sale, check-in and card action on a tablet is recorded under whoever typed it.
         </p>
       </header>
 
@@ -118,81 +94,43 @@ export function EmployeesView({
       )}
 
       {/* People */}
-      <section className="space-y-6">
-        {grouped.map(({ business, people }) => (
-          <div key={business.id}>
-            <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {business.name}
-            </h2>
-            {people.length === 0 ? (
-              <p className="rounded-md border border-dashed bg-muted/30 px-3 py-3 text-sm text-muted-foreground">
-                No employees yet. Add the first one below.
-              </p>
-            ) : (
-              <ul className="space-y-2">
-                {people.map((e) => (
-                  <EmployeeCard key={e.id} employee={e} />
-                ))}
-              </ul>
-            )}
-          </div>
-        ))}
+      <section>
+        {employees.length === 0 ? (
+          <p className="rounded-md border border-dashed bg-muted/30 px-3 py-3 text-sm text-muted-foreground">
+            No employees yet. Add the first one below.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {employees.map((e) => (
+              <EmployeeCard key={e.id} employee={e} />
+            ))}
+          </ul>
+        )}
       </section>
 
       {/* Add */}
       <form action={createAction} className="space-y-4">
         <FormSection
           title="Add employee"
-          description="Give them a name and a 4-digit PIN. They type the PIN on the tablet to start working."
-          contentClassName="grid gap-4 sm:grid-cols-2"
+          description="Give them a name and a 4-digit PIN. They type the PIN on any tablet to start working."
+          contentClassName="grid gap-4 sm:grid-cols-3"
         >
           <Field label="Name" htmlFor="emp-name" error={createState.fieldErrors?.name}>
             <Input id="emp-name" name="name" autoComplete="off" placeholder="Maria" required />
           </Field>
-          {isOwner ? (
-            <Field label="Business" htmlFor="emp-business" error={createState.fieldErrors?.business_id}>
-              <Select id="emp-business" name="business_id" defaultValue={businesses[0]?.id ?? ""}>
-                {businesses.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-          ) : (
-            <input type="hidden" name="business_id" value={managerBusinessId ?? ""} />
-          )}
           <Field label="PIN" htmlFor="emp-pin" error={createState.fieldErrors?.pin} hint="4 digits">
             <Input id="emp-pin" name="pin" type="password" inputMode="numeric" pattern="\d{4}" maxLength={4} autoComplete="off" required />
           </Field>
           <Field label="Confirm PIN" htmlFor="emp-pin2">
             <Input id="emp-pin2" name="pin_confirm" type="password" inputMode="numeric" pattern="\d{4}" maxLength={4} autoComplete="off" required />
           </Field>
-          <div className="sm:col-span-2 flex items-center gap-3">
+          <div className="sm:col-span-3 flex items-center gap-3">
             <SubmitButton>Add employee</SubmitButton>
             {createState.saved && <span className="text-sm text-muted-foreground">Added.</span>}
             {createState.error && <span className="text-sm text-destructive">{createState.error}</span>}
           </div>
         </FormSection>
       </form>
-
-      {/* Kiosk switch status */}
-      <FormSection
-        title="Tablets"
-        description="Which tablets ask for a PIN. Turning it on or off is done for you; ask when you want a tablet changed."
-      >
-        <ul className="divide-y text-sm">
-          {kiosks.map((k) => (
-            <li key={k.id} className="flex items-center justify-between py-2">
-              <span>
-                <span className="font-medium">{k.name}</span>
-                <span className="ml-2 text-muted-foreground">{k.slug}{k.businessId ? ` · ${businessName(k.businessId)}` : ""}</span>
-              </span>
-              <Badge tone={k.pinRequired ? "success" : "neutral"}>{k.pinRequired ? "PIN on" : "PIN off"}</Badge>
-            </li>
-          ))}
-        </ul>
-      </FormSection>
 
       {/* Activity */}
       <section className="space-y-3">

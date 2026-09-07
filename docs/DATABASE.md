@@ -424,10 +424,11 @@ business's current account.
   functions: reader connected/dropped/battery, sale started, card result with the SDK error,
   sale completed, Xano mirror results. `kiosk_slug`, `app_build`, `device_id`, and `ref` (the
   KS code) on every row. In the realtime publication. Same read policy as `cash_sales`.
-- `kiosk_employees` — the people who use the tablets (docs/kiosk-employees.md): `name`,
-  `business_id`, `pin_hash` + `pin_salt` (salted SHA-256 of a 4-digit PIN, unique among the
-  business's active employees), `is_active`, `last_seen_at` / `last_seen_kiosk`. Owner and
-  the business's manager read and write; check-in reads. Referenced by
+- `kiosk_employees` — the people who use the tablets (docs/kiosk-employees.md), one pool
+  shared by every business (no business column, by the owner's choice): `name`,
+  `pin_hash` + `pin_salt` (`sha256(salt:pin)`, unique across all active employees via the
+  `kiosk_pin_in_use` definer function), `is_active`, `last_seen_at` / `last_seen_kiosk`.
+  Any active staff reads; owner and business managers write. Referenced by
   `kiosk_events.employee_id` (+ `employee_name`), `kiosk_sales.employee_id`,
   `cash_sales.employee_id` and `bookings.kiosk_employee_id`, all `on delete set null`.
 - `kiosks.pin_required` (default false): the PIN switch. `pin_idle_lock_seconds` (120) is
