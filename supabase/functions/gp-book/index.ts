@@ -32,6 +32,7 @@ import {
   json,
   STRIPE_META,
 } from "../_shared/gp.ts";
+import { withSentry } from "../_shared/sentry.ts";
 const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
 const stripe = STRIPE_SECRET_KEY
   ? new Stripe(STRIPE_SECRET_KEY, { httpClient: Stripe.createFetchHttpClient() })
@@ -59,7 +60,7 @@ interface Body {
   imageUrl?: string | null; // legacy single-image shape, still accepted
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withSentry("gp-book", async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ ok: false, error: "POST only" }, 405);
 
@@ -284,4 +285,4 @@ Deno.serve(async (req) => {
       // Fallback: booking held as pending; fee collected manually (pre-Stripe UX).
       : { status: "stubbed", checkoutUrl: null },
   });
-});
+}));

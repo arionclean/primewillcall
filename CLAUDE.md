@@ -227,6 +227,10 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   Supabase project is ever moved to `us-east-1`, change or delete this file.
 - Always keep it green: `npx tsc --noEmit` (0 errors) and `npm run lint` (0 warnings)
   before considering a change done.
+- **Errors go to Sentry** (`docs/sentry.md`): the web app through `src/instrumentation*.ts`
+  and `app/global-error.tsx`, every edge function through `withSentry()` from
+  `_shared/sentry.ts` (wrap the handler passed to `Deno.serve`; a new function must
+  do the same). Off without `NEXT_PUBLIC_SENTRY_DSN` / the `SENTRY_DSN` secret.
 - There is no debug screen in the app: nothing internal (auth ids, roles, raw errors)
   is ever put in front of staff. To see what the server sees for a session, query
   `current_staff()` in Supabase, or read the server log.

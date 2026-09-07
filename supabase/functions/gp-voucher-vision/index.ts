@@ -40,6 +40,7 @@ import {
   voucherNamesMerchant,
 } from "../_shared/gp-match.ts";
 import { pickVoucherCode } from "../_shared/gp-voucher-code.ts";
+import { withSentry } from "../_shared/sentry.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -205,7 +206,7 @@ async function extract(
 }
 
 // ── main ──────────────────────────────────────────────────────────────────────
-Deno.serve(async (req) => {
+Deno.serve(withSentry("gp-voucher-vision", async (req) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
 
   let body: { image_url?: string; debug?: boolean };
@@ -317,4 +318,4 @@ Deno.serve(async (req) => {
     },
     200,
   );
-});
+}));

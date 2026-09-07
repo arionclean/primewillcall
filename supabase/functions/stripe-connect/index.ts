@@ -30,6 +30,7 @@ import {
 } from "../_shared/stripe.ts";
 import { corsHeaders, db, json } from "../_shared/sms.ts";
 import { requireStaff, type Staff } from "../_shared/staff-auth.ts";
+import { withSentry } from "../_shared/sentry.ts";
 
 type Action =
   | "status"
@@ -106,7 +107,7 @@ async function onboardingLink(businessId: string, accountId: string): Promise<Re
   }
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withSentry("stripe-connect", async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
 
@@ -382,4 +383,4 @@ Deno.serve(async (req) => {
     default:
       return json({ error: "Unknown action" }, 400);
   }
-});
+}));

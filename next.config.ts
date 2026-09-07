@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withSentryConfig } from "@sentry/nextjs/config";
 
 const nextConfig: NextConfig = {
   // Client-side Router Cache. Without this, Next treats every dynamic route as
@@ -24,4 +25,15 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// Sentry: uploads source maps at build time when SENTRY_ORG / SENTRY_PROJECT /
+// SENTRY_AUTH_TOKEN are set (Vercel, production), so stack traces read as the
+// TypeScript source. Without them the build still succeeds and the SDK still
+// reports errors, just against minified frames. See docs/sentry.md.
+export default withSentryConfig(nextConfig, {
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT,
+  authToken: process.env.SENTRY_AUTH_TOKEN,
+  silent: !process.env.CI,
+  widenClientFileUpload: true,
+  sourcemaps: { deleteSourcemapsAfterUpload: true },
+});

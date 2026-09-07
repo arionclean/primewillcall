@@ -18,6 +18,7 @@ import {
   twilioFromNumber,
 } from "../_shared/sms.ts";
 import { requireStaff } from "../_shared/staff-auth.ts";
+import { withSentry } from "../_shared/sentry.ts";
 
 const PAGE_SIZE = 100;
 const MAX_PAGES_PER_DIRECTION = 10;
@@ -107,7 +108,7 @@ async function syncMessagesFromTwilio(): Promise<{ imported: number; pagesFetche
   return { imported, pagesFetched };
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withSentry("sms-sync", async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
 
@@ -123,4 +124,4 @@ Deno.serve(async (req) => {
     const message = error instanceof Error ? error.message : String(error);
     return json({ error: message }, 502);
   }
-});
+}));

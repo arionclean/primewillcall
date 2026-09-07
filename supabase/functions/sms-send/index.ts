@@ -9,8 +9,9 @@
 
 import { corsHeaders, json, sendSms } from "../_shared/sms.ts";
 import { requireStaff } from "../_shared/staff-auth.ts";
+import { withSentry } from "../_shared/sentry.ts";
 
-Deno.serve(async (req) => {
+Deno.serve(withSentry("sms-send", async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
 
@@ -35,4 +36,4 @@ Deno.serve(async (req) => {
     sentByStaffId: auth.staff.id,
   });
   return json(result, result.sent ? 200 : 422);
-});
+}));

@@ -10,8 +10,9 @@
 
 import { corsHeaders, db, json } from "../_shared/gp.ts";
 import { nyNow, timeLabel } from "../_shared/ny-time.ts";
+import { withSentry } from "../_shared/sentry.ts";
 
-Deno.serve(async (req) => {
+Deno.serve(withSentry("gp-slots", async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ slots: [], error: "POST only" }, 405);
 
@@ -75,4 +76,4 @@ Deno.serve(async (req) => {
     .map(({ value, label, durationMinutes }) => ({ value, label, durationMinutes }));
 
   return json({ slots: out });
-});
+}));

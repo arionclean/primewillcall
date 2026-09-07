@@ -39,6 +39,7 @@
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { toE164 } from "../_shared/phone.ts";
+import { withSentry } from "../_shared/sentry.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -77,7 +78,7 @@ function reaskBody(name: string): string {
   );
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withSentry("enqueue-review-asks", async (req) => {
   if (!CRON_SECRET || req.headers.get("x-cron-secret") !== CRON_SECRET) {
     return new Response("Forbidden", { status: 403 });
   }
@@ -303,4 +304,4 @@ Deno.serve(async (req) => {
   }
 
   return Response.json({ asked, reasked });
-});
+}));

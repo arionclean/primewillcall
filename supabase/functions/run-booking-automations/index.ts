@@ -13,6 +13,7 @@
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { classifyPhone } from "../_shared/phone.ts";
+import { withSentry } from "../_shared/sentry.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -53,7 +54,7 @@ interface Rule {
   business_tour_ids: string[] | null;
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withSentry("run-booking-automations", async (req) => {
   if (!CRON_SECRET || req.headers.get("x-cron-secret") !== CRON_SECRET) {
     return new Response("Forbidden", { status: 403 });
   }
@@ -191,4 +192,4 @@ Deno.serve(async (req) => {
   if (insErr) return Response.json({ error: insErr.message }, { status: 500 });
 
   return Response.json({ enqueued: rows.length });
-});
+}));

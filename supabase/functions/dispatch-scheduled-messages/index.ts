@@ -17,6 +17,7 @@
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 
 import { sendWhatsapp } from "../_shared/whatsapp.ts";
+import { withSentry } from "../_shared/sentry.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -255,7 +256,7 @@ async function alertCapHit(
   await db.from("messaging_settings").update({ alert_last_sent_at: new Date().toISOString() }).eq("id", true);
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withSentry("dispatch-scheduled-messages", async (req) => {
   if (!CRON_SECRET || req.headers.get("x-cron-secret") !== CRON_SECRET) {
     return new Response("Forbidden", { status: 403 });
   }
@@ -350,4 +351,4 @@ Deno.serve(async (req) => {
     cap,
     sentLastHour: alreadySent + sent,
   });
-});
+}));
