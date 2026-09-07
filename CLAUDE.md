@@ -391,8 +391,9 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   Server posts the Xano booking + cash_sales mirror for v2 card sales (the same write the
   tablet did). Design, rollout and SQL: [`docs/kiosk-card-flow-v2.md`](docs/kiosk-card-flow-v2.md).
   **Employee PIN** (built 2026-09-07): `kiosk_employees` (4-digit PIN, hashed) + the
-  `kiosks.pin_required` switch; the tablet locks behind a keypad, auto-locks after
-  `pin_idle_lock_seconds`, and stamps the employee on every event, sale and booking
+  `kiosks.pin_required` switch; the tablet locks behind a keypad until a PIN is typed,
+  stays unlocked until the person taps Lock (no idle or background lock, no lockout on
+  wrong PINs, by the owner's choice), and stamps the employee on every event, sale and booking
   (`kiosk_events.employee_id`, `cash_sales.employee_id`, `bookings.kiosk_employee_id`).
   Managed on `/admin/employees` (owner + manager) with a live activity log. See
   [`docs/kiosk-employees.md`](docs/kiosk-employees.md).

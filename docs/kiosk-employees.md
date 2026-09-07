@@ -11,10 +11,11 @@ which iPad; the employee PIN says who.
   among the active employees of a business, so a PIN alone identifies the person on that
   business's tablets.
 - **The tablet.** When `kiosks.pin_required` is on, the app shows a keypad over everything
-  until a valid PIN is typed (`kiosk-pin-verify`). The person stays unlocked until
-  `pin_idle_lock_seconds` (default 120) pass without a touch, the app goes to the
-  background, or they tap their name at the top of the screen (Lock). A small pill with the
-  first name is the only thing added to the screens.
+  until a valid PIN is typed (`kiosk-pin-verify`). The person stays unlocked until they
+  tap their name at the top of the screen (Lock). There is no idle timer and no lock when
+  the app goes to the background: the owner tried both on a tablet and does not want a
+  keypad appearing mid-sale (`kiosks.pin_idle_lock_seconds` is kept but unused). A small
+  pill with the first name is the only thing added to the screens.
 - **Attribution.** Every event the tablet logs (`kiosk_events.employee_id / employee_name`)
   and every write it makes carries the employee: `cash_sales.employee_id`,
   `kiosk_sales.employee_id`, `bookings.kiosk_employee_id`. Check-ins are recorded as
@@ -50,4 +51,4 @@ screen re-checks every few seconds), so no reinstall.
 | `supabase/functions/kiosk-pin-verify` | the PIN check + rate limit |
 | `kiosk-config`, `kiosk-sale-start`, `kiosk-sale-complete`, `kiosk-log`, `kiosk-cash-sale`, `kiosk-booking` | accept `employee_id` |
 | `src/app/(app)/admin/employees/*`, `src/lib/kiosk/pin.ts`, `src/lib/kiosk/events.ts` | the admin page |
-| PrimeKiosk `src/services/EmployeeSession.ts`, `src/context/EmployeeSessionContext.tsx` | session, idle lock, keypad, pill |
+| PrimeKiosk `src/services/EmployeeSession.ts`, `src/context/EmployeeSessionContext.tsx` | session, keypad, pill |

@@ -10,7 +10,7 @@
 // failures is still visible on the Employees page.
 //
 // Body: { kiosk, pin, app_build?, device_id? }
-// 200 { ok, employee: { id, name }, idle_lock_seconds } | 401 bad_pin
+// 200 { ok, employee: { id, name } } | 401 bad_pin
 
 import { hashPin, PIN_RE } from "../_shared/kiosk-pin.ts";
 import { json, kioskAuthorized, logEvent, resolveKiosk, serviceClient } from "../_shared/kiosk-sale.ts";
@@ -101,7 +101,6 @@ Deno.serve(async (req) => {
     {
       ok: true,
       employee: { id: match.id, name: match.name },
-      idle_lock_seconds: kiosk.pin_idle_lock_seconds,
     },
     200,
   );
