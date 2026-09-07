@@ -38,8 +38,10 @@ export default async function AnalyticsPage({
   const supabase = await getSupabaseServerClient();
   const today = todayLocalIso(BUSINESS_TZ);
   const { from: fromParam, to: toParam } = await searchParams;
-  const from = parseLocalYmd(fromParam) ?? `${today.slice(0, 7)}-01`;
-  const to = parseLocalYmd(toParam) ?? today;
+  // Default to a single day, today. The desk question is "how did today go";
+  // the presets and the Custom range cover anything wider.
+  const from = parseLocalYmd(fromParam) ?? today;
+  const to = parseLocalYmd(toParam) ?? from;
 
   const startUtc = getLocalDateRange(from, BUSINESS_TZ).startUtc;
   const endUtc = getLocalDateRange(to, BUSINESS_TZ).endUtcExclusive;

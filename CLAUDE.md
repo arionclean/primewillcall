@@ -347,9 +347,16 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
 - `/analytics` is built, organized as in-page tabs (`analytics-tabs.tsx`, client state,
   both panels stay mounted so their filters survive tab switches):
   - **Sources & products** (`analytics-view.tsx`, RLS-scoped via the
-    `analytics_source_tour` RPC = source x tour x business aggregated in the DB): a totals
+    `analytics_source_tour` RPC = source x tour x business aggregated in the DB; the source name comes from
+    the owner-edited `booking_source_labels` table, which folds Bokun's channel names and
+    the Xano mirror's `groupon-surcharge` into readable labels without touching the
+    booking row): a totals
     header (guests / bookings / OTA + Organic split), a Group-by toggle (Source <-> Tour)
-    with reverse drill-down, date range + presets, an OTA/Organic source filter, an
+    with reverse drill-down (and a third column: click an item in the right list to see
+    the bookings behind it, from the `analytics_bookings` RPC over the browser client,
+    each linking to that booking on `/bookings`), a date picker (one calendar for a single day, default
+    today, plus Today / This month / Last 30 days / This year presets and a Custom
+    From / To range), an OTA/Organic source filter, an
     owner-only business filter (auto-shown when the data spans 2+ businesses), and
     client-side CSV export.
   - **Monthly comparison** (`monthly-comparison.tsx`): pick a month/year + product chips

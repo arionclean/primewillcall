@@ -517,6 +517,59 @@ the voucher URL (migration `groupon_voucher_codes_from_notes` scrubbed the old o
 recovered the codes of the mirrored rows from them). The Xano mirror composes the fuller
 "code X · voucher URL" note Bubble staff read from the two columns.
 
+## Analytics source labels
+
+`/analytics` groups bookings by `bookings.source_channel`, which holds whatever the
+booking system sent: Bokun stamps its own channel names ("Default Channel", "Miami
+Skyline", "www.miamicelebrityboattours.com - Website"), the Xano mirror renames /gp
+bookings from `groupon` to `groupon-surcharge`, staff entries arrive as "Manual". The same
+website showed under four names and "Default Channel" (the Bayside site's Bokun widget,
+which is where the jet ski sells) meant nothing to staff.
+
+### booking_source_labels
+
+`channel (pk, raw source_channel, matched case-insensitively), label, updated_at`. The
+`analytics_source_tour` RPC left-joins it and shows `coalesce(label, raw, 'Direct')`. A
+channel with no row shows as is. The raw value on the booking is never rewritten: RLS
+(unpaid /gp rows), the Redeem chip and the Xano mirror all key on `source_channel`. Read by
+every active staffer (the RPC is SECURITY INVOKER), edited by the owner only. There is no
+screen for it yet; edit rows in SQL. One format: an OTA is its brand name, a website
+widget is "<Site> - Website", the kiosk is "Kiosk - Card" / "Kiosk - Cash". Seeded
+2026-09-07:
+
+| Raw channel | Label |
+| --- | --- |
+| `groupon`, `groupon-surcharge` | Groupon |
+| `kiosk-sale-card`, `kiosk-sale-tap` | Kiosk - Card |
+| `kiosk-sale-cash` | Kiosk - Cash |
+| `Viator.com`, `Viator`, `Viator.com<http://viator.com/>` | Viator |
+| `civitatis.com`, `Civitatis`, `civitatis.com<http://civitatis.com/>` | Civitatis |
+| `www.tiqets.com/en/`, `www.tiqets.com` | Tiqets |
+| `www.klook.com` | Klook |
+| `headout.com` | Headout |
+| `www.tripshock.com` | TripShock |
+| `Miami Skyline`, `Miami Skyline Cruises`, `Miami Skyline Cruisees` | Miami Skyline Cruises - Website |
+| `Default Channel`, `Miami Star Island`, `Miami Star Island Cruises`, `Miami Boat Tours - Website`, `Miami Boat Tours/ Bayside Kiosk - Website`, `Miami Bayside Boat Tour`, `www.miamicelebrityboattours.com - Website` | Miami Bayside Boat Tour - Website |
+| `Miami Sunset Boat`, `Miami Sunset Boat Cruises`, `Miami Sunset Boat Cruises - Website` | Miami Sunset Boat - Website |
+| `Key West Sightseeing Tours`, `Key West Sightseeing` | Key West Sightseeing Tours - Website |
+| `Prime-combo-sale`, `Prime combo-sale`, `Prime-combo sale` | Prime Combo Sale |
+| `www.ineedtours.com` | I Need Tours |
+| `miami architecture cruise`, `Miami Architecture cruises`, `architecture cruises` | Miami Architecture Cruise |
+
+Bokun account per website, from the booking reference prefix: `4TH-` Skyline, `BOAT-`
+Bayside and jet ski, `MIA-` Star Island, `SUN-` Sunset Boat.
+
+### analytics_bookings (drill-down)
+
+`analytics_bookings(p_start, p_end, p_source, p_tour, p_business_id)` returns the
+bookings behind one source x tour cell (id, starts_at, customer, pax, status, created_at,
+source, tour, business), capped at 300 and ordered by start time. It applies the same
+range, non-cancelled filter and label mapping as `analytics_source_tour`, so the list
+always matches the number that was clicked. SECURITY INVOKER: `bookings_select` scopes the
+rows and the customers policy decides whether the name is readable (else "Guest"). Called
+from the browser when a right-list item is clicked on `/analytics`; each row links to
+`/bookings?date=<day>&booking=<id>`, the deep link the bookings page already honours.
+
 ## Access control (RLS)
 
 RLS is enabled on all app tables. Every policy is expressed through the

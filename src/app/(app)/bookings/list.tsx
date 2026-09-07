@@ -2050,6 +2050,8 @@ function EditBookingModal({
 
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // First click on Delete turns it into an inline question; second click deletes.
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const formRef = useRef<HTMLFormElement | null>(null);
@@ -2306,12 +2308,15 @@ function EditBookingModal({
     onSaved(updated);
   }
 
+  // Two clicks to delete, both inside the modal. Not window.confirm(): embedded
+  // browsers (the desktop app's preview pane, kiosk webviews) swallow native
+  // dialogs, and the click then does nothing with no explanation.
   async function handleDelete() {
     if (busy) return;
-    const shouldDelete = window.confirm(
-      `Delete booking ${booking.id.slice(0, 8).toUpperCase()}? This cannot be undone.`,
-    );
-    if (!shouldDelete) return;
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      return;
+    }
 
     setDeleting(true);
     setError(null);
@@ -2325,6 +2330,7 @@ function EditBookingModal({
     if (deleteError) {
       setError(deskError("delete the booking", deleteError));
       setDeleting(false);
+      setConfirmDelete(false);
       return;
     }
 
@@ -2583,14 +2589,36 @@ function EditBookingModal({
         <div className="flex items-center justify-between gap-3 border-t bg-muted/40 px-5 py-4">
           {caps.canDeleteBookings || role !== "check_in" ? (
             <div className="flex items-center gap-2">
-              {caps.canDeleteBookings ? (
+              {caps.canDeleteBookings && confirmDelete ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm text-muted-foreground">
+                    Delete this booking? This cannot be undone.
+                  </span>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={() => void handleDelete()}
+                    disabled={busy}
+                  >
+                    {deleting ? "Deleting..." : "Yes, delete"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setConfirmDelete(false)}
+                    disabled={busy}
+                  >
+                    Keep
+                  </Button>
+                </div>
+              ) : caps.canDeleteBookings ? (
                 <Button
                   type="button"
                   variant="destructive"
                   onClick={() => void handleDelete()}
                   disabled={busy}
                 >
-                  {deleting ? "Deleting..." : "Delete"}
+                  Delete
                 </Button>
               ) : null}
               {role !== "check_in" ? (

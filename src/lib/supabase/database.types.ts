@@ -94,6 +94,24 @@ export type Database = {
           },
         ]
       }
+      booking_source_labels: {
+        Row: {
+          channel: string
+          label: string
+          updated_at: string
+        }
+        Insert: {
+          channel: string
+          label: string
+          updated_at?: string
+        }
+        Update: {
+          channel?: string
+          label?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       bookings: {
         Row: {
           awaiting_payment: boolean
@@ -1838,6 +1856,26 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      analytics_bookings: {
+        Args: {
+          p_business_id?: string
+          p_end: string
+          p_source?: string
+          p_start: string
+          p_tour?: string
+        }
+        Returns: {
+          business: string
+          created_at: string
+          customer: string
+          id: string
+          pax: number
+          source: string
+          starts_at: string
+          status: string
+          tour: string
+        }[]
+      }
       analytics_daily_by_tour: {
         Args: { p_end: string; p_start: string; p_tz: string }
         Returns: {
