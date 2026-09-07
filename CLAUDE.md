@@ -380,6 +380,16 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   connect/terminal columns + `cash_sales`. Still needs go-live config (real Terminal
   Locations + kiosk->business mappings) and the tablet pointed here. `kiosk_tours` remains
   legacy/unused.
+  **Card flow v2** (built 2026-09-07, rolled out per kiosk): the sale is written BEFORE the
+  card is read (`kiosk-sale-start` creates a hidden pending booking + the PaymentIntent +
+  a `kiosk_sales` row), the tablet reports the reader's outcome to `kiosk-sale-complete`
+  and Stripe's status decides, and the `kiosk-sale-sweep` cron finishes any sale a dead
+  tablet left behind. Retries reuse the same intent; a captured payment the tablet never
+  acknowledged is attached to the next matching sale instead of charged again. Switch:
+  `kiosks.card_flow` (`v1` default = today's flow, untouched; `v2` per kiosk, read by the
+  tablet through `kiosk-config`). Tablet events land in `kiosk_events` via `kiosk-log`.
+  Server posts the Xano booking + cash_sales mirror for v2 card sales (the same write the
+  tablet did). Design, rollout and SQL: [`docs/kiosk-card-flow-v2.md`](docs/kiosk-card-flow-v2.md).
 - **Payments (Stripe)** are largely built (Supabase-native replication of the live Xano
   Connect model; Xano is never written to). Model: Stripe Connect **direct charges** on each
   business's connected account with a platform `application_fee` (Prime's cut). Built:
