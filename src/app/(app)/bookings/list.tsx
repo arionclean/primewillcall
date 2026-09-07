@@ -38,6 +38,11 @@ import { PhoneInput } from "@/components/ui/phone-input";
 import { Textarea } from "@/components/ui/textarea";
 import { queryKeys } from "@/lib/query/keys";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import {
+  BOOKING_VOID_REASONS,
+  OTHER_REASON,
+  resolveVoidReason,
+} from "@/lib/void-reasons";
 import { cn } from "@/lib/utils";
 
 import {
@@ -2107,7 +2112,10 @@ function EditBookingModal({
   // question with a required reason; only an owner restores one.
   const [voiding, setVoiding] = useState(false);
   const [confirmVoid, setConfirmVoid] = useState(false);
-  const [voidReason, setVoidReason] = useState("");
+  // A pick from the short list, or Other plus what they typed.
+  const [voidChoice, setVoidChoice] = useState("");
+  const [voidOther, setVoidOther] = useState("");
+  const voidReason = resolveVoidReason(voidChoice, voidOther);
   const [restoring, setRestoring] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const voided = booking.voided_at != null;
@@ -2384,9 +2392,9 @@ function EditBookingModal({
   // stamped by the database, and RLS still scopes which bookings it reaches.
   async function handleVoid() {
     if (busy) return;
-    const reason = voidReason.trim();
+    const reason = voidReason;
     if (!reason) {
-      setError("Enter a reason for voiding this booking.");
+      setError("Pick a reason for voiding this booking.");
       return;
     }
 
@@ -2727,32 +2735,54 @@ function EditBookingModal({
               the reason, and stops counting toward the manifest and reports.
               Only an owner can restore it.
             </p>
-            <label className="mt-2 grid gap-1 text-xs font-medium">
+            <label className="mt-2 grid max-w-sm gap-1 text-xs font-medium">
               Reason
-              <input
-                type="text"
-                value={voidReason}
-                onChange={(e) => setVoidReason(e.target.value)}
-                onKeyDown={(e) => {
-                  // Enter here means "void", not the form's Save.
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    void handleVoid();
-                  }
-                }}
-                placeholder="Duplicate, entered by mistake, test booking..."
-                maxLength={500}
+              <select
+                value={voidChoice}
+                onChange={(e) => setVoidChoice(e.target.value)}
                 autoFocus
                 disabled={busy}
                 className={editInputClass}
-              />
+              >
+                <option value="" disabled>
+                  Pick a reason...
+                </option>
+                {BOOKING_VOID_REASONS.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+                <option value={OTHER_REASON}>Other</option>
+              </select>
             </label>
+            {voidChoice === OTHER_REASON ? (
+              <label className="mt-2 grid max-w-sm gap-1 text-xs font-medium">
+                What happened
+                <input
+                  type="text"
+                  value={voidOther}
+                  onChange={(e) => setVoidOther(e.target.value)}
+                  onKeyDown={(e) => {
+                    // Enter here means "void", not the form's Save.
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void handleVoid();
+                    }
+                  }}
+                  placeholder="A few words"
+                  maxLength={500}
+                  autoFocus
+                  disabled={busy}
+                  className={editInputClass}
+                />
+              </label>
+            ) : null}
             <div className="mt-2 flex items-center gap-2">
               <Button
                 type="button"
                 variant="destructive"
                 onClick={() => void handleVoid()}
-                disabled={busy || !voidReason.trim()}
+                disabled={busy || !voidReason}
               >
                 {voiding ? "Voiding..." : "Void booking"}
               </Button>

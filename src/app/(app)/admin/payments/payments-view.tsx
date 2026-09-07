@@ -22,6 +22,11 @@ import {
 } from "@/lib/dashboard/queries";
 import { useLiveRefresh } from "@/lib/realtime/use-live-refresh";
 import type { Database } from "@/lib/supabase/database.types";
+import {
+  CASH_SALE_VOID_REASONS,
+  OTHER_REASON,
+  resolveVoidReason,
+} from "@/lib/void-reasons";
 
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
@@ -344,7 +349,10 @@ export function PaymentsView({
 
   // "Void this sale" dialog, cash only. `voidFor` doubles as the open/closed flag.
   const [voidFor, setVoidFor] = useState<CashSale | null>(null);
-  const [voidReason, setVoidReason] = useState("");
+  // A pick from the short list, or Other plus what they typed.
+  const [voidChoice, setVoidChoice] = useState("");
+  const [voidOther, setVoidOther] = useState("");
+  const voidReason = resolveVoidReason(voidChoice, voidOther);
   const [voidPin, setVoidPin] = useState("");
   const [voidError, setVoidError] = useState<string | null>(null);
 
@@ -431,7 +439,8 @@ export function PaymentsView({
 
   function openVoid(item: CashSale) {
     setVoidFor(item);
-    setVoidReason("");
+    setVoidChoice("");
+    setVoidOther("");
     setVoidPin("");
     setVoidError(null);
   }
@@ -441,9 +450,9 @@ export function PaymentsView({
   // like a refund, since it changes what the drawer is expected to hold.
   function submitVoid() {
     if (!voidFor) return;
-    const reason = voidReason.trim();
+    const reason = voidReason;
     if (!reason) {
-      setVoidError("Enter a reason.");
+      setVoidError("Pick a reason.");
       return;
     }
     if (!voidPin.trim()) {
@@ -1005,15 +1014,36 @@ export function PaymentsView({
 
               <label className="mt-4 flex flex-col gap-1 text-xs font-medium text-muted-foreground">
                 Reason
-                <Input
-                  type="text"
-                  value={voidReason}
-                  onChange={(e) => setVoidReason(e.target.value)}
-                  placeholder="Entered twice, wrong amount, test..."
-                  maxLength={500}
-                  className="h-9"
-                />
+                <Select
+                  className="h-9 w-full"
+                  value={voidChoice}
+                  onChange={(e) => setVoidChoice(e.target.value)}
+                >
+                  <option value="" disabled>
+                    Pick a reason…
+                  </option>
+                  {CASH_SALE_VOID_REASONS.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                  <option value={OTHER_REASON}>Other</option>
+                </Select>
               </label>
+              {voidChoice === OTHER_REASON && (
+                <label className="mt-3 flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+                  What happened
+                  <Input
+                    type="text"
+                    value={voidOther}
+                    onChange={(e) => setVoidOther(e.target.value)}
+                    placeholder="A few words"
+                    maxLength={500}
+                    autoFocus
+                    className="h-9"
+                  />
+                </label>
+              )}
 
               <label className="mt-3 flex flex-col gap-1 text-xs font-medium text-muted-foreground">
                 Passcode
@@ -1051,7 +1081,7 @@ export function PaymentsView({
                 <Button
                   type="button"
                   variant="destructive"
-                  disabled={isPending || !voidReason.trim() || !voidPin.trim()}
+                  disabled={isPending || !voidReason || !voidPin.trim()}
                   onClick={submitVoid}
                 >
                   {isPending ? "Voiding…" : "Void sale"}
