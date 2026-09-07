@@ -47,3 +47,6 @@ dbo-bookings-*.csv
 scripts/__pycache__/
 scripts/_data/
 supabase/.temp/
+
+# Xano page cache written by scripts/reconcile_xano_ghosts.py
+.reconcile-cache/

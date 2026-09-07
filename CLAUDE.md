@@ -125,7 +125,9 @@ supabase/config.toml           per-function `verify_jwt`. Not optional: the CLI 
                                only `X-Twilio-Signature`). Add an entry for every new
                                function before deploying it.
 docs/                          ARCHITECTURE, DATABASE, platform-migration, shadcn-foundation
-scripts/                       import_legacy_bookings.py (one-way Xano -> Supabase tunnel)
+scripts/                       import_legacy_bookings.py (one-way Xano -> Supabase tunnel);
+                               reconcile_xano_ghosts.py (bookings Xano deleted that still
+                               count here: dry run reports, --live VOIDS them, never deletes)
 src/app/_archive, src/components/_archive   legacy Bubble pages, kept as reference only.
                                Underscore prefix means Next does NOT route them. Do not
                                import from here in live code.

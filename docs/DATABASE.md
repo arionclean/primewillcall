@@ -162,6 +162,13 @@ maps to plain sentences.
 Cash sales carry the same stamp (`cash_sales.voided_at / voided_by / void_reason`),
 written by the `payments` function's `void_cash` action; see "Payments (Stripe)".
 
+A void is also how **Xano deletions** are reconciled. Xano's booking trigger sends
+nothing on a delete, so a booking removed in Bubble lives on here and keeps counting.
+`scripts/reconcile_xano_ghosts.py` diffs every Xano-sourced row against Xano's public
+booking listing (read-only) and, with `--live`, voids the ones Xano no longer has
+(`voided_by_staff_id` null, reason "Deleted in the old system (reconciliation <date>)").
+First run 2026-09-07: 278 bookings, all past tours.
+
 `due_cents` (default 0) is what the guest still owes at the desk, separate from the
 price in `total_cents`. The desk used to type it into the guest's name ("Alfred B Owes
 $36"); now `/schedule` takes it as its own field (`create_booking(p_due_cents)`), the
