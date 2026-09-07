@@ -107,6 +107,23 @@ export async function createBookingAction(
   const customer_phone = customer_phone_raw || null;
 
   const notes_raw = String(formData.get("notes") ?? "").trim();
+
+  // Where the booking came from. Must be one of the owner's active options, so a
+  // desk booking always lands in a category analytics knows (never blank).
+  const source_channel = String(formData.get("source_channel") ?? "").trim();
+  if (!source_channel) {
+    fieldErrors.source_channel = "Pick where this booking came from.";
+  } else {
+    const { data: sourceRow } = await supabase
+      .from("booking_source_options")
+      .select("channel")
+      .eq("channel", source_channel)
+      .eq("is_active", true)
+      .maybeSingle();
+    if (!sourceRow) {
+      fieldErrors.source_channel = "That source is not in the list.";
+    }
+  }
   const notes = notes_raw || null;
 
   if (Object.keys(fieldErrors).length > 0) {
@@ -206,6 +223,22 @@ export async function createBookingAction(
     totalOverrideCents = cents;
   }
 
+  // Due at the desk: what the guest still owes (a partner's guest paying the
+  // balance on arrival, for one). It lives on the booking, not in the guest's
+  // name, so the list shows "Owes $36" and the kiosk can collect against it.
+  let dueCents = 0;
+  const dueRaw = String(formData.get("due_amount") ?? "").trim();
+  if (dueRaw) {
+    const cleaned = dueRaw.replace(/[$,\s]/g, "");
+    if (!/^\d+(\.\d{1,2})?$/.test(cleaned)) {
+      return { fieldErrors: { due_amount: "Enter an amount like 36 or 35.50." } };
+    }
+    dueCents = Math.round(Number(cleaned) * 100);
+    if (dueCents > 100_000_00) {
+      return { fieldErrors: { due_amount: "That amount is too high." } };
+    }
+  }
+
   // Customer + booking in one transaction: a failure on the booking no longer
   // leaves an orphan customer behind.
   const { error: rpcErr } = await supabase.rpc("create_booking", {
@@ -219,7 +252,9 @@ export async function createBookingAction(
     p_customer_phone: customer_phone ?? undefined,
     p_notes: notes ?? undefined,
     p_status: "confirmed",
+    p_source_channel: source_channel,
     p_total_override_cents: totalOverrideCents ?? undefined,
+    p_due_cents: dueCents,
     p_created_by_staff_id: staff.id,
     // Staff may deliberately sell a departure that is closed or inactive on the
     // public board (a phone booking), so neither guard applies here.

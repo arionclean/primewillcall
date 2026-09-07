@@ -115,13 +115,20 @@ stripe_customer_id?, notes?, created_at, updated_at`
 status enum, total_cents, currency, pax_adult, pax_child, pax_infant,
 tour_pax_breakdown jsonb, notes?, stripe_payment_intent_id?, created_by_staff_id?,
 checked_in_at?, checked_in_by_staff_id?, source_channel?, groupon_redeemed_at?,
-created_at, updated_at`
+due_cents, created_at, updated_at`
 `status` is the payment lifecycle the app exposes: `confirmed` (normal, shown with
 no tag), `pending` (shown as "Waiting for payment"), and `cancelled`. Bookings created
 from `/schedule` start as `confirmed`. The enum (`booking_status`) also contains the
 legacy values `checked_in` and `completed`; the app no longer writes them. Check-in is
 tracked independently of status via `checked_in_at` (set/cleared by the check-in
 toggle and the check-in API), so a guest can be checked in regardless of payment status.
+
+`due_cents` (default 0) is what the guest still owes at the desk, separate from the
+price in `total_cents`. The desk used to type it into the guest's name ("Alfred B Owes
+$36"); now `/schedule` takes it as its own field (`create_booking(p_due_cents)`), the
+bookings list shows an "Owes $36" tag to every role, and the edit form clears it once
+collected. The kiosk collecting it against the booking (instead of creating a second
+sale) is the pending half.
 
 `public_token` (UNIQUE, NOT NULL, default `generate_booking_token()`) identifies a
 booking on the public booking page (`/booking/<token>`, no auth). Native bookings
@@ -558,6 +565,15 @@ widget is "<Site> - Website", the kiosk is "Kiosk - Card" / "Kiosk - Cash". Seed
 
 Bokun account per website, from the booking reference prefix: `4TH-` Skyline, `BOAT-`
 Bayside and jet ski, `MIA-` Star Island, `SUN-` Sunset Boat.
+
+### booking_source_options (what the desk can pick)
+
+`channel (pk), sort_order, is_active, updated_at`. The `/schedule` form requires a
+source and only accepts an active row; the value is stored verbatim as
+`bookings.source_channel`, so a desk booking never lands blank ("Direct") again. Seeded
+with the desk's real cases: Manual, Phone reservation, Miami Tour Bus, Big Dave, the
+OTAs phoned in (Viator, GetYourGuide, Groupon, Civitatis) and the five website labels.
+Owner-edited in SQL (no screen yet); read by every active staffer.
 
 ### analytics_bookings (drill-down)
 

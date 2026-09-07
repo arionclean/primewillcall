@@ -10,6 +10,7 @@ import { FormSection } from "@/components/ui/form-section";
 import { DateField } from "@/components/ui/date-field";
 import { Input } from "@/components/ui/input";
 import { PhoneInput } from "@/components/ui/phone-input";
+import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import type { Database } from "@/lib/supabase/database.types";
 
@@ -37,11 +38,6 @@ export type ScheduleFormTour = {
 
 const INITIAL: CreateBookingState = {};
 
-/** "a date, a departure time, and the guest name" for the missing-fields hint. */
-const LIST_FORMAT = new Intl.ListFormat("en", {
-  style: "long",
-  type: "conjunction",
-});
 
 /** "14:30:00" -> "2:30 PM". Timeslots are stored as a plain local clock time. */
 function slotLabel(t: string): string {
@@ -64,13 +60,6 @@ function todayInNewYork(): string {
   return `${get("year")}-${get("month")}-${get("day")}`;
 }
 
-function formatMoney(cents: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(cents / 100);
-}
-
 function capitalize(s: string): string {
   if (!s) return s;
   return s.charAt(0).toUpperCase() + s.slice(1);
@@ -79,10 +68,13 @@ function capitalize(s: string): string {
 export function ScheduleForm({
   role,
   tours,
+  sources,
 }: {
   staffId: string;
   role: StaffRole;
   tours: ScheduleFormTour[];
+  /** Where a booking can come from (booking_source_options), in display order. */
+  sources: string[];
 }) {
   const [state, formAction] = useActionState(
     createBookingAction,
@@ -93,13 +85,17 @@ export function ScheduleForm({
   const [date, setDate] = useState<string>(todayInNewYork());
   const [slotIndex, setSlotIndex] = useState<number>(0);
   const [pax, setPax] = useState<Record<string, number>>({});
-  const [priceOverride, setPriceOverride] = useState<string | null>(null);
   const [customer, setCustomer] = useState({
     full_name: "",
     email: "",
     phone: "",
   });
   const [notes, setNotes] = useState("");
+  // Where the booking came from. Deliberately no default: the point is to
+  // put every desk booking in the right category, so the desk has to say.
+  const [source, setSource] = useState("");
+  // What the guest still owes at the desk, typed as dollars. Optional.
+  const [dueAmount, setDueAmount] = useState("");
 
   const selected = useMemo(
     () => tours.find((t) => t.id === tourId) ?? tours[0],
@@ -120,28 +116,6 @@ export function ScheduleForm({
     return Array.from(map.values());
   }, [tours]);
 
-  // Live total.
-  const totalCents = useMemo(() => {
-    if (!selected) return 0;
-    let sum = 0;
-    for (const tier of selected.tiers) {
-      const qty = pax[tier.id] ?? 0;
-      if (qty > 0) sum += qty * tier.price_cents;
-    }
-    return sum;
-  }, [pax, selected]);
-
-  const anyQty = useMemo(() => {
-    if (!selected) return false;
-    return selected.tiers.some((t) => (pax[t.id] ?? 0) > 0);
-  }, [pax, selected]);
-
-  // Manual price. null = charge the tier prices (the common case). Once the
-  // desk types a price it sticks, even if the pax counts change after, so an
-  // agreed price is never silently overwritten. "Reset" puts it back.
-  const overridden = priceOverride !== null;
-  const priceValue = overridden ? priceOverride : (totalCents / 100).toFixed(2);
-
   function setQty(tierId: string, next: number) {
     const v = Math.max(0, Math.floor(Number.isFinite(next) ? next : 0));
     setPax((p) => ({ ...p, [tierId]: v }));
@@ -150,20 +124,6 @@ export function ScheduleForm({
   if (!selected) return null;
 
   const noSlots = selected.timeslots.length === 0;
-
-  /**
-   * What the booking still needs before it can be saved. The server action
-   * checks the same five fields and is the real gate; this only keeps the desk
-   * from submitting a booking it already knows is incomplete, and says which
-   * field is missing instead of leaving the button dead with no explanation.
-   */
-  const missing = [
-    !selected.id && "a tour",
-    !date.trim() && "a date",
-    !slot && "a departure time",
-    !customer.full_name.trim() && "the guest name",
-    !anyQty && "at least one guest",
-  ].filter((m): m is string => typeof m === "string");
 
   return (
     <form action={formAction} className="space-y-6">
@@ -180,7 +140,6 @@ export function ScheduleForm({
         value={slot ? String(slot.duration_minutes) : ""}
       />
       {/* Empty unless the desk typed a price, so the server bills tier prices. */}
-      <input type="hidden" name="total_override" value={priceOverride ?? ""} />
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Left column: booking details */}
@@ -226,6 +185,28 @@ export function ScheduleForm({
                     <span>Master: {selected.masterTourName}</span>
                   )}
               </div>
+            </Field>
+
+            <Field
+              label="Source"
+              htmlFor="source-picker"
+              error={state.fieldErrors?.source_channel}
+              hint="Where this booking came from."
+            >
+              <Select
+                id="source-picker"
+                name="source_channel"
+                value={source}
+                onChange={(e) => setSource(e.target.value)}
+                required
+              >
+                <option value="">Choose a source</option>
+                {sources.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </Select>
             </Field>
 
             <div className="grid gap-5 sm:grid-cols-2">
@@ -278,7 +259,6 @@ export function ScheduleForm({
               <div className="space-y-3">
                 {selected.tiers.map((tier) => {
                   const qty = pax[tier.id] ?? 0;
-                  const line = qty * tier.price_cents;
                   return (
                     <div
                       key={tier.id}
@@ -314,6 +294,7 @@ export function ScheduleForm({
                           onChange={(e) =>
                             setQty(tier.id, Number(e.target.value))
                           }
+                          onFocus={(e) => e.currentTarget.select()}
                           className="h-8 w-14 text-center"
                         />
                         <Button
@@ -326,14 +307,6 @@ export function ScheduleForm({
                           +
                         </Button>
                       </div>
-                      <div className="w-32 text-right text-sm tabular-nums text-muted-foreground">
-                        {"× "}
-                        {formatMoney(tier.price_cents)}
-                        {" = "}
-                        <span className="text-foreground">
-                          {formatMoney(line)}
-                        </span>
-                      </div>
                     </div>
                   );
                 })}
@@ -341,37 +314,30 @@ export function ScheduleForm({
                   <CardContent className="py-3">
                     <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="text-sm font-medium">Total</p>
-                        {overridden && (
-                          <p className="text-xs text-muted-foreground">
-                            Custom price.{" "}
-                            <button
-                              type="button"
-                              onClick={() => setPriceOverride(null)}
-                              className="underline underline-offset-2 hover:text-foreground"
-                            >
-                              Reset to {formatMoney(totalCents)}
-                            </button>
-                          </p>
-                        )}
+                        <p className="text-sm font-medium">Due at the desk</p>
+                        <p className="text-xs text-muted-foreground">
+                          Still to collect from the guest. Leave empty if paid.
+                        </p>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <span className="text-lg font-semibold text-muted-foreground">
                           $
                         </span>
                         <Input
-                          aria-label="Total price"
+                          name="due_amount"
+                          aria-label="Due amount"
                           inputMode="decimal"
-                          value={priceValue}
-                          onChange={(e) => setPriceOverride(e.target.value)}
+                          value={dueAmount}
+                          onChange={(e) => setDueAmount(e.target.value)}
                           onFocus={(e) => e.currentTarget.select()}
+                          placeholder="0.00"
                           className="h-10 w-28 text-right text-lg font-semibold tabular-nums"
                         />
                       </div>
                     </div>
-                    {state.fieldErrors?.total_override && (
+                    {state.fieldErrors?.due_amount && (
                       <p className="mt-2 text-right text-xs text-destructive">
-                        {state.fieldErrors.total_override}
+                        {state.fieldErrors.due_amount}
                       </p>
                     )}
                   </CardContent>
@@ -453,12 +419,7 @@ export function ScheduleForm({
       )}
 
       <div className="flex flex-wrap items-center gap-3">
-        <SubmitButton disabled={missing.length > 0}>Save booking</SubmitButton>
-        {missing.length > 0 && (
-          <p className="text-sm text-muted-foreground">
-            Still needed: {LIST_FORMAT.format(missing)}.
-          </p>
-        )}
+        <SubmitButton>Save booking</SubmitButton>
       </div>
     </form>
   );

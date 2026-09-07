@@ -195,7 +195,9 @@ src/app/_archive, src/components/_archive   legacy Bubble pages, kept as referen
   hand-rolled inserts. It writes the customer + booking in one transaction and takes the
   slot duration, the tier/Groupon prices and the UTC timestamps from the database, so a
   caller can only send quantities. Both the staff `/schedule` form and the public
-  `gp-book` edge function use it. It is `SECURITY INVOKER`, so RLS still scopes the
+  `gp-book` edge function use it. The form also requires a source (one of the
+  owner-edited `booking_source_options`, stored as `source_channel`) and takes an
+  optional due amount (`due_cents`, what the guest still owes at the desk). It is `SECURITY INVOKER`, so RLS still scopes the
   caller. See "create_booking()" in [`docs/DATABASE.md`](docs/DATABASE.md).
 - **Analytics / aggregation**: never fetch-all-and-sum-in-JS. Supabase caps a single
   read at **1000 rows**, so a naive month query silently truncates. Push the

@@ -162,6 +162,7 @@ export type BookingRow = {
   ends_at: string;
   status: BookingStatus;
   total_cents: number;
+  due_cents: number;
   currency: string;
   business_id: string;
   business_tour_id: string;
@@ -1510,6 +1511,9 @@ function BookingRowItem({
   const photoUrls = caps.canViewAttachments ? booking.groupon_voucher_urls : [];
 
   const totalPax = booking.pax_adult + booking.pax_child + booking.pax_infant;
+  // What the guest still owes at the desk; shown to every role, the desk
+  // collects it. Replaces the old "Owes $36" typed into the name.
+  const owes = booking.due_cents > 0 ? formatCents(booking.due_cents) : null;
   const tint = tourTint(color);
 
   return (
@@ -1532,6 +1536,7 @@ function BookingRowItem({
               <p className="truncate font-semibold">{displayName}</p>
             </HoverTooltip>
             {badge ? <Badge tone={badge.tone}>{badge.label}</Badge> : null}
+            {owes ? <Badge tone="warning">Owes {owes}</Badge> : null}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
             <span className="font-mono tabular-nums">#{shortRef}</span>
@@ -1658,9 +1663,10 @@ function BookingRowItem({
         <HoverTooltip label={name}>
           <p className="truncate font-semibold">{displayName}</p>
         </HoverTooltip>
-        {badge ? (
-          <div className="mt-0.5">
-            <Badge tone={badge.tone}>{badge.label}</Badge>
+        {badge || owes ? (
+          <div className="mt-0.5 flex flex-wrap gap-1">
+            {badge ? <Badge tone={badge.tone}>{badge.label}</Badge> : null}
+            {owes ? <Badge tone="warning">Owes {owes}</Badge> : null}
           </div>
         ) : null}
         {voucherCodes.length > 0 ? (
@@ -2047,6 +2053,8 @@ function EditBookingModal({
   // price by hand, which then wins.
   const [price, setPrice] = useState(centsToInput(booking.total_cents));
   const [priceTouched, setPriceTouched] = useState(false);
+  // What the guest still owes at the desk. Cleared to 0 once collected.
+  const [due, setDue] = useState(centsToInput(booking.due_cents));
 
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -2197,6 +2205,13 @@ function EditBookingModal({
     }
     totalCents = chargedCents;
 
+    const dueCents = due.trim() ? priceInputToCents(due) : 0;
+    if (dueCents === null) {
+      setError("Enter the due amount like 36 or 35.50.");
+      setSaving(false);
+      return;
+    }
+
     const supabase = getSupabaseBrowserClient();
     const { error: bookingError } = await supabase
       .from("bookings")
@@ -2210,6 +2225,7 @@ function EditBookingModal({
         status,
         notes: notes.trim() ? notes.trim() : null,
         total_cents: totalCents,
+        due_cents: dueCents,
         tour_pax_breakdown: breakdown,
       })
       .eq("id", booking.id);
@@ -2289,6 +2305,7 @@ function EditBookingModal({
       status,
       notes: notes.trim() ? notes.trim() : null,
       total_cents: totalCents,
+      due_cents: dueCents,
       customer_id: nextCustomerId,
       customer: nextCustomer,
       business_tour: updatedTour
@@ -2458,6 +2475,27 @@ function EditBookingModal({
                       </button>
                     </span>
                   )}
+              </label>
+
+              <label className={cn(editFieldClass, "max-w-xs")}>
+                Due at the desk
+                <span className="relative block">
+                  <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                    $
+                  </span>
+                  <input
+                    inputMode="decimal"
+                    value={due}
+                    disabled={busy}
+                    onChange={(e) => setDue(e.target.value)}
+                    onFocus={(e) => e.currentTarget.select()}
+                    placeholder="0.00"
+                    className={cn(editInputClass, "pl-6 text-right tabular-nums")}
+                  />
+                </span>
+                <span className="text-xs font-normal text-muted-foreground">
+                  Still to collect from the guest. 0 when paid.
+                </span>
               </label>
 
               <label className={cn(editFieldClass, "max-w-xs")}>

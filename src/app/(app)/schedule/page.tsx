@@ -6,6 +6,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { getCurrentStaff } from "@/lib/auth";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { getAnalyticsSourceTour } from "@/lib/dashboard/queries";
 
 import { ScheduleForm, type ScheduleFormTour } from "./form";
 
@@ -57,9 +58,35 @@ export default async function SchedulePage() {
     }
   }
 
-  const { data: rows, error } = await query;
+  // The busiest business comes first in the picker, and within it the busiest
+  // product, so the default is what the desk sells most. Volume is bookings 30
+  // days back to 30 days ahead, from the same aggregate the analytics page uses.
+  // RLS scopes it, so a manager only ever sees their own business.
+  const DAY = 24 * 60 * 60 * 1000;
+  const [{ data: rows, error }, recent, { data: sourceRows }] = await Promise.all([
+    query,
+    getAnalyticsSourceTour(
+      supabase,
+      new Date(Date.now() - 30 * DAY).toISOString(),
+      new Date(Date.now() + 30 * DAY).toISOString(),
+    ),
+    // Where the booking came from: the owner-edited list the form must pick from.
+    supabase
+      .from("booking_source_options")
+      .select("channel")
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true }),
+  ]);
+  const sources = (sourceRows ?? []).map((r) => r.channel);
   if (error) {
     console.error("[schedule] business_tours fetch error:", error);
+  }
+  const paxByBusiness = new Map<string, number>();
+  const paxByTour = new Map<string, number>(); // key: business id + master tour name
+  for (const r of recent) {
+    paxByBusiness.set(r.businessId, (paxByBusiness.get(r.businessId) ?? 0) + r.pax);
+    const k = `${r.businessId}|${r.tour}`;
+    paxByTour.set(k, (paxByTour.get(k) ?? 0) + r.pax);
   }
 
   const tours: ScheduleFormTour[] = (rows ?? [])
@@ -128,8 +155,16 @@ export default async function SchedulePage() {
     .filter((t) => t.masterIsActive && t.variantIsActive)
     .filter((t) => assignedTourIds === null || assignedTourIds.has(t.masterTourId))
     .sort((a, b) => {
+      const byVolume =
+        (paxByBusiness.get(b.businessId) ?? 0) -
+        (paxByBusiness.get(a.businessId) ?? 0);
+      if (byVolume !== 0) return byVolume;
       const byBiz = a.businessName.localeCompare(b.businessName);
       if (byBiz !== 0) return byBiz;
+      const byTourVolume =
+        (paxByTour.get(`${b.businessId}|${b.masterTourName}`) ?? 0) -
+        (paxByTour.get(`${a.businessId}|${a.masterTourName}`) ?? 0);
+      if (byTourVolume !== 0) return byTourVolume;
       return a.name.localeCompare(b.name);
     });
 
@@ -165,7 +200,12 @@ export default async function SchedulePage() {
             </CardContent>
           </Card>
         ) : (
-          <ScheduleForm staffId={staff.id} role={role} tours={tours} />
+          <ScheduleForm
+            staffId={staff.id}
+            role={role}
+            tours={tours}
+            sources={sources}
+          />
         )}
       </div>
     </div>

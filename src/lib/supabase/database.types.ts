@@ -112,6 +112,27 @@ export type Database = {
         }
         Relationships: []
       }
+      booking_source_options: {
+        Row: {
+          channel: string
+          is_active: boolean
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          channel: string
+          is_active?: boolean
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          channel?: string
+          is_active?: boolean
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       bookings: {
         Row: {
           awaiting_payment: boolean
@@ -123,6 +144,7 @@ export type Database = {
           created_by_staff_id: string | null
           currency: string
           customer_id: string
+          due_cents: number
           ends_at: string
           groupon_redeemed_at: string | null
           groupon_voucher_codes: string[]
@@ -155,6 +177,7 @@ export type Database = {
           created_by_staff_id?: string | null
           currency?: string
           customer_id: string
+          due_cents?: number
           ends_at: string
           groupon_redeemed_at?: string | null
           groupon_voucher_codes?: string[]
@@ -187,6 +210,7 @@ export type Database = {
           created_by_staff_id?: string | null
           currency?: string
           customer_id?: string
+          due_cents?: number
           ends_at?: string
           groupon_redeemed_at?: string | null
           groupon_voucher_codes?: string[]
@@ -1948,6 +1972,7 @@ export type Database = {
           p_customer_name: string
           p_customer_phone?: string
           p_date: string
+          p_due_cents?: number
           p_groupon_voucher_codes?: string[]
           p_groupon_voucher_urls?: string[]
           p_legacy_reference?: string
