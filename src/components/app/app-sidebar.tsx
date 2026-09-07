@@ -38,6 +38,7 @@ type NavItem = {
   roles: StaffRole[];
   matchPrefix?: string; // path prefix that highlights this item
   needsCreateBookings?: boolean; // hidden when the staffer can't create bookings
+  needsCaja?: boolean; // hidden when the staffer's Caja switch is off
   badge?: BadgeKey; // renders its own outstanding-work count, fetched after paint
 };
 
@@ -71,13 +72,14 @@ const SECTIONS: NavSection[] = [
       {
         // Selling desk staff's own money for the day (cash + card) plus the
         // end-of-night caja reconciliation. check_in only; owner/manager use the
-        // fuller /admin/payments ledger. Add needsCreateBookings here to hide it
-        // from reader-only tablets once those are in use.
+        // fuller /admin/payments ledger. Per-staff switch (can_use_caja), so a
+        // tablet that only checks guests in does not get it.
         href: "/caja",
         label: "Caja",
         icon: Wallet,
         roles: ["check_in"],
         matchPrefix: "/caja",
+        needsCaja: true,
       },
       {
         href: "/customers",
@@ -185,10 +187,12 @@ const SECTIONS: NavSection[] = [
 export function AppSidebar({
   role,
   canCreateBookings,
+  canUseCaja,
   onNavigate,
 }: {
   role: StaffRole;
   canCreateBookings: boolean;
+  canUseCaja: boolean;
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
@@ -227,7 +231,8 @@ export function AppSidebar({
         const visible = section.items.filter(
           (it) =>
             it.roles.includes(role) &&
-            (!it.needsCreateBookings || canCreateBookings),
+            (!it.needsCreateBookings || canCreateBookings) &&
+            (!it.needsCaja || canUseCaja),
         );
         if (visible.length === 0) return null;
         return (

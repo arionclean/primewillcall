@@ -17,8 +17,9 @@ import {
   serviceClient,
   xanoMirrorEnabled,
 } from "../_shared/kiosk-sale.ts";
+import { withSentry } from "../_shared/sentry.ts";
 
-Deno.serve(async (req) => {
+Deno.serve(withSentry("kiosk-config", async (req) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
   if (!kioskAuthorized(req)) return json({ error: "unauthorized" }, 401);
 
@@ -82,4 +83,4 @@ Deno.serve(async (req) => {
     },
     200,
   );
-});
+}));

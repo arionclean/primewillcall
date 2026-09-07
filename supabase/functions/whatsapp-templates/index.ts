@@ -16,6 +16,7 @@
 
 import { corsHeaders, json, twilioAuthHeader } from "../_shared/sms.ts";
 import { requireStaff } from "../_shared/staff-auth.ts";
+import { withSentry } from "../_shared/sentry.ts";
 
 const CONTENT_API = "https://content.twilio.com/v1";
 
@@ -98,7 +99,7 @@ async function createTemplate(input: { name: string; body: string; category: str
   return { sid: created.sid };
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withSentry("whatsapp-templates", async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   const auth = await requireStaff(req);
@@ -144,4 +145,4 @@ Deno.serve(async (req) => {
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : String(error) }, 502);
   }
-});
+}));

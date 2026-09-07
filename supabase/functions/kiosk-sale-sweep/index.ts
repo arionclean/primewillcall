@@ -30,10 +30,11 @@ import {
   xanoMirrorEnabled,
   type SaleRow,
 } from "../_shared/kiosk-sale.ts";
+import { withSentry } from "../_shared/sentry.ts";
 
 const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
 
-Deno.serve(async (req) => {
+Deno.serve(withSentry("kiosk-sale-sweep", async (req) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
   if (!CRON_SECRET || req.headers.get("x-cron-secret") !== CRON_SECRET) {
     return json({ error: "unauthorized" }, 401);
@@ -124,4 +125,4 @@ Deno.serve(async (req) => {
   }
 
   return json({ ok: true, ...counts }, 200);
-});
+}));

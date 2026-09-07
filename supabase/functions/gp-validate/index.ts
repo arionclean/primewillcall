@@ -18,6 +18,7 @@
 // Body: multipart/form-data with `file`.
 
 import { corsHeaders, db, json, SERVICE_KEY, SUPABASE_URL } from "../_shared/gp.ts";
+import { withSentry } from "../_shared/sentry.ts";
 
 const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
 const ALLOWED = new Set(["image/png", "image/jpeg", "image/jpg", "image/webp"]);
@@ -61,7 +62,7 @@ async function classifyVoucherImage(imageUrl: string): Promise<VisionResult | nu
   }
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withSentry("gp-validate", async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ valid: false, error: "POST only" }, 405);
 
@@ -151,4 +152,4 @@ Deno.serve(async (req) => {
     voucherCode,
     imageUrl,
   });
-});
+}));

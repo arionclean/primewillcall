@@ -20,6 +20,7 @@
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { parseBookingEmail } from "../_shared/parse-booking-email.ts";
+import { withSentry } from "../_shared/sentry.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -195,7 +196,7 @@ async function learnAlias(tourId: string, rawName: string): Promise<boolean> {
   return !error;
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withSentry("email-booking-parse", async (req) => {
   if (req.method !== "POST" && req.method !== "GET") {
     return json({ error: "use GET or POST" }, 405);
   }
@@ -392,4 +393,4 @@ Deno.serve(async (req) => {
     },
     200,
   );
-});
+}));

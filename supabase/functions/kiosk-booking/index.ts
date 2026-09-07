@@ -19,6 +19,7 @@
 // KIOSK_SHARED_SECRET. SUPABASE_URL is provided by the platform.
 
 import { resolveEmployee, serviceClient } from "../_shared/kiosk-sale.ts";
+import { withSentry } from "../_shared/sentry.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const WEBHOOK_SECRET = Deno.env.get("XANO_WEBHOOK_SECRET") ?? "";
@@ -57,7 +58,7 @@ function stripEmployee(rec: Record<string, unknown>): { rec: Record<string, unkn
   return { rec: rest, employeeId: employee_id ? String(employee_id) : null };
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withSentry("kiosk-booking", async (req) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
   if (KIOSK_SHARED_SECRET && req.headers.get("x-kiosk-secret") !== KIOSK_SHARED_SECRET) {
     return json({ error: "unauthorized" }, 401);
@@ -119,4 +120,4 @@ Deno.serve(async (req) => {
     const message = err instanceof Error ? err.message : "sync_call_failed";
     return json({ error: "sync_error", message }, 502);
   }
-});
+}));

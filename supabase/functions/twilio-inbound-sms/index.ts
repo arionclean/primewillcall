@@ -38,6 +38,7 @@ import {
   SUPABASE_URL,
 } from "../_shared/sms.ts";
 import { isWhatsappAddress, logWhatsappMessage, stripWhatsappPrefix } from "../_shared/whatsapp.ts";
+import { withSentry } from "../_shared/sentry.ts";
 
 const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY") ?? "";
 const APP_URL = (Deno.env.get("APP_URL") ?? "https://primewillcall.vercel.app").replace(/\/+$/, "");
@@ -398,7 +399,7 @@ async function handleInboundReviewReply(fromPhone: string, body: string): Promis
 
 /* ------------------------------------------------------------ the handler */
 
-Deno.serve(async (req) => {
+Deno.serve(withSentry("twilio-inbound-sms", async (req) => {
   if (req.method !== "POST") return new Response("POST only", { status: 405 });
 
   const form = await req.formData();
@@ -473,4 +474,4 @@ Deno.serve(async (req) => {
   }
 
   return twiml();
-});
+}));

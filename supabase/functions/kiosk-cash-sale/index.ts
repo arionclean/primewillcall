@@ -16,6 +16,7 @@
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { resolveEmployee } from "../_shared/kiosk-sale.ts";
+import { withSentry } from "../_shared/sentry.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -40,7 +41,7 @@ function toCents(body: { amount_cents?: unknown; amount?: unknown }): number {
   return Number.isFinite(dollars) ? Math.round(dollars * 100) : 0;
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withSentry("kiosk-cash-sale", async (req) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
   if (KIOSK_SHARED_SECRET && req.headers.get("x-kiosk-secret") !== KIOSK_SHARED_SECRET) {
     return json({ error: "unauthorized" }, 401);
@@ -106,4 +107,4 @@ Deno.serve(async (req) => {
   if (error) return json({ error: "insert_failed", message: error.message }, 500);
 
   return json({ ok: true, id: data?.id ?? null }, 200);
-});
+}));

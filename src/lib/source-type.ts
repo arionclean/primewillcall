@@ -18,6 +18,9 @@ const OTA_KEYWORDS = [
   "musement",
   "airbnb",
   "booking.com",
+  "tripshock",
+  "i need tours",
+  "eventbrite",
 ];
 
 export function classifySource(source: string): SourceType {

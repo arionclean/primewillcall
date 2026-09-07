@@ -14,6 +14,7 @@
 
 import { hashPin, PIN_RE } from "../_shared/kiosk-pin.ts";
 import { json, kioskAuthorized, logEvent, resolveKiosk, serviceClient } from "../_shared/kiosk-sale.ts";
+import { withSentry } from "../_shared/sentry.ts";
 
 interface EmployeeRow {
   id: string;
@@ -34,7 +35,7 @@ function afterReply(work: Promise<unknown>) {
   else return settled;
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withSentry("kiosk-pin-verify", async (req) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
   if (!kioskAuthorized(req)) return json({ error: "unauthorized" }, 401);
 
@@ -104,4 +105,4 @@ Deno.serve(async (req) => {
     },
     200,
   );
-});
+}));

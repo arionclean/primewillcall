@@ -14,6 +14,7 @@
 import { corsHeaders, json, normalizeUsPhone } from "../_shared/sms.ts";
 import { requireStaff } from "../_shared/staff-auth.ts";
 import { isWindowOpen, sendWhatsapp, stripWhatsappPrefix } from "../_shared/whatsapp.ts";
+import { withSentry } from "../_shared/sentry.ts";
 
 interface Payload {
   to?: string;
@@ -24,7 +25,7 @@ interface Payload {
   customerId?: string;
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withSentry("whatsapp-send", async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
 
@@ -61,4 +62,4 @@ Deno.serve(async (req) => {
   });
 
   return json({ ...result, windowOpen }, result.sent ? 200 : 422);
-});
+}));

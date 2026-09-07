@@ -32,6 +32,9 @@ export default async function CajaPage({
   if (!staff || !staff.is_active) redirect("/login?next=/caja");
   // Owner spans every business; the full ledger is their tool.
   if (staff.role === "owner") redirect("/admin/payments");
+  // Per-staff switch (Team page). RLS backs it: current_kiosk_slug() is NULL
+  // without it, so this account could not read the kiosk's money anyway.
+  if (!staff.can_use_caja) redirect("/bookings");
   if (!staff.business_id) redirect("/bookings");
   const businessId = staff.business_id;
   // The check-in login IS the kiosk; it sells and reconciles as this slug.

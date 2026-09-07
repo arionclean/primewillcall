@@ -72,6 +72,7 @@ type Props = {
     can_view_attachments: boolean;
     can_redeem_groupon: boolean;
     can_view_details: boolean;
+    can_use_caja: boolean;
   };
   businesses: { id: string; name: string }[];
   tours: { id: string; name: string }[];
@@ -87,7 +88,8 @@ const CAPABILITY_OPTIONS: {
     | "can_add_to_peek"
     | "can_view_attachments"
     | "can_redeem_groupon"
-    | "can_view_details";
+    | "can_view_details"
+    | "can_use_caja";
   label: string;
   hint: string;
 }[] = [
@@ -120,6 +122,11 @@ const CAPABILITY_OPTIONS: {
     name: "can_redeem_groupon",
     label: "Redeem Groupon vouchers",
     hint: "Show the Redemption Codes and the Redeem toggle on Groupon bookings.",
+  },
+  {
+    name: "can_use_caja",
+    label: "Use Caja",
+    hint: "Open Caja: the desk's own cash and card for the day, and the end-of-night count. Check-in logins only.",
   },
   {
     name: "can_view_details",

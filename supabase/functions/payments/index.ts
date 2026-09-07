@@ -23,6 +23,7 @@ import {
 } from "../_shared/stripe.ts";
 import { corsHeaders, db, json, SUPABASE_URL } from "../_shared/sms.ts";
 import { requireStaff, type Staff } from "../_shared/staff-auth.ts";
+import { withSentry } from "../_shared/sentry.ts";
 
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const REFUND_PIN = Deno.env.get("REFUND_PIN") ?? "";
@@ -93,7 +94,7 @@ function refundableError(
   return { amount };
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withSentry("payments", async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
 
@@ -388,4 +389,4 @@ Deno.serve(async (req) => {
     default:
       return json({ error: "Unknown action" }, 400);
   }
-});
+}));

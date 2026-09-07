@@ -18,6 +18,7 @@ import Stripe from "npm:stripe@22.3.0";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 import { mirrorGrouponBooking } from "../_shared/gp-xano-mirror.ts";
+import { withSentry } from "../_shared/sentry.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -41,7 +42,7 @@ function json(obj: unknown, status: number): Response {
   return new Response(JSON.stringify(obj), { status, headers: { "content-type": "application/json" } });
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withSentry("stripe-webhook", async (req) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
   if (!STRIPE_SECRET_KEY || WEBHOOK_SECRETS.length === 0) {
     return json({ error: "not_configured" }, 503);
@@ -93,7 +94,7 @@ Deno.serve(async (req) => {
   }
 
   return json({ received: true }, 200);
-});
+}));
 
 async function handleEvent(event: Stripe.Event): Promise<void> {
   switch (event.type) {

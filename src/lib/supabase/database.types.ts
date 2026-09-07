@@ -1531,6 +1531,7 @@ export type Database = {
           can_delete_bookings: boolean
           can_edit_bookings: boolean
           can_redeem_groupon: boolean
+          can_use_caja: boolean
           can_view_attachments: boolean
           can_view_details: boolean
           created_at: string
@@ -1552,6 +1553,7 @@ export type Database = {
           can_delete_bookings?: boolean
           can_edit_bookings?: boolean
           can_redeem_groupon?: boolean
+          can_use_caja?: boolean
           can_view_attachments?: boolean
           can_view_details?: boolean
           created_at?: string
@@ -1573,6 +1575,7 @@ export type Database = {
           can_delete_bookings?: boolean
           can_edit_bookings?: boolean
           can_redeem_groupon?: boolean
+          can_use_caja?: boolean
           can_view_attachments?: boolean
           can_view_details?: boolean
           created_at?: string

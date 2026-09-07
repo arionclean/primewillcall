@@ -20,9 +20,9 @@ import { parsePaymentsSearch } from "./search";
  * out. Totals come from the payments_summary RPC, also aggregated in the DB.
  */
 
-// Default window: the current month to date, in business time
-// (America/New_York) so the server default matches the client's "This month"
-// range preset.
+// Default window: today, in business time (America/New_York), so the server
+// default matches the client's "Today" range preset. The desk question is
+// "what did we take today"; the presets cover anything wider.
 
 // Source filter values are kiosk slugs (from the kiosks table) plus the
 // static channels; accept anything slug-shaped, the queries are parameterized.
@@ -50,7 +50,7 @@ export default async function PaymentsPage({
 
   const sp = await searchParams;
   const to = sp.to ?? nyDateISO();
-  const from = sp.from ?? `${to.slice(0, 8)}01`;
+  const from = sp.from ?? to;
   const businessFilter = sp.business && sp.business !== "" ? sp.business : null;
   const sourceFilter =
     sp.source && SOURCE_RE.test(sp.source) ? sp.source : null;

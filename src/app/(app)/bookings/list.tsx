@@ -162,6 +162,7 @@ export type BookingRow = {
   ends_at: string;
   status: BookingStatus;
   total_cents: number;
+  due_cents: number;
   currency: string;
   business_id: string;
   business_tour_id: string;
@@ -547,8 +548,9 @@ type Group = {
   checkedPax: number;
 };
 
+/** Seats: adults + children. Infants ride on a lap and are not counted here. */
 function paxOf(b: BookingRow): number {
-  return (b.pax_adult ?? 0) + (b.pax_child ?? 0) + (b.pax_infant ?? 0);
+  return (b.pax_adult ?? 0) + (b.pax_child ?? 0);
 }
 
 function groupByTime(rows: BookingRow[]): Group[] {
@@ -1509,7 +1511,11 @@ function BookingRowItem({
   const canEdit = caps.canEditBookings && caps.canViewDetails;
   const photoUrls = caps.canViewAttachments ? booking.groupon_voucher_urls : [];
 
-  const totalPax = booking.pax_adult + booking.pax_child + booking.pax_infant;
+  // Seats (adults + children); the infant count has its own slot in the row.
+  const totalPax = booking.pax_adult + booking.pax_child;
+  // What the guest still owes at the desk; shown to every role, the desk
+  // collects it. Replaces the old "Owes $36" typed into the name.
+  const owes = booking.due_cents > 0 ? formatCents(booking.due_cents) : null;
   const tint = tourTint(color);
 
   return (
@@ -1532,6 +1538,7 @@ function BookingRowItem({
               <p className="truncate font-semibold">{displayName}</p>
             </HoverTooltip>
             {badge ? <Badge tone={badge.tone}>{badge.label}</Badge> : null}
+            {owes ? <Badge tone="warning">Owes {owes}</Badge> : null}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
             <span className="font-mono tabular-nums">#{shortRef}</span>
@@ -1658,9 +1665,10 @@ function BookingRowItem({
         <HoverTooltip label={name}>
           <p className="truncate font-semibold">{displayName}</p>
         </HoverTooltip>
-        {badge ? (
-          <div className="mt-0.5">
-            <Badge tone={badge.tone}>{badge.label}</Badge>
+        {badge || owes ? (
+          <div className="mt-0.5 flex flex-wrap gap-1">
+            {badge ? <Badge tone={badge.tone}>{badge.label}</Badge> : null}
+            {owes ? <Badge tone="warning">Owes {owes}</Badge> : null}
           </div>
         ) : null}
         {voucherCodes.length > 0 ? (
@@ -2047,9 +2055,13 @@ function EditBookingModal({
   // price by hand, which then wins.
   const [price, setPrice] = useState(centsToInput(booking.total_cents));
   const [priceTouched, setPriceTouched] = useState(false);
+  // What the guest still owes at the desk. Cleared to 0 once collected.
+  const [due, setDue] = useState(centsToInput(booking.due_cents));
 
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // First click on Delete turns it into an inline question; second click deletes.
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const formRef = useRef<HTMLFormElement | null>(null);
@@ -2195,6 +2207,13 @@ function EditBookingModal({
     }
     totalCents = chargedCents;
 
+    const dueCents = due.trim() ? priceInputToCents(due) : 0;
+    if (dueCents === null) {
+      setError("Enter the due amount like 36 or 35.50.");
+      setSaving(false);
+      return;
+    }
+
     const supabase = getSupabaseBrowserClient();
     const { error: bookingError } = await supabase
       .from("bookings")
@@ -2208,6 +2227,7 @@ function EditBookingModal({
         status,
         notes: notes.trim() ? notes.trim() : null,
         total_cents: totalCents,
+        due_cents: dueCents,
         tour_pax_breakdown: breakdown,
       })
       .eq("id", booking.id);
@@ -2287,6 +2307,7 @@ function EditBookingModal({
       status,
       notes: notes.trim() ? notes.trim() : null,
       total_cents: totalCents,
+      due_cents: dueCents,
       customer_id: nextCustomerId,
       customer: nextCustomer,
       business_tour: updatedTour
@@ -2306,12 +2327,15 @@ function EditBookingModal({
     onSaved(updated);
   }
 
+  // Two clicks to delete, both inside the modal. Not window.confirm(): embedded
+  // browsers (the desktop app's preview pane, kiosk webviews) swallow native
+  // dialogs, and the click then does nothing with no explanation.
   async function handleDelete() {
     if (busy) return;
-    const shouldDelete = window.confirm(
-      `Delete booking ${booking.id.slice(0, 8).toUpperCase()}? This cannot be undone.`,
-    );
-    if (!shouldDelete) return;
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      return;
+    }
 
     setDeleting(true);
     setError(null);
@@ -2325,6 +2349,7 @@ function EditBookingModal({
     if (deleteError) {
       setError(deskError("delete the booking", deleteError));
       setDeleting(false);
+      setConfirmDelete(false);
       return;
     }
 
@@ -2452,6 +2477,27 @@ function EditBookingModal({
                       </button>
                     </span>
                   )}
+              </label>
+
+              <label className={cn(editFieldClass, "max-w-xs")}>
+                Due at the desk
+                <span className="relative block">
+                  <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                    $
+                  </span>
+                  <input
+                    inputMode="decimal"
+                    value={due}
+                    disabled={busy}
+                    onChange={(e) => setDue(e.target.value)}
+                    onFocus={(e) => e.currentTarget.select()}
+                    placeholder="0.00"
+                    className={cn(editInputClass, "pl-6 text-right tabular-nums")}
+                  />
+                </span>
+                <span className="text-xs font-normal text-muted-foreground">
+                  Still to collect from the guest. 0 when paid.
+                </span>
               </label>
 
               <label className={cn(editFieldClass, "max-w-xs")}>
@@ -2583,14 +2629,36 @@ function EditBookingModal({
         <div className="flex items-center justify-between gap-3 border-t bg-muted/40 px-5 py-4">
           {caps.canDeleteBookings || role !== "check_in" ? (
             <div className="flex items-center gap-2">
-              {caps.canDeleteBookings ? (
+              {caps.canDeleteBookings && confirmDelete ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm text-muted-foreground">
+                    Delete this booking? This cannot be undone.
+                  </span>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={() => void handleDelete()}
+                    disabled={busy}
+                  >
+                    {deleting ? "Deleting..." : "Yes, delete"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setConfirmDelete(false)}
+                    disabled={busy}
+                  >
+                    Keep
+                  </Button>
+                </div>
+              ) : caps.canDeleteBookings ? (
                 <Button
                   type="button"
                   variant="destructive"
                   onClick={() => void handleDelete()}
                   disabled={busy}
                 >
-                  {deleting ? "Deleting..." : "Delete"}
+                  Delete
                 </Button>
               ) : null}
               {role !== "check_in" ? (

@@ -24,6 +24,7 @@ type AppTopbarProps = {
   role: StaffRole;
   fullName: string;
   canCreateBookings: boolean;
+  canUseCaja: boolean;
   businessId: string | null;
 };
 
@@ -31,6 +32,7 @@ export function AppTopbar({
   role,
   fullName,
   canCreateBookings,
+  canUseCaja,
   businessId,
 }: AppTopbarProps) {
   return (
@@ -40,6 +42,7 @@ export function AppTopbar({
           <MobileNav
             role={role}
             canCreateBookings={canCreateBookings}
+            canUseCaja={canUseCaja}
             businessId={businessId}
           />
           <Link

@@ -13,6 +13,7 @@
 // Body: { kiosk, app_build?, device_id?, events: [{ event, level?, ref?, payload?, at? }] }
 
 import { json, kioskAuthorized, resolveEmployee, resolveKiosk, serviceClient } from "../_shared/kiosk-sale.ts";
+import { withSentry } from "../_shared/sentry.ts";
 
 const LEVELS = new Set(["debug", "info", "warn", "error"]);
 const MAX_EVENTS = 100;
@@ -33,7 +34,7 @@ function clientAt(v: unknown): string | null {
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withSentry("kiosk-log", async (req) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
   if (!kioskAuthorized(req)) return json({ error: "unauthorized" }, 401);
 
@@ -97,4 +98,4 @@ Deno.serve(async (req) => {
   const { error } = await sb.from("kiosk_events").insert(rows);
   if (error) return json({ error: "insert_failed", message: error.message }, 500);
   return json({ ok: true, inserted: rows.length }, 200);
-});
+}));

@@ -13,6 +13,7 @@
 // need a Supabase token; the shared secret is the guard.
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { withSentry } from "../_shared/sentry.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -387,7 +388,7 @@ function json(obj: unknown, status: number): Response {
   });
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withSentry("xano-booking-sync", async (req) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
   if (!WEBHOOK_SECRET) {
     return json({ error: "server not configured: set XANO_WEBHOOK_SECRET" }, 503);
@@ -463,4 +464,4 @@ Deno.serve(async (req) => {
     },
     200,
   );
-});
+}));

@@ -52,7 +52,9 @@ account without edit to those stamps). Two are view switches
 (`can_view_details`, `can_view_attachments`): off, the bookings page shows only the
 ID, name, phone, guests and check-in status, or hides the voucher photos. Those are
 screen-level (RLS cannot hide a column): `bookingSelect()` leaves the withheld columns
-out of the read. Owners always have all eight. See `docs/DATABASE.md`.
+out of the read. One is a screen switch, `can_use_caja` (default on): whether a check-in
+login gets the Caja screen; `current_kiosk_slug()` returns NULL without it, so RLS
+backs it. Owners always have all nine. See `docs/DATABASE.md`.
 
 A Postgres trigger links `auth.users` to a `staff` row by email on sign-up. The
 `current_staff()` SECURITY DEFINER function returns `(staff_id, role, business_id)` and
@@ -195,7 +197,9 @@ src/app/_archive, src/components/_archive   legacy Bubble pages, kept as referen
   hand-rolled inserts. It writes the customer + booking in one transaction and takes the
   slot duration, the tier/Groupon prices and the UTC timestamps from the database, so a
   caller can only send quantities. Both the staff `/schedule` form and the public
-  `gp-book` edge function use it. It is `SECURITY INVOKER`, so RLS still scopes the
+  `gp-book` edge function use it. The form also requires a source (one of the
+  owner-edited `booking_source_options`, stored as `source_channel`) and takes an
+  optional due amount (`due_cents`, what the guest still owes at the desk). It is `SECURITY INVOKER`, so RLS still scopes the
   caller. See "create_booking()" in [`docs/DATABASE.md`](docs/DATABASE.md).
 - **Analytics / aggregation**: never fetch-all-and-sum-in-JS. Supabase caps a single
   read at **1000 rows**, so a naive month query silently truncates. Push the
@@ -225,6 +229,10 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   Supabase project is ever moved to `us-east-1`, change or delete this file.
 - Always keep it green: `npx tsc --noEmit` (0 errors) and `npm run lint` (0 warnings)
   before considering a change done.
+- **Errors go to Sentry** (`docs/sentry.md`): the web app through `src/instrumentation*.ts`
+  and `app/global-error.tsx`, every edge function through `withSentry()` from
+  `_shared/sentry.ts` (wrap the handler passed to `Deno.serve`; a new function must
+  do the same). Off without `NEXT_PUBLIC_SENTRY_DSN` / the `SENTRY_DSN` secret.
 - There is no debug screen in the app: nothing internal (auth ids, roles, raw errors)
   is ever put in front of staff. To see what the server sees for a session, query
   `current_staff()` in Supabase, or read the server log.
@@ -347,9 +355,16 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
 - `/analytics` is built, organized as in-page tabs (`analytics-tabs.tsx`, client state,
   both panels stay mounted so their filters survive tab switches):
   - **Sources & products** (`analytics-view.tsx`, RLS-scoped via the
-    `analytics_source_tour` RPC = source x tour x business aggregated in the DB): a totals
+    `analytics_source_tour` RPC = source x tour x business aggregated in the DB; the source name comes from
+    the owner-edited `booking_source_labels` table, which folds Bokun's channel names and
+    the Xano mirror's `groupon-surcharge` into readable labels without touching the
+    booking row): a totals
     header (guests / bookings / OTA + Organic split), a Group-by toggle (Source <-> Tour)
-    with reverse drill-down, date range + presets, an OTA/Organic source filter, an
+    with reverse drill-down (and a third column: click an item in the right list to see
+    the bookings behind it, from the `analytics_bookings` RPC over the browser client,
+    each linking to that booking on `/bookings`), a date picker (one calendar for a single day, default
+    today, plus Today / This month / Last 30 days / This year presets and a Custom
+    From / To range), an OTA/Organic source filter, an
     owner-only business filter (auto-shown when the data spans 2+ businesses), and
     client-side CSV export.
   - **Monthly comparison** (`monthly-comparison.tsx`): pick a month/year + product chips

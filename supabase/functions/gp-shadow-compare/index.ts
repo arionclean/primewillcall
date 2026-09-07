@@ -23,6 +23,7 @@
 // Xano may retry freely and a replay can be re-run without duplicating rows.
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { withSentry } from "../_shared/sentry.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -70,7 +71,7 @@ const sameProduct = (a: string, b: string): boolean =>
   a.replace(/\s+/g, " ").trim().toLowerCase() ===
   b.replace(/\s+/g, " ").trim().toLowerCase();
 
-Deno.serve(async (req) => {
+Deno.serve(withSentry("gp-shadow-compare", async (req) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
   if (!WEBHOOK_SECRET) {
     return json({ error: "server not configured: set XANO_WEBHOOK_SECRET" }, 503);
@@ -197,4 +198,4 @@ Deno.serve(async (req) => {
   if (insErr) return json({ error: `insert: ${insErr.message}` }, 500);
 
   return json({ ok: true, ...inserted }, 200);
-});
+}));

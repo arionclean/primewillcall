@@ -1,13 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Download } from "lucide-react";
+import { ArrowUpRight, Download, LoaderCircle, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { DateField } from "@/components/ui/date-field";
 import { cn } from "@/lib/utils";
+import { BUSINESS_TZ, getLocalDateRange } from "@/lib/dates";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { classifySource } from "@/lib/source-type";
 import type { SourceTourRow } from "@/lib/dashboard/queries";
 
@@ -21,10 +24,54 @@ type AnalyticsViewProps = {
 type TypeFilter = "all" | "ORGANIC" | "OTA";
 type GroupBy = "source" | "tour";
 
+/** One booking behind a source x tour cell (the third column). */
+type BookingRow = {
+  id: string;
+  startsAt: string;
+  customer: string;
+  pax: number;
+  status: string;
+  createdAt: string;
+};
+
+const DETAIL_CAP = 300; // matches the limit in the analytics_bookings RPC
+
+const whenFmt = new Intl.DateTimeFormat("en-US", {
+  timeZone: BUSINESS_TZ,
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+});
+// Day only, for the "Booked" tag.
+const bookedFmt = new Intl.DateTimeFormat("en-US", {
+  timeZone: BUSINESS_TZ,
+  month: "short",
+  day: "numeric",
+});
+// en-CA formats as YYYY-MM-DD, which is what /bookings?date= expects.
+const ymdFmt = new Intl.DateTimeFormat("en-CA", {
+  timeZone: BUSINESS_TZ,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
 function addDaysIso(ymd: string, n: number): string {
   const d = new Date(`${ymd}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
+}
+
+/** True when [from, to] is exactly one of the preset ranges for `today`. */
+function isPresetRange(from: string, to: string, today: string): boolean {
+  if (to !== today) return false;
+  return (
+    from === today ||
+    from === `${today.slice(0, 7)}-01` ||
+    from === addDaysIso(today, -29) ||
+    from === `${today.slice(0, 4)}-01-01`
+  );
 }
 
 function pct(part: number, total: number): number {
@@ -62,9 +109,25 @@ export function AnalyticsView({ rows, from, to, today }: AnalyticsViewProps) {
   const [groupBy, setGroupBy] = useState<GroupBy>("source");
   const [businessFilter, setBusinessFilter] = useState<string>("all");
   const [selected, setSelected] = useState<string | null>(null);
+  // Custom = the From / To pair is open. Otherwise the picker is one calendar
+  // that selects a single day, plus the presets. Starts open only when the URL
+  // already carries a range that no preset produces.
+  const [custom, setCustom] = useState(() => from !== to && !isPresetRange(from, to, today));
+  // Third column: the bookings behind the clicked item of the right list. Any
+  // change of range, business, grouping or left selection closes it (the pair it
+  // described no longer exists), so every such handler also clears it.
+  const [detail, setDetail] = useState<string | null>(null);
+  const [detailRows, setDetailRows] = useState<BookingRow[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
 
-  const setRange = (f: string, t: string) =>
+  const setRange = (f: string, t: string) => {
+    setDetail(null);
     router.push(`/analytics?from=${f}&to=${t}`);
+  };
+  const select = (name: string) => {
+    setSelected(name);
+    setDetail(null);
+  };
 
   // Distinct businesses present in the data. Owners see 2+, managers see 1
   // (RLS already scopes the rows), so the filter only shows for owners.
@@ -160,16 +223,60 @@ export function AnalyticsView({ rows, from, to, today }: AnalyticsViewProps) {
   }, [baseRows, active, groupingBySource]);
 
   const maxLeft = Math.max(1, ...leftItems.map((i) => i.pax));
+
+  // The pair the third column describes. The right list holds the opposite
+  // dimension of the left one, so the clicked name is a tour when grouping by
+  // source and a source when grouping by tour.
+  const activeName = active?.name ?? null;
+  const detailSource = groupingBySource ? activeName : detail;
+  const detailTour = groupingBySource ? detail : activeName;
+  // The tour's colour ties the clicked middle item to the third column. It is
+  // the right item when grouping by source, the left one when grouping by tour.
+  const detailColor =
+    (groupingBySource
+      ? rightItems.find((i) => i.name === detail)?.color
+      : active?.color) ?? "#4f46e5";
+
+  useEffect(() => {
+    if (!detail || !detailSource || !detailTour) return;
+    let cancelled = false;
+    setDetailLoading(true);
+    const sb = getSupabaseBrowserClient();
+    sb.rpc("analytics_bookings", {
+      p_start: getLocalDateRange(from, BUSINESS_TZ).startUtc,
+      p_end: getLocalDateRange(to, BUSINESS_TZ).endUtcExclusive,
+      p_source: detailSource,
+      p_tour: detailTour,
+      p_business_id: businessFilter === "all" ? undefined : businessFilter,
+    }).then(({ data }) => {
+      if (cancelled) return;
+      setDetailRows(
+        (data ?? []).map((r) => ({
+          id: r.id,
+          startsAt: r.starts_at,
+          customer: r.customer,
+          pax: Number(r.pax),
+          status: r.status,
+          createdAt: r.created_at,
+        })),
+      );
+      setDetailLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [detail, detailSource, detailTour, from, to, businessFilter]);
   const maxRight = Math.max(1, ...rightItems.map((i) => i.pax));
 
   const presets = [
+    { label: "Today", from: today, to: today },
     { label: "This month", from: `${today.slice(0, 7)}-01`, to: today },
     { label: "Last 30 days", from: addDaysIso(today, -29), to: today },
     { label: "This year", from: `${today.slice(0, 4)}-01-01`, to: today },
   ];
 
   const leftTitle = groupingBySource ? "Sources" : "Tours";
-  const rightTitle = groupingBySource ? "Tours sold" : "Sold by";
+  const rightTitle = groupingBySource ? "Products sold" : "Sold by";
 
   const handleExport = () => {
     const header = ["Business", "Source", "Type", "Tour", "Pax", "Bookings"];
@@ -184,7 +291,11 @@ export function AnalyticsView({ rows, from, to, today }: AnalyticsViewProps) {
         r.pax,
         r.bookings,
       ]);
-    downloadCsv(`analytics-${from}_to_${to}.csv`, header, data);
+    downloadCsv(
+      from === to ? `analytics-${from}.csv` : `analytics-${from}_to_${to}.csv`,
+      header,
+      data,
+    );
   };
 
   const kpis = [
@@ -204,34 +315,54 @@ export function AnalyticsView({ rows, from, to, today }: AnalyticsViewProps) {
 
   return (
     <div className="space-y-5">
-      {/* Date range + presets + export */}
+      {/* Date: one calendar for a single day, presets, or a Custom From / To */}
       <div className="flex flex-wrap items-end gap-4">
-        <label className="grid gap-1 text-xs font-medium text-muted-foreground">
-          From
-          <DateField
-            value={from}
-            onChange={(e) => e.target.value && setRange(e.target.value, to)}
-            aria-label="From date"
-            className="h-9 w-[10rem]"
-          />
-        </label>
-        <label className="grid gap-1 text-xs font-medium text-muted-foreground">
-          To
-          <DateField
-            value={to}
-            onChange={(e) => e.target.value && setRange(from, e.target.value)}
-            aria-label="To date"
-            className="h-9 w-[10rem]"
-          />
-        </label>
+        {custom ? (
+          <>
+            <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+              From
+              <DateField
+                value={from}
+                onChange={(e) => e.target.value && setRange(e.target.value, to)}
+                aria-label="From date"
+                className="h-9 w-[10rem]"
+              />
+            </label>
+            <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+              To
+              <DateField
+                value={to}
+                onChange={(e) => e.target.value && setRange(from, e.target.value)}
+                aria-label="To date"
+                className="h-9 w-[10rem]"
+              />
+            </label>
+          </>
+        ) : (
+          <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+            Date
+            <DateField
+              value={from === to ? from : ""}
+              onChange={(e) => {
+                const day = e.target.value;
+                if (day) setRange(day, day);
+              }}
+              aria-label="Date"
+              className="h-9 w-[10rem]"
+            />
+          </label>
+        )}
         <div className="flex flex-wrap gap-1">
           {presets.map((p) => {
-            const isActive = p.from === from && p.to === to;
+            const isActive = !custom && p.from === from && p.to === to;
             return (
               <button
                 key={p.label}
                 type="button"
-                onClick={() => setRange(p.from, p.to)}
+                onClick={() => {
+                  setCustom(false);
+                  setRange(p.from, p.to);
+                }}
                 className={cn(
                   "rounded-full border px-3 py-1.5 text-xs font-medium transition",
                   isActive
@@ -243,6 +374,18 @@ export function AnalyticsView({ rows, from, to, today }: AnalyticsViewProps) {
               </button>
             );
           })}
+          <button
+            type="button"
+            onClick={() => setCustom(true)}
+            className={cn(
+              "rounded-full border px-3 py-1.5 text-xs font-medium transition",
+              custom
+                ? "border-indigo-200 bg-indigo-50 text-indigo-700"
+                : "text-muted-foreground hover:bg-muted",
+            )}
+          >
+            Custom
+          </button>
         </div>
 
         <button
@@ -267,7 +410,10 @@ export function AnalyticsView({ rows, from, to, today }: AnalyticsViewProps) {
               <button
                 key={g}
                 type="button"
-                onClick={() => setGroupBy(g)}
+                onClick={() => {
+                  setGroupBy(g);
+                  setDetail(null);
+                }}
                 className={cn(
                   "rounded-full px-3 py-1 text-xs font-medium capitalize transition",
                   groupBy === g
@@ -289,7 +435,10 @@ export function AnalyticsView({ rows, from, to, today }: AnalyticsViewProps) {
             <div className="flex flex-wrap gap-1">
               <button
                 type="button"
-                onClick={() => setBusinessFilter("all")}
+                onClick={() => {
+                  setBusinessFilter("all");
+                  setDetail(null);
+                }}
                 className={cn(
                   "rounded-full px-3 py-1 text-xs font-medium transition",
                   businessFilter === "all"
@@ -303,7 +452,10 @@ export function AnalyticsView({ rows, from, to, today }: AnalyticsViewProps) {
                 <button
                   key={b.id}
                   type="button"
-                  onClick={() => setBusinessFilter(b.id)}
+                  onClick={() => {
+                    setBusinessFilter(b.id);
+                    setDetail(null);
+                  }}
                   className={cn(
                     "rounded-full px-3 py-1 text-xs font-medium transition",
                     businessFilter === b.id
@@ -334,7 +486,9 @@ export function AnalyticsView({ rows, from, to, today }: AnalyticsViewProps) {
         ))}
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div
+        className={cn("grid gap-5 lg:grid-cols-2", detail && "xl:grid-cols-3")}
+      >
         {/* Left: ranked dimension */}
         <Card className="min-w-0 p-5">
           <div className="mb-4 flex items-center justify-between gap-2">
@@ -372,7 +526,7 @@ export function AnalyticsView({ rows, from, to, today }: AnalyticsViewProps) {
                   <li key={item.name}>
                     <button
                       type="button"
-                      onClick={() => setSelected(item.name)}
+                      onClick={() => select(item.name)}
                       className={cn(
                         "w-full rounded-xl border p-4 text-left transition",
                         isActive
@@ -444,30 +598,47 @@ export function AnalyticsView({ rows, from, to, today }: AnalyticsViewProps) {
             </p>
           ) : (
             <>
-              <p className="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                {rightTitle}
-              </p>
-              <div className="mb-4 flex items-center justify-between gap-2">
-                <h2 className="flex min-w-0 items-center gap-2 text-lg font-semibold tracking-tight">
+              {/* Title left; the selected left item on the right, muted, with its tag */}
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <h2 className="shrink-0 text-lg font-semibold tracking-tight">
+                  {rightTitle}
+                </h2>
+                <div className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
                   {!groupingBySource && (
                     <span
-                      className="size-3 shrink-0 rounded-full"
+                      className="size-2.5 shrink-0 rounded-full"
                       style={{ background: active.color ?? "#4f46e5" }}
                     />
                   )}
                   <span className="truncate">{active.name}</span>
-                </h2>
-                {groupingBySource && (
-                  <Badge tone={active.type === "OTA" ? "warning" : "success"}>
-                    {active.type}
-                  </Badge>
-                )}
+                  {groupingBySource && (
+                    <Badge tone={active.type === "OTA" ? "warning" : "success"}>
+                      {active.type}
+                    </Badge>
+                  )}
+                </div>
               </div>
               <ul className="space-y-2">
                 {rightItems.map((item) => {
                   const itemType = classifySource(item.name);
                   return (
-                    <li key={item.name} className="rounded-xl border p-4">
+                    <li key={item.name}>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setDetail(detail === item.name ? null : item.name)
+                        }
+                        aria-pressed={detail === item.name}
+                        className="w-full rounded-xl border p-4 text-left transition hover:bg-muted/50"
+                        style={
+                          detail === item.name
+                            ? {
+                                borderColor: detailColor,
+                                background: `color-mix(in srgb, ${detailColor} 8%, transparent)`,
+                              }
+                            : undefined
+                        }
+                      >
                       <div className="flex items-center justify-between gap-3">
                         <p className="flex min-w-0 items-center gap-2 font-medium">
                           {groupingBySource && item.color && (
@@ -505,6 +676,7 @@ export function AnalyticsView({ rows, from, to, today }: AnalyticsViewProps) {
                           }}
                         />
                       </div>
+                      </button>
                     </li>
                   );
                 })}
@@ -512,6 +684,90 @@ export function AnalyticsView({ rows, from, to, today }: AnalyticsViewProps) {
             </>
           )}
         </Card>
+
+        {/* Third: the bookings behind the clicked right item */}
+        {detail && detailSource && detailTour && (
+          <Card
+            className="min-w-0 p-5"
+            style={{
+              borderColor: `color-mix(in srgb, ${detailColor} 45%, transparent)`,
+            }}
+          >
+            <div className="mb-1 flex items-start justify-between gap-2">
+              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Bookings
+              </p>
+              <button
+                type="button"
+                onClick={() => setDetail(null)}
+                aria-label="Close bookings"
+                className="-mr-1 -mt-1 rounded-md p-1 text-muted-foreground transition hover:bg-muted"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+            <h2 className="flex min-w-0 items-center gap-2 text-lg font-semibold tracking-tight">
+              <span
+                className="size-3 shrink-0 rounded-full"
+                style={{ background: detailColor }}
+              />
+              <span className="truncate">{detailTour}</span>
+            </h2>
+            <p className="mb-4 flex items-center gap-1 truncate text-xs text-muted-foreground">
+              {detailSource} ·{" "}
+              {detailLoading ? (
+                <>
+                  <LoaderCircle aria-hidden className="size-3 animate-spin" />
+                  <span className="sr-only">Loading</span>
+                </>
+              ) : (
+                `${detailRows.length} booking${detailRows.length === 1 ? "" : "s"}`
+              )}
+            </p>
+            {detailLoading && detailRows.length === 0 ? (
+              <div className="flex justify-center py-10 text-muted-foreground">
+                <LoaderCircle aria-hidden className="size-5 animate-spin" />
+              </div>
+            ) : !detailLoading && detailRows.length === 0 ? (
+              <p className="py-10 text-center text-sm text-muted-foreground">
+                No bookings to show.
+              </p>
+            ) : (
+              <ul className={cn("space-y-2", detailLoading && "opacity-50")}>
+                {detailRows.map((b) => {
+                  const when = new Date(b.startsAt);
+                  const extra =
+                    b.status !== "confirmed" ? ` · ${b.status}` : "";
+                  return (
+                    <li key={b.id}>
+                      <Link
+                        href={`/bookings?date=${ymdFmt.format(when)}&booking=${b.id}`}
+                        className="flex items-center justify-between gap-3 rounded-xl border border-l-4 p-3 transition hover:bg-muted/50"
+                        style={{ borderLeftColor: detailColor }}
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate font-medium">{b.customer}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {whenFmt.format(when)} · {b.pax} pax{extra}
+                          </p>
+                          <Badge tone="neutral" className="mt-1.5">
+                            Booked {bookedFmt.format(new Date(b.createdAt))}
+                          </Badge>
+                        </div>
+                        <ArrowUpRight className="size-4 shrink-0 text-muted-foreground" />
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            {detailRows.length >= DETAIL_CAP && (
+              <p className="mt-3 text-xs text-muted-foreground">
+                Showing the first {DETAIL_CAP}. Pick a shorter range to see the rest.
+              </p>
+            )}
+          </Card>
+        )}
       </div>
     </div>
   );

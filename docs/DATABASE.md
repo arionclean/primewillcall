@@ -45,7 +45,7 @@ booking page (`/booking/<token>`).
 `id uuid pk, user_id? (-> auth.users), business_id? (-> businesses), role enum,
 full_name, email, phone?, is_active, can_create_bookings, can_edit_bookings,
 can_check_in, can_delete_bookings, can_add_to_peek, can_view_attachments,
-can_redeem_groupon, can_view_details, created_at, updated_at`
+can_redeem_groupon, can_view_details, can_use_caja, created_at, updated_at`
 Role enum (`staff_role`): `owner`, `business_manager`, `check_in`. `owner` has no
 `business_id`. A trigger links a new `auth.users` row to its `staff` row by email.
 
@@ -73,7 +73,14 @@ of both the server read and the browser refetch, and the Realtime patch drops th
 from change payloads. A change payload on the wire still carries every column the
 row policy allows; treat the view switches as privacy on the device, not a boundary.
 
-Defaults: create/edit/check-in/peek/attachments/details on, delete and redeem off
+**Caja switch** (`can_use_caja`, default on) decides whether a check-in login gets
+`/caja` (the desk's own cash + card for the day and the end-of-night count). The
+sidebar hides the link and the page redirects without it, and RLS backs it:
+`current_kiosk_slug()` returns NULL for an account without the switch, so the
+per-kiosk `cash_sales` / `stripe_transactions` read policies match nothing. Owners
+and managers are unaffected (they use `/admin/payments`).
+
+Defaults: create/edit/check-in/peek/attachments/details/caja on, delete and redeem off
 (new managers get delete on from the New team member form). Redeem was owner-only
 before the switch existed, so the default preserves that.
 `bookings.peek` marks a booking as manually entered into Peek (the boat's
@@ -115,13 +122,20 @@ stripe_customer_id?, notes?, created_at, updated_at`
 status enum, total_cents, currency, pax_adult, pax_child, pax_infant,
 tour_pax_breakdown jsonb, notes?, stripe_payment_intent_id?, created_by_staff_id?,
 checked_in_at?, checked_in_by_staff_id?, source_channel?, groupon_redeemed_at?,
-created_at, updated_at`
+due_cents, created_at, updated_at`
 `status` is the payment lifecycle the app exposes: `confirmed` (normal, shown with
 no tag), `pending` (shown as "Waiting for payment"), and `cancelled`. Bookings created
 from `/schedule` start as `confirmed`. The enum (`booking_status`) also contains the
 legacy values `checked_in` and `completed`; the app no longer writes them. Check-in is
 tracked independently of status via `checked_in_at` (set/cleared by the check-in
 toggle and the check-in API), so a guest can be checked in regardless of payment status.
+
+`due_cents` (default 0) is what the guest still owes at the desk, separate from the
+price in `total_cents`. The desk used to type it into the guest's name ("Alfred B Owes
+$36"); now `/schedule` takes it as its own field (`create_booking(p_due_cents)`), the
+bookings list shows an "Owes $36" tag to every role, and the edit form clears it once
+collected. The kiosk collecting it against the booking (instead of creating a second
+sale) is the pending half.
 
 `public_token` (UNIQUE, NOT NULL, default `generate_booking_token()`) identifies a
 booking on the public booking page (`/booking/<token>`, no auth). Native bookings
@@ -539,6 +553,68 @@ a plain "Groupon redemption": every role reads notes, so it carries neither the 
 the voucher URL (migration `groupon_voucher_codes_from_notes` scrubbed the old ones and
 recovered the codes of the mirrored rows from them). The Xano mirror composes the fuller
 "code X · voucher URL" note Bubble staff read from the two columns.
+
+## Analytics source labels
+
+`/analytics` groups bookings by `bookings.source_channel`, which holds whatever the
+booking system sent: Bokun stamps its own channel names ("Default Channel", "Miami
+Skyline", "www.miamicelebrityboattours.com - Website"), the Xano mirror renames /gp
+bookings from `groupon` to `groupon-surcharge`, staff entries arrive as "Manual". The same
+website showed under four names and "Default Channel" (the Bayside site's Bokun widget,
+which is where the jet ski sells) meant nothing to staff.
+
+### booking_source_labels
+
+`channel (pk, raw source_channel, matched case-insensitively), label, updated_at`. The
+`analytics_source_tour` RPC left-joins it and shows `coalesce(label, raw, 'Direct')`. A
+channel with no row shows as is. The raw value on the booking is never rewritten: RLS
+(unpaid /gp rows), the Redeem chip and the Xano mirror all key on `source_channel`. Read by
+every active staffer (the RPC is SECURITY INVOKER), edited by the owner only. There is no
+screen for it yet; edit rows in SQL. One format: an OTA is its brand name, a website
+widget is "<Site> - Website", the kiosk is "Kiosk - Card" / "Kiosk - Cash". Seeded
+2026-09-07:
+
+| Raw channel | Label |
+| --- | --- |
+| `groupon`, `groupon-surcharge` | Groupon |
+| `kiosk-sale-card`, `kiosk-sale-tap` | Kiosk - Card |
+| `kiosk-sale-cash` | Kiosk - Cash |
+| `Viator.com`, `Viator`, `Viator.com<http://viator.com/>` | Viator |
+| `civitatis.com`, `Civitatis`, `civitatis.com<http://civitatis.com/>` | Civitatis |
+| `www.tiqets.com/en/`, `www.tiqets.com` | Tiqets |
+| `www.klook.com` | Klook |
+| `headout.com` | Headout |
+| `www.tripshock.com` | TripShock |
+| `Miami Skyline`, `Miami Skyline Cruises`, `Miami Skyline Cruisees` | Miami Skyline Cruises - Website |
+| `Default Channel`, `Miami Star Island`, `Miami Star Island Cruises`, `Miami Boat Tours - Website`, `Miami Boat Tours/ Bayside Kiosk - Website`, `Miami Bayside Boat Tour`, `www.miamicelebrityboattours.com - Website` | Miami Bayside Boat Tour - Website |
+| `Miami Sunset Boat`, `Miami Sunset Boat Cruises`, `Miami Sunset Boat Cruises - Website` | Miami Sunset Boat - Website |
+| `Key West Sightseeing Tours`, `Key West Sightseeing` | Key West Sightseeing Tours - Website |
+| `Prime-combo-sale`, `Prime combo-sale`, `Prime-combo sale` | Prime Combo Sale |
+| `www.ineedtours.com` | I Need Tours |
+| `miami architecture cruise`, `Miami Architecture cruises`, `architecture cruises` | Miami Architecture Cruise |
+
+Bokun account per website, from the booking reference prefix: `4TH-` Skyline, `BOAT-`
+Bayside and jet ski, `MIA-` Star Island, `SUN-` Sunset Boat.
+
+### booking_source_options (what the desk can pick)
+
+`channel (pk), sort_order, is_active, updated_at`. The `/schedule` form requires a
+source and only accepts an active row; the value is stored verbatim as
+`bookings.source_channel`, so a desk booking never lands blank ("Direct") again. Seeded
+with the desk's real cases: Manual, Phone reservation, Miami Tour Bus, Big Dave, the
+OTAs phoned in (Viator, GetYourGuide, Groupon, Civitatis) and the five website labels.
+Owner-edited in SQL (no screen yet); read by every active staffer.
+
+### analytics_bookings (drill-down)
+
+`analytics_bookings(p_start, p_end, p_source, p_tour, p_business_id)` returns the
+bookings behind one source x tour cell (id, starts_at, customer, pax, status, created_at,
+source, tour, business), capped at 300 and ordered by start time. It applies the same
+range, non-cancelled filter and label mapping as `analytics_source_tour`, so the list
+always matches the number that was clicked. SECURITY INVOKER: `bookings_select` scopes the
+rows and the customers policy decides whether the name is readable (else "Guest"). Called
+from the browser when a right-list item is clicked on `/analytics`; each row links to
+`/bookings?date=<day>&booking=<id>`, the deep link the bookings page already honours.
 
 ## Access control (RLS)
 
