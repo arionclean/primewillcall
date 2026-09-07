@@ -10,5 +10,5 @@ export default async function EmployeesMoved({
   const qs = new URLSearchParams(
     Object.entries(sp).filter((e): e is [string, string] => typeof e[1] === "string"),
   ).toString();
-  redirect(qs ? `/admin/staff/activity?${qs}` : "/admin/staff");
+  redirect(qs ? `/admin/staff/activity?${qs}` : "/admin/staff/people");
 }

@@ -9,6 +9,6 @@ export default async function OwnerOnlyStaffLayout({
   children: React.ReactNode;
 }) {
   const { staff } = await getCurrentStaff();
-  if (staff?.role !== "owner") redirect("/admin/staff/employees");
+  if (staff?.role !== "owner") redirect("/admin/staff/people");
   return <>{children}</>;
 }

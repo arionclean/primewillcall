@@ -78,9 +78,9 @@ src/
         tours/                 owner sees master tours; manager sees their tours only
           [id]/                edit-form (owner) vs manager-edit-form (manager)
           [id]/variants/new/   owner: add a business's copy of a tour
-        staff/                 Team. (tabs)/ = People (owner + manager: the PIN people),
-                               activity/ (the tablets + web log) and accounts/ (owner: every
-                               login, grouped by business); (owner)/ = new/[id]
+        staff/                 Team. (tabs)/ = accounts/ (owner: every login, grouped by
+                               business; where Team opens), people/ (owner + manager: the PIN
+                               people) and activity/ (the tablets + web log); (owner)/ = new/[id]
         unmatched/             owner-only. OTA email review queue (page + actions)
         groupon/               owner-only. per-product Groupon convenience fee config
         payments/              owner + manager. Stripe charges ledger + refunds

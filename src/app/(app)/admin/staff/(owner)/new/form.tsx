@@ -121,9 +121,18 @@ type Props = {
   /** Preselected role, e.g. an account from the Accounts tab. */
   defaultRole?: StaffRole | "";
   tours: { id: string; name: string }[];
+  /** Inside a dialog: Cancel closes it instead of leaving the page. */
+  onCancel?: () => void;
+  submitLabel?: string;
 };
 
-export function NewStaffForm({ businesses, tours, defaultRole = "" }: Props) {
+export function NewStaffForm({
+  businesses,
+  tours,
+  defaultRole = "",
+  onCancel,
+  submitLabel = "Save team member",
+}: Props) {
   const [state, formAction] = useActionState(
     createStaffAction,
     INITIAL,
@@ -377,13 +386,19 @@ export function NewStaffForm({ businesses, tours, defaultRole = "" }: Props) {
       )}
 
       <div className="flex items-center gap-2">
-        <SubmitButton>Save team member</SubmitButton>
-        <Link
-          href="/admin/staff"
-          className={cn(buttonVariants({ variant: "outline" }))}
-        >
-          Cancel
-        </Link>
+        <SubmitButton>{submitLabel}</SubmitButton>
+        {onCancel ? (
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
+        ) : (
+          <Link
+            href="/admin/staff"
+            className={cn(buttonVariants({ variant: "outline" }))}
+          >
+            Cancel
+          </Link>
+        )}
       </div>
     </form>
   );

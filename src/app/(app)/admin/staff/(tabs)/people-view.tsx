@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { X } from "lucide-react";
 import { useActionState, useEffect, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Dialog } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { SubmitButton } from "@/components/ui/submit-button";
@@ -97,55 +97,33 @@ function AddEmployeeDialog({ onClose }: { onClose: () => void }) {
     if (state.saved) onClose();
   }, [state.saved, onClose]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+    <Dialog
+      title="Add employee"
+      description="A name and a 4-digit PIN. They type the PIN on any tablet or shared computer."
+      onClose={onClose}
     >
-      <div role="dialog" aria-modal="true" aria-labelledby="add-employee-title" className="w-full max-w-md rounded-xl border bg-background p-6 shadow-lg">
-        <div className="mb-4 flex items-start justify-between gap-4">
-          <div>
-            <h2 id="add-employee-title" className="text-lg font-semibold tracking-tight">Add employee</h2>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              A name and a 4-digit PIN. They type the PIN on any tablet or shared computer.
-            </p>
-          </div>
-          <button type="button" onClick={onClose} aria-label="Close" className="rounded-md p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground">
-            <X className="size-4" />
-          </button>
-        </div>
-        <form action={action} className="space-y-4">
-          <Field label="Name" htmlFor="emp-name" error={state.fieldErrors?.name}>
-            <Input id="emp-name" name="name" autoComplete="off" placeholder="Maria" required autoFocus />
+      <form action={action} className="space-y-4">
+        <Field label="Name" htmlFor="emp-name" error={state.fieldErrors?.name}>
+          <Input id="emp-name" name="name" autoComplete="off" placeholder="Maria" required autoFocus />
+        </Field>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="PIN" htmlFor="emp-pin" error={state.fieldErrors?.pin} hint="4 digits">
+            <Input id="emp-pin" name="pin" type="password" inputMode="numeric" pattern="\d{4}" maxLength={4} autoComplete="off" required />
           </Field>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="PIN" htmlFor="emp-pin" error={state.fieldErrors?.pin} hint="4 digits">
-              <Input id="emp-pin" name="pin" type="password" inputMode="numeric" pattern="\d{4}" maxLength={4} autoComplete="off" required />
-            </Field>
-            <Field label="Confirm PIN" htmlFor="emp-pin2">
-              <Input id="emp-pin2" name="pin_confirm" type="password" inputMode="numeric" pattern="\d{4}" maxLength={4} autoComplete="off" required />
-            </Field>
-          </div>
-          {state.error && <p className="text-sm text-destructive">{state.error}</p>}
-          <div className="flex items-center justify-end gap-2 pt-2">
-            <Button type="button" variant="ghost" onClick={onClose}>
-              Cancel
-            </Button>
-            <SubmitButton>Add employee</SubmitButton>
-          </div>
-        </form>
-      </div>
-    </div>
+          <Field label="Confirm PIN" htmlFor="emp-pin2">
+            <Input id="emp-pin2" name="pin_confirm" type="password" inputMode="numeric" pattern="\d{4}" maxLength={4} autoComplete="off" required />
+          </Field>
+        </div>
+        {state.error && <p className="text-sm text-destructive">{state.error}</p>}
+        <div className="flex items-center justify-end gap-2 pt-2">
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <SubmitButton>Add employee</SubmitButton>
+        </div>
+      </form>
+    </Dialog>
   );
 }
 

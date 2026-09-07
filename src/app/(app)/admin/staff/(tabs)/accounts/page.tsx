@@ -2,13 +2,14 @@ import Link from "next/link";
 
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
+
 import { redirect } from "next/navigation";
 
 import { getCurrentStaff } from "@/lib/auth";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
+
+import { AddAccount } from "./add-account";
 
 const ROLE_LABEL = {
   owner: "Owner",
@@ -62,9 +63,14 @@ function groupByBusiness(staff: StaffRow[]) {
  */
 export default async function AccountsPage() {
   const { staff: me } = await getCurrentStaff();
-  if (me?.role !== "owner") redirect("/admin/staff");
+  if (me?.role !== "owner") redirect("/admin/staff/people");
 
   const supabase = await getSupabaseServerClient();
+  const [{ data: businesses }, { data: tours }] = await Promise.all([
+    supabase.from("businesses").select("id, name").order("name"),
+    supabase.from("tours").select("id, name").eq("is_active", true).order("name"),
+  ]);
+  const addAccount = <AddAccount businesses={businesses ?? []} tours={tours ?? []} />;
   const { data: staff, error } = await supabase
     .from("staff")
     .select(
@@ -79,14 +85,7 @@ export default async function AccountsPage() {
 
   return (
     <div>
-      <header className="mb-6 flex items-center justify-end">
-        <Link
-          href="/admin/staff/new"
-          className={cn(buttonVariants({ variant: "default" }))}
-        >
-          + Add account
-        </Link>
-      </header>
+      <header className="mb-6 flex items-center justify-end">{addAccount}</header>
 
       {error && (
         <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
@@ -95,7 +94,7 @@ export default async function AccountsPage() {
       )}
 
       {(!staff || staff.length === 0) ? (
-        <EmptyState />
+        <EmptyState>{addAccount}</EmptyState>
       ) : (
         <div className="space-y-8">
           {groupByBusiness(staff).map((group) => (
@@ -157,17 +156,12 @@ export default async function AccountsPage() {
   );
 }
 
-function EmptyState() {
+function EmptyState({ children }: { children: React.ReactNode }) {
   return (
     <Card>
       <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
         <p className="text-sm text-muted-foreground">No accounts yet.</p>
-        <Link
-          href="/admin/staff/new"
-          className={cn(buttonVariants({ variant: "default" }))}
-        >
-          + Add your first account
-        </Link>
+        {children}
       </CardContent>
     </Card>
   );

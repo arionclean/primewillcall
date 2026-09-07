@@ -1,15 +1,9 @@
-import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
 
-import { loadEmployees } from "./people";
-import { PeopleView } from "./people-view";
+import { getCurrentStaff } from "@/lib/auth";
 
-/**
- * People: the employees who type a PIN on the tablets and shared computers, one
- * pool for every business. Logins are the Accounts tab; what everyone did is
- * the Activity tab.
- */
-export default async function PeoplePage() {
-  const supabase = await getSupabaseServerClient();
-  const { employees, error } = await loadEmployees(supabase);
-  return <PeopleView employees={employees} loadError={error} />;
+/** Team opens on Accounts for the owner; a manager has no Accounts tab and opens on People. */
+export default async function TeamIndex() {
+  const { staff } = await getCurrentStaff();
+  redirect(staff?.role === "owner" ? "/admin/staff/accounts" : "/admin/staff/people");
 }

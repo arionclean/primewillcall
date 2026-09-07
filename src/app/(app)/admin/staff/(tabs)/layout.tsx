@@ -3,9 +3,9 @@ import { getCurrentStaff } from "@/lib/auth";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 /**
- * The Team screen: one title, three tabs. "People" is the employees who type a
- * PIN; "Accounts" is every login, grouped by business, owner only; "Activity"
- * is what everyone did, tablets and web. The tabs are routes, so the Activity
+ * The Team screen: one title, three tabs. "Accounts" is every login, grouped by
+ * business, owner only; "People" is the employees who type a PIN; "Activity" is
+ * what everyone did, tablets and web. The tabs are routes, so the Activity
  * filters live in its URL.
  */
 export default async function StaffTabsLayout({
@@ -21,10 +21,10 @@ export default async function StaffTabsLayout({
   ]);
 
   const tabs: PageTab[] = [
-    { href: "/admin/staff", label: "People", count: people.count ?? 0 },
     ...(staff?.role === "owner"
       ? [{ href: "/admin/staff/accounts", label: "Accounts", count: accounts.count ?? 0 }]
       : []),
+    { href: "/admin/staff/people", label: "People", count: people.count ?? 0 },
     { href: "/admin/staff/activity", label: "Activity" },
   ];
 

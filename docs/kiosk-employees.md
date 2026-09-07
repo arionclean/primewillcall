@@ -38,10 +38,11 @@ which iPad; the employee PIN says who.
 
 ## The admin page: Team
 
-Three tabs, the model a new owner learns in one sentence: a **person** works here and
+Three tabs (Accounts, People, Activity; Team opens on Accounts for the owner, on People
+for a manager), the model a new owner learns in one sentence: a **person** works here and
 types a PIN; an **account** is a login.
 
-- **People** (`/admin/staff`, owner and any business manager): the employees who type a
+- **People** (`/admin/staff/people`, owner and any business manager): the employees who type a
   PIN, one pool for every business. A card per person with Active / Inactive, when the
   PIN was last used and where (a tablet, or the web), and Activity (opens the log
   filtered to them), Change PIN, Deactivate / Reactivate, Remove (past activity keeps
@@ -54,7 +55,8 @@ types a PIN; an **account** is a login.
   the role badge, exactly the team list as it always looked. A check-in account is a
   shared desk or tablet; its **Shared computer** switch on the edit page sets
   `staff.pin_required` (the desk computer) and `kiosks.pin_required` (its tablet, by
-  `staff.kiosk_slug`) together. Add account opens the team member form.
+  `staff.kiosk_slug`) together. **Add account** opens the team member form in a dialog,
+  the same way People adds an employee (`components/ui/dialog.tsx`).
 
 `kiosk_employees.staff_id` exists (a person's own login) but the screens do not use it
 yet: the owner asked for people and logins to stay two plain lists.
