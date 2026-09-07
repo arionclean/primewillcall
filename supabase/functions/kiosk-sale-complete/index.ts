@@ -31,6 +31,7 @@ import {
   stripeConfigured,
   stripeRetrievePaymentIntent,
 } from "../_shared/kiosk-sale.ts";
+import { withSentry } from "../_shared/sentry.ts";
 
 interface CompleteBody {
   kiosk?: string;
@@ -42,7 +43,7 @@ interface CompleteBody {
   device_id?: string;
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withSentry("kiosk-sale-complete", async (req) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
   if (!kioskAuthorized(req)) return json({ error: "unauthorized" }, 401);
   if (!stripeConfigured()) return json({ error: "not_configured" }, 503);
@@ -114,4 +115,4 @@ Deno.serve(async (req) => {
     },
     200,
   );
-});
+}));

@@ -49,6 +49,7 @@ import {
   stripeRetrievePaymentIntent,
   type SaleRow,
 } from "../_shared/kiosk-sale.ts";
+import { withSentry } from "../_shared/sentry.ts";
 
 const REF_RE = /^KS-[A-Z0-9]{6,12}$/;
 
@@ -63,7 +64,7 @@ interface StartBody {
   device_id?: string;
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withSentry("kiosk-sale-start", async (req) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
   if (!kioskAuthorized(req)) return json({ error: "unauthorized" }, 401);
   if (!stripeConfigured()) return json({ error: "not_configured" }, 503);
@@ -271,4 +272,4 @@ Deno.serve(async (req) => {
     },
     200,
   );
-});
+}));
