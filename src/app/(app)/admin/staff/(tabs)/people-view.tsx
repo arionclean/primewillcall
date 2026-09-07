@@ -1,41 +1,35 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useState } from "react";
+import { X } from "lucide-react";
+import { useActionState, useEffect, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Field } from "@/components/ui/field";
-import { FormSection } from "@/components/ui/form-section";
 import { Input } from "@/components/ui/input";
 import { SubmitButton } from "@/components/ui/submit-button";
 
 import {
-  createPersonAction,
+  createEmployeeAction,
   deleteEmployeeAction,
   setEmployeeActiveAction,
-  setPersonPinAction,
+  setEmployeePinAction,
   type PersonActionState,
 } from "./actions";
 import { personValue } from "./activity-shared";
 
-/** One person: their PIN (employee row) and/or their website login (staff row). */
-export type PersonRow = {
+export type EmployeeRow = {
+  id: string;
   name: string;
-  employeeId: string | null;
-  staffId: string | null;
-  email: string | null;
-  role: "owner" | "business_manager" | null;
-  businessName: string | null;
   isActive: boolean;
   lastSeenAt: string | null;
   lastSeenKiosk: string | null;
 };
 
 type Props = {
-  people: PersonRow[];
-  isOwner: boolean;
+  employees: EmployeeRow[];
   loadError: boolean;
 };
 
@@ -49,102 +43,116 @@ const whenFmt = new Intl.DateTimeFormat("en-US", {
   minute: "2-digit",
 });
 
-function lastSeen(p: PersonRow): string | null {
-  if (!p.lastSeenAt) return null;
-  const where = p.lastSeenKiosk === "web" ? "on the web" : p.lastSeenKiosk ? `on ${p.lastSeenKiosk}` : "";
-  return `PIN used ${whenFmt.format(new Date(p.lastSeenAt))} ${where}`.trim();
+function lastSeen(e: EmployeeRow): string {
+  if (!e.lastSeenAt) return "Never signed in";
+  const where = e.lastSeenKiosk === "web" ? "on the web" : e.lastSeenKiosk ? `on ${e.lastSeenKiosk}` : "";
+  return `${whenFmt.format(new Date(e.lastSeenAt))} ${where}`.trim();
 }
 
-const ROLE_LABEL = { owner: "Owner", business_manager: "Manager" } as const;
-
-/** The people and the add form. The activity log below is its own component. */
-export function PeopleView({ people, isOwner, loadError }: Props) {
-  const [createState, createAction] = useActionState(createPersonAction, INITIAL);
-  const [wantsLogin, setWantsLogin] = useState(false);
+/** The people who type a PIN, and the Add employee dialog. */
+export function PeopleView({ employees, loadError }: Props) {
+  const [adding, setAdding] = useState(false);
 
   return (
-    <div className="space-y-8">
-      <p className="text-sm text-muted-foreground">
-        Everyone who works here, at any business. A PIN is what they type on a tablet or a
-        shared computer; a website login is for people who manage things from their own
-        computer. Some have one, some both. Every action is recorded under the person.
-      </p>
+    <div className="space-y-6">
+      <div className="flex items-center justify-end">
+        <Button type="button" onClick={() => setAdding(true)}>
+          + Add employee
+        </Button>
+      </div>
 
       {loadError && (
         <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          Could not load the people. Refresh the page and try again.
+          Could not load the employees. Refresh the page and try again.
         </p>
       )}
 
-      <section>
-        {people.length === 0 ? (
-          <p className="rounded-md border border-dashed bg-muted/30 px-3 py-3 text-sm text-muted-foreground">
-            Nobody yet. Add the first person below.
-          </p>
-        ) : (
-          <ul className="space-y-2">
-            {people.map((p) => (
-              <PersonCard key={p.employeeId ?? p.staffId ?? p.name} person={p} isOwner={isOwner} />
-            ))}
-          </ul>
-        )}
-      </section>
+      {employees.length === 0 ? (
+        <Card>
+          <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
+            <p className="text-sm text-muted-foreground">No employees yet.</p>
+            <Button type="button" onClick={() => setAdding(true)}>
+              + Add your first employee
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <ul className="space-y-2">
+          {employees.map((e) => (
+            <EmployeeCard key={e.id} employee={e} />
+          ))}
+        </ul>
+      )}
 
-      <form action={createAction} className="space-y-4">
-        <FormSection
-          title="Add person"
-          description="A name and a 4-digit PIN. They type the PIN on any tablet or shared computer to start working."
-          contentClassName="grid gap-4 sm:grid-cols-3"
-        >
-          <Field label="Name" htmlFor="person-name" error={createState.fieldErrors?.name}>
-            <Input id="person-name" name="name" autoComplete="off" placeholder="Maria" required />
-          </Field>
-          <Field
-            label="PIN"
-            htmlFor="person-pin"
-            error={createState.fieldErrors?.pin}
-            hint={wantsLogin ? "4 digits, or leave empty if they only use their own login" : "4 digits"}
-          >
-            <Input id="person-pin" name="pin" type="password" inputMode="numeric" pattern="\d{4}" maxLength={4} autoComplete="off" required={!wantsLogin} />
-          </Field>
-          <Field label="Confirm PIN" htmlFor="person-pin2">
-            <Input id="person-pin2" name="pin_confirm" type="password" inputMode="numeric" pattern="\d{4}" maxLength={4} autoComplete="off" required={!wantsLogin} />
-          </Field>
-          {isOwner && (
-            <label htmlFor="person-login" className="sm:col-span-3 flex items-center gap-2 text-sm">
-              <input
-                id="person-login"
-                type="checkbox"
-                name="login"
-                value="1"
-                checked={wantsLogin}
-                onChange={(e) => setWantsLogin(e.target.checked)}
-                className="size-4"
-              />
-              Also give them a website login (email and role come next)
-            </label>
-          )}
-          <div className="sm:col-span-3 flex items-center gap-3">
-            <SubmitButton>{wantsLogin ? "Add person and continue" : "Add person"}</SubmitButton>
-            {createState.saved && <span className="text-sm text-muted-foreground">Added.</span>}
-            {createState.error && <span className="text-sm text-destructive">{createState.error}</span>}
-          </div>
-        </FormSection>
-      </form>
+      {adding && <AddEmployeeDialog onClose={() => setAdding(false)} />}
     </div>
   );
 }
 
-function PersonCard({ person, isOwner }: { person: PersonRow; isOwner: boolean }) {
+/** A small dialog: name and PIN. Closes itself once the person is saved. */
+function AddEmployeeDialog({ onClose }: { onClose: () => void }) {
+  const [state, action] = useActionState(createEmployeeAction, INITIAL);
+
+  useEffect(() => {
+    if (state.saved) onClose();
+  }, [state.saved, onClose]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div role="dialog" aria-modal="true" aria-labelledby="add-employee-title" className="w-full max-w-md rounded-xl border bg-background p-6 shadow-lg">
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div>
+            <h2 id="add-employee-title" className="text-lg font-semibold tracking-tight">Add employee</h2>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              A name and a 4-digit PIN. They type the PIN on any tablet or shared computer.
+            </p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close" className="rounded-md p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground">
+            <X className="size-4" />
+          </button>
+        </div>
+        <form action={action} className="space-y-4">
+          <Field label="Name" htmlFor="emp-name" error={state.fieldErrors?.name}>
+            <Input id="emp-name" name="name" autoComplete="off" placeholder="Maria" required autoFocus />
+          </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="PIN" htmlFor="emp-pin" error={state.fieldErrors?.pin} hint="4 digits">
+              <Input id="emp-pin" name="pin" type="password" inputMode="numeric" pattern="\d{4}" maxLength={4} autoComplete="off" required />
+            </Field>
+            <Field label="Confirm PIN" htmlFor="emp-pin2">
+              <Input id="emp-pin2" name="pin_confirm" type="password" inputMode="numeric" pattern="\d{4}" maxLength={4} autoComplete="off" required />
+            </Field>
+          </div>
+          {state.error && <p className="text-sm text-destructive">{state.error}</p>}
+          <div className="flex items-center justify-end gap-2 pt-2">
+            <Button type="button" variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
+            <SubmitButton>Add employee</SubmitButton>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function EmployeeCard({ employee }: { employee: EmployeeRow }) {
   const [changingPin, setChangingPin] = useState(false);
-  const [pinState, pinAction] = useActionState(setPersonPinAction, INITIAL);
-  const hasPin = Boolean(person.employeeId);
-  const details = [
-    person.email,
-    person.businessName,
-    lastSeen(person),
-  ].filter(Boolean);
-  const activityHref = `?person=${encodeURIComponent(personValue(person.employeeId, person.staffId))}#activity`;
+  const [pinState, pinAction] = useActionState(setEmployeePinAction, INITIAL);
+  const activityHref = `/admin/staff/activity?person=${encodeURIComponent(personValue(employee.id, null))}`;
 
   return (
     <li>
@@ -152,65 +160,44 @@ function PersonCard({ person, isOwner }: { person: PersonRow; isOwner: boolean }
         <CardContent className="space-y-3 py-4">
           <div className="flex flex-wrap items-center gap-3">
             <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-medium">{person.name}</span>
-                {person.role && <Badge tone={person.role === "owner" ? "primary" : "info"}>{ROLE_LABEL[person.role]}</Badge>}
-                <Badge tone={hasPin ? "success" : "neutral"}>{hasPin ? "PIN" : "No PIN"}</Badge>
-                {!person.isActive && <Badge tone="neutral">Inactive</Badge>}
+              <div className="flex items-center gap-2">
+                <span className="font-medium">{employee.name}</span>
+                <Badge tone={employee.isActive ? "success" : "neutral"}>{employee.isActive ? "Active" : "Inactive"}</Badge>
               </div>
-              {details.length > 0 && <p className="text-xs text-muted-foreground">{details.join(" · ")}</p>}
+              <p className="text-xs text-muted-foreground">{lastSeen(employee)}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <a href={activityHref} className={buttonVariants({ variant: "ghost", size: "sm" })}>
+              <Link href={activityHref} className={buttonVariants({ variant: "ghost", size: "sm" })}>
                 Activity
-              </a>
+              </Link>
               <Button type="button" variant="outline" size="sm" onClick={() => setChangingPin((v) => !v)}>
-                {changingPin ? "Cancel" : hasPin ? "Change PIN" : "Set PIN"}
+                {changingPin ? "Cancel" : "Change PIN"}
               </Button>
-              {isOwner && person.staffId && (
-                <Link href={`/admin/staff/${person.staffId}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
-                  Edit login
-                </Link>
-              )}
-              {isOwner && !person.staffId && person.employeeId && (
-                <Link
-                  href={`/admin/staff/new?person=${person.employeeId}&name=${encodeURIComponent(person.name)}`}
-                  className={buttonVariants({ variant: "outline", size: "sm" })}
-                >
-                  Add login
-                </Link>
-              )}
-              {!person.staffId && person.employeeId && (
-                <>
-                  <form action={setEmployeeActiveAction}>
-                    <input type="hidden" name="employee_id" value={person.employeeId} />
-                    <input type="hidden" name="active" value={person.isActive ? "0" : "1"} />
-                    <SubmitButton variant="outline" size="sm">{person.isActive ? "Deactivate" : "Reactivate"}</SubmitButton>
-                  </form>
-                  <form
-                    action={deleteEmployeeAction}
-                    onSubmit={(e) => {
-                      if (!window.confirm(`Remove ${person.name}? Their past activity keeps the name.`)) e.preventDefault();
-                    }}
-                  >
-                    <input type="hidden" name="employee_id" value={person.employeeId} />
-                    <SubmitButton variant="ghost" size="sm" className="text-destructive">Remove</SubmitButton>
-                  </form>
-                </>
-              )}
+              <form action={setEmployeeActiveAction}>
+                <input type="hidden" name="employee_id" value={employee.id} />
+                <input type="hidden" name="active" value={employee.isActive ? "0" : "1"} />
+                <SubmitButton variant="outline" size="sm">{employee.isActive ? "Deactivate" : "Reactivate"}</SubmitButton>
+              </form>
+              <form
+                action={deleteEmployeeAction}
+                onSubmit={(e) => {
+                  if (!window.confirm(`Remove ${employee.name}? Their past activity keeps the name.`)) e.preventDefault();
+                }}
+              >
+                <input type="hidden" name="employee_id" value={employee.id} />
+                <SubmitButton variant="ghost" size="sm" className="text-destructive">Remove</SubmitButton>
+              </form>
             </div>
           </div>
 
           {changingPin && (
             <form action={pinAction} className="grid gap-3 border-t pt-3 sm:grid-cols-3">
-              {person.employeeId && <input type="hidden" name="employee_id" value={person.employeeId} />}
-              {person.staffId && <input type="hidden" name="staff_id" value={person.staffId} />}
-              <input type="hidden" name="name" value={person.name} />
-              <Field label={hasPin ? "New PIN" : "PIN"} htmlFor={`pin-${person.employeeId ?? person.staffId}`} error={pinState.fieldErrors?.pin}>
-                <Input id={`pin-${person.employeeId ?? person.staffId}`} name="pin" type="password" inputMode="numeric" pattern="\d{4}" maxLength={4} autoComplete="off" required />
+              <input type="hidden" name="employee_id" value={employee.id} />
+              <Field label="New PIN" htmlFor={`pin-${employee.id}`} error={pinState.fieldErrors?.pin}>
+                <Input id={`pin-${employee.id}`} name="pin" type="password" inputMode="numeric" pattern="\d{4}" maxLength={4} autoComplete="off" required />
               </Field>
-              <Field label="Confirm" htmlFor={`pin2-${person.employeeId ?? person.staffId}`}>
-                <Input id={`pin2-${person.employeeId ?? person.staffId}`} name="pin_confirm" type="password" inputMode="numeric" pattern="\d{4}" maxLength={4} autoComplete="off" required />
+              <Field label="Confirm" htmlFor={`pin2-${employee.id}`}>
+                <Input id={`pin2-${employee.id}`} name="pin_confirm" type="password" inputMode="numeric" pattern="\d{4}" maxLength={4} autoComplete="off" required />
               </Field>
               <div className="flex items-end gap-3">
                 <SubmitButton size="sm">Save PIN</SubmitButton>

@@ -38,30 +38,28 @@ which iPad; the employee PIN says who.
 
 ## The admin page: Team
 
-The owner sees two tabs, a manager one. The model a new owner learns is short: a
-**person** works here and types a PIN; an **account** is a shared desk or tablet login.
+Three tabs, the model a new owner learns in one sentence: a **person** works here and
+types a PIN; an **account** is a login.
 
-- **People** (`/admin/staff`, owner and any business manager): one card per person,
-  whether they have a PIN (a `kiosk_employees` row, for the tablets and shared
-  computers), their own website login (a `staff` row with role owner or manager), or
-  both. The two are linked by `kiosk_employees.staff_id`; the card shows the role, a
-  PIN / No PIN badge, the email and business, and when the PIN was last used. Actions:
-  Activity (filters the log to them, by either identity), Set / Change PIN (for a
-  login without a PIN this creates the linked PIN row), Edit login (owner), Add login
-  (owner; opens the team member form with the name filled in and the PIN attached),
-  and, for PIN-only people, Deactivate / Reactivate and Remove (past activity keeps
-  the name). **Add person** is a name and a PIN, with an owner-only "also give them a
-  website login" that continues into the team member form. Managers see the people
-  their RLS allows (their business's logins, every PIN).
-- **Accounts** (`/admin/staff/accounts`, owner only): the `check_in` logins, one per
-  desk or tablet, with the business, the tablet (`staff.kiosk_slug`) and one switch,
-  **Turn PIN on / off**, which sets `staff.pin_required` (the desk computer) and
-  `kiosks.pin_required` (its tablet) together. Add account opens the team member form
-  with the role preset. Editing an account is the same edit page as before.
-- Deactivating a login on its edit page does not pause a linked PIN; pause the PIN on
-  the person's card (a small gap, noted here on purpose).
+- **People** (`/admin/staff`, owner and any business manager): the employees who type a
+  PIN, one pool for every business. A card per person with Active / Inactive, when the
+  PIN was last used and where (a tablet, or the web), and Activity (opens the log
+  filtered to them), Change PIN, Deactivate / Reactivate, Remove (past activity keeps
+  the name). **Add employee** is a small dialog: name, PIN, confirm. Nothing else on
+  the tab, by the owner's choice: no intro text, no always-open form.
+- **Activity** (`/admin/staff/activity`, owner and manager): the log, described below.
+  Its Person filter lists the people (by PIN) and the accounts (by login) under two
+  headings.
+- **Accounts** (`/admin/staff/accounts`, owner): every login, grouped by business with
+  the role badge, exactly the team list as it always looked. A check-in account is a
+  shared desk or tablet; its **Shared computer** switch on the edit page sets
+  `staff.pin_required` (the desk computer) and `kiosks.pin_required` (its tablet, by
+  `staff.kiosk_slug`) together. Add account opens the team member form.
 
-Below the people, **Activity**, built for volume:
+`kiosk_employees.staff_id` exists (a person's own login) but the screens do not use it
+yet: the owner asked for people and logins to stay two plain lists.
+
+**Activity**, built for volume:
 
 - Reads go through the `activity_feed` RPC (tablets and web as one stream, filters +
   keyset paging on `at, key`, 100 rows a page, "Load more" continues from the last row);

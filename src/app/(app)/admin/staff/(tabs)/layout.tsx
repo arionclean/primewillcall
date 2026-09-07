@@ -3,9 +3,9 @@ import { getCurrentStaff } from "@/lib/auth";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 /**
- * The Team screen: one title, two tabs. "People" is everyone who works here
- * (PIN and/or website login) with the activity log; "Accounts" is the shared
- * desk and tablet logins, owner only. The tabs are routes, so the People
+ * The Team screen: one title, three tabs. "People" is the employees who type a
+ * PIN; "Activity" is what everyone did, tablets and web; "Accounts" is every
+ * login, grouped by business, owner only. The tabs are routes, so the Activity
  * filters live in its URL.
  */
 export default async function StaffTabsLayout({
@@ -15,14 +15,14 @@ export default async function StaffTabsLayout({
 }) {
   const { staff } = await getCurrentStaff();
   const supabase = await getSupabaseServerClient();
-  const [logins, pinOnly, accounts] = await Promise.all([
-    supabase.from("staff").select("id", { count: "exact", head: true }).in("role", ["owner", "business_manager"]),
-    supabase.from("kiosk_employees").select("id", { count: "exact", head: true }).is("staff_id", null),
-    supabase.from("staff").select("id", { count: "exact", head: true }).in("role", ["owner", "check_in"]),
+  const [people, accounts] = await Promise.all([
+    supabase.from("kiosk_employees").select("id", { count: "exact", head: true }),
+    supabase.from("staff").select("id", { count: "exact", head: true }),
   ]);
 
   const tabs: PageTab[] = [
-    { href: "/admin/staff", label: "People", count: (logins.count ?? 0) + (pinOnly.count ?? 0) },
+    { href: "/admin/staff", label: "People", count: people.count ?? 0 },
+    { href: "/admin/staff/activity", label: "Activity" },
     ...(staff?.role === "owner"
       ? [{ href: "/admin/staff/accounts", label: "Accounts", count: accounts.count ?? 0 }]
       : []),

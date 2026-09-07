@@ -433,7 +433,7 @@ business's current account.
   KS code) on every row. In the realtime publication. Same read policy as `cash_sales`.
 - `kiosk_employees` — the people who use the tablets (docs/kiosk-employees.md), one pool
   shared by every business (no business column, by the owner's choice): `name`,
-  `staff_id?` (the same person's website login, unique; links the People card),
+  `staff_id?` (the same person's website login, unique; not used by the screens yet),
   `pin_hash` + `pin_salt` (`sha256(salt:pin)`, unique across all active employees via the
   `kiosk_pin_in_use` definer function), `is_active`, `last_seen_at` / `last_seen_kiosk`.
   Any active staff reads; owner and business managers write. Referenced by

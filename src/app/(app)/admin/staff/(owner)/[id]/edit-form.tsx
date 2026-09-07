@@ -374,9 +374,9 @@ export function EditStaffForm({
             <span>
               <span className="block font-medium">Ask for an employee PIN</span>
               <span className="block text-xs text-muted-foreground">
-                Each person unlocks the screen with their own PIN, the same one as on the
-                tablets, and the activity log shows who did what. Leave it off for a login
-                only one person uses; their actions are still logged under the account.
+                On this account&apos;s computer and its tablet, each person unlocks the screen
+                with their own PIN and the activity log shows who did what. Leave it off for
+                a login only one person uses; their actions are still logged under the account.
               </span>
             </span>
           </label>

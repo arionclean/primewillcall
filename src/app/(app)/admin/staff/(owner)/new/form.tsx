@@ -120,20 +120,10 @@ type Props = {
   businesses: { id: string; name: string }[];
   /** Preselected role, e.g. an account from the Accounts tab. */
   defaultRole?: StaffRole | "";
-  /** Name carried over from a person's card. */
-  defaultName?: string;
-  /** The PIN row (kiosk_employees.id) this login belongs to, when opened from a person. */
-  linkEmployeeId?: string;
   tours: { id: string; name: string }[];
 };
 
-export function NewStaffForm({
-  businesses,
-  tours,
-  defaultRole = "",
-  defaultName = "",
-  linkEmployeeId = "",
-}: Props) {
+export function NewStaffForm({ businesses, tours, defaultRole = "" }: Props) {
   const [state, formAction] = useActionState(
     createStaffAction,
     INITIAL,
@@ -182,7 +172,6 @@ export function NewStaffForm({
 
   return (
     <form action={formAction} className="space-y-6">
-      {linkEmployeeId && <input type="hidden" name="link_employee_id" value={linkEmployeeId} />}
       <FormSection
         title="Basics"
         contentClassName="grid gap-5 sm:grid-cols-2"
@@ -196,9 +185,8 @@ export function NewStaffForm({
             id="full_name"
             name="full_name"
             placeholder="e.g. Jane Doe"
-            defaultValue={defaultName}
             required
-            autoFocus={!defaultName}
+            autoFocus
           />
         </Field>
 

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -25,6 +26,7 @@ type Props = {
   pageSize: number;
   filter: ActivityFilter;
   people: PersonOption[];
+  accounts: PersonOption[];
   kiosks: KioskOption[];
   loadError: boolean;
 };
@@ -61,7 +63,7 @@ function matches(row: ActivityRow, f: ActivityFilter): boolean {
  * subscription per source, filtered here the same way the database filtered the
  * page). Nothing here re-renders the rest of the page.
  */
-export function ActivityFeed({ rows: initialRows, pageSize, filter, people, kiosks, loadError }: Props) {
+export function ActivityFeed({ rows: initialRows, pageSize, filter, people, accounts, kiosks, loadError }: Props) {
   const [rows, setRows] = useState<ActivityRow[]>(initialRows);
   const [hasMore, setHasMore] = useState(initialRows.length >= pageSize);
   const [loading, setLoading] = useState(false);
@@ -71,9 +73,9 @@ export function ActivityFeed({ rows: initialRows, pageSize, filter, people, kios
   // Live web rows carry the login's id, not its name; the people list knows it.
   const accountName = useRef(new Map<string, string>());
   accountName.current = new Map(
-    people.flatMap((p) => {
-      const staffId = personParts(p.value).staff;
-      return staffId ? [[staffId, p.name] as [string, string]] : [];
+    accounts.flatMap((a) => {
+      const staffId = personParts(a.value).staff;
+      return staffId ? [[staffId, a.name] as [string, string]] : [];
     }),
   );
 
@@ -177,20 +179,12 @@ export function ActivityFeed({ rows: initialRows, pageSize, filter, people, kios
 
   return (
     <section id="activity" className="space-y-3">
-      <div className="px-1">
-        <h2 className="text-lg font-semibold tracking-tight">Activity</h2>
-        <p className="mt-0.5 text-sm text-muted-foreground">
-          What the tablets and the web app recorded that day, newest first.
-          {live ? " New actions appear as they happen." : ""}
-        </p>
-      </div>
-
       <Card>
         <CardContent className="space-y-4 py-5">
           {/* No Show button: picking a value applies it. */}
           <form
             method="get"
-            action="#activity"
+            action="/admin/staff/activity"
             onChange={(e) => e.currentTarget.requestSubmit()}
             className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6"
           >
@@ -207,11 +201,24 @@ export function ActivityFeed({ rows: initialRows, pageSize, filter, people, kios
             <Field label="Person" htmlFor="act-person">
               <Select id="act-person" name="person" defaultValue={filter.person}>
                 <option value="">Everyone</option>
-                {people.map((p) => (
-                  <option key={p.value} value={p.value}>
-                    {p.name}
-                  </option>
-                ))}
+                {people.length > 0 && (
+                  <optgroup label="People">
+                    {people.map((p) => (
+                      <option key={p.value} value={p.value}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {accounts.length > 0 && (
+                  <optgroup label="Accounts">
+                    {accounts.map((a) => (
+                      <option key={a.value} value={a.value}>
+                        {a.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </Select>
             </Field>
             <Field label="Tablet" htmlFor="act-kiosk">
@@ -236,9 +243,9 @@ export function ActivityFeed({ rows: initialRows, pageSize, filter, people, kios
             </Field>
             {filtered && (
               <div className="flex items-end">
-                <a href="?#activity" className={buttonVariants({ variant: "ghost" })}>
+                <Link href="/admin/staff/activity" className={buttonVariants({ variant: "ghost" })}>
                   Reset
-                </a>
+                </Link>
               </div>
             )}
           </form>

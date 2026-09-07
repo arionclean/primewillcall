@@ -98,6 +98,16 @@ export async function updateStaffAction(
     .eq("id", id);
   if (updErr) return { error: updErr.message };
 
+  // A shared desk's PIN switch covers its tablet too, so one setting is the truth.
+  const { data: acct } = await supabase.from("staff").select("kiosk_slug").eq("id", id).maybeSingle();
+  if (acct?.kiosk_slug) {
+    const { error: kioskErr } = await supabase
+      .from("kiosks")
+      .update({ pin_required })
+      .eq("slug", acct.kiosk_slug);
+    if (kioskErr) console.error("[staff] tablet pin switch:", kioskErr);
+  }
+
   // Sync staff_tours: only meaningful when role is check_in. When role
   // switches away from check_in, drop all linkages.
   const { data: existing } = await supabase

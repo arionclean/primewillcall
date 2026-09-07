@@ -5,12 +5,10 @@ import { NewStaffForm } from "./form";
 export default async function NewStaffPage({
   searchParams,
 }: {
-  searchParams: Promise<{ role?: string; person?: string; name?: string }>;
+  searchParams: Promise<{ role?: string }>;
 }) {
   const sp = await searchParams;
   const defaultRole = sp.role === "check_in" || sp.role === "business_manager" ? sp.role : "";
-  const linkEmployeeId = /^[0-9a-f-]{36}$/i.test(sp.person ?? "") ? (sp.person as string) : "";
-  const defaultName = (sp.name ?? "").slice(0, 120);
   const isAccount = defaultRole === "check_in";
   const supabase = await getSupabaseServerClient();
   const [{ data: businesses }, { data: tours }] = await Promise.all([
@@ -26,7 +24,7 @@ export default async function NewStaffPage({
     <div>
       <header className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight">
-          {isAccount ? "Add account" : linkEmployeeId || defaultName ? "Add a website login" : "Add team member"}
+          {isAccount ? "Add account" : "Add team member"}
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           {isAccount
@@ -38,8 +36,6 @@ export default async function NewStaffPage({
         businesses={businesses ?? []}
         tours={tours ?? []}
         defaultRole={defaultRole}
-        defaultName={defaultName}
-        linkEmployeeId={linkEmployeeId}
       />
     </div>
   );

@@ -1,39 +1,50 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { SubmitButton } from "@/components/ui/submit-button";
+import { cn } from "@/lib/utils";
+import { redirect } from "next/navigation";
+
 import { getCurrentStaff } from "@/lib/auth";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
-import { cn } from "@/lib/utils";
 
-import { setAccountPinAction } from "../actions";
+const ROLE_LABEL = {
+  owner: "Owner",
+  business_manager: "Business manager",
+  check_in: "Check-in staff",
+} as const;
 
-type AccountRow = {
+const ROLE_TONE = {
+  owner: "primary",
+  business_manager: "info",
+  check_in: "neutral",
+} as const;
+
+type StaffRow = {
   id: string;
   full_name: string;
   email: string;
-  role: "owner" | "business_manager" | "check_in";
+  phone: string | null;
+  role: keyof typeof ROLE_LABEL;
   is_active: boolean;
-  kiosk_slug: string | null;
-  pin_required: boolean;
+  user_id: string | null;
   business: { id: string; name: string; logo_url: string | null } | null;
 };
 
-function groupByBusiness(accounts: AccountRow[]) {
+function groupByBusiness(staff: StaffRow[]) {
   const groups = new Map<
     string,
-    { id: string; name: string; logoUrl: string | null; members: AccountRow[] }
+    { id: string; name: string; logoUrl: string | null; members: StaffRow[] }
   >();
-  for (const a of accounts) {
-    const id = a.business?.id ?? "prime";
-    const name = a.business?.name ?? "Prime";
-    const logoUrl = a.business?.logo_url ?? null;
+  for (const s of staff) {
+    const id = s.business?.id ?? "prime";
+    const name = s.business?.name ?? "Prime";
+    // Prime itself is not a business row, so it simply has no logo.
+    const logoUrl = s.business?.logo_url ?? null;
     const group = groups.get(id) ?? { id, name, logoUrl, members: [] };
-    group.members.push(a);
+    group.members.push(s);
     groups.set(id, group);
   }
   return [...groups.values()].sort((a, b) => {
@@ -44,57 +55,50 @@ function groupByBusiness(accounts: AccountRow[]) {
 }
 
 /**
- * Accounts: the owner login under Prime, then the shared desk logins (role
- * check_in), one per desk or tablet, grouped by business the way the team list
- * always was. A desk is signed in once and the people who work it type their PIN.
- * The one switch on a desk decides whether it asks for a PIN, on its computer and
- * on its tablet alike. Owner only.
+ * Accounts: every login, grouped by business, the way the team list always was.
+ * The owner and the managers sign in from their own computers; the check-in
+ * accounts are the shared desks and tablets. Whether a shared desk asks for a PIN
+ * is set on its edit page ("Shared computer"). Owner only.
  */
 export default async function AccountsPage() {
   const { staff: me } = await getCurrentStaff();
   if (me?.role !== "owner") redirect("/admin/staff");
 
   const supabase = await getSupabaseServerClient();
-  const [accRes, kioskRes] = await Promise.all([
-    supabase
-      .from("staff")
-      .select(
-        `id, full_name, email, role, is_active, kiosk_slug, pin_required,
-         business:businesses!staff_business_id_fkey(id, name, logo_url)`,
-      )
-      // The owner login sits at the top under Prime, as the team list always showed it.
-      .in("role", ["owner", "check_in"])
-      .order("created_at", { ascending: true }),
-    supabase.from("kiosks").select("slug, name, pin_required"),
-  ]);
-  if (accRes.error) console.error("[accounts] fetch error:", accRes.error);
-  const kioskBySlug = new Map((kioskRes.data ?? []).filter((k) => k.slug).map((k) => [k.slug as string, k]));
-  const accounts: AccountRow[] = accRes.data ?? [];
+  const { data: staff, error } = await supabase
+    .from("staff")
+    .select(
+      `id, full_name, email, phone, role, is_active, user_id,
+       business:businesses!staff_business_id_fkey(id, name, logo_url)`,
+    )
+    .order("created_at", { ascending: true });
+
+  // The screen shows a plain "could not load" line; the detail belongs in the
+  // server log, not on screen.
+  if (error) console.error("[accounts] fetch error:", error);
 
   return (
     <div>
-      <header className="mb-6 flex items-end justify-between gap-4">
-        <p className="max-w-2xl text-sm text-muted-foreground">
-          The owner login and the logins for shared desks and tablets. A desk is signed in
-          once; the people who work it type their own PIN, so every action is recorded
-          under the person.
-        </p>
-        <Link href="/admin/staff/new?role=check_in" className={cn(buttonVariants({ variant: "default" }))}>
+      <header className="mb-6 flex items-center justify-end">
+        <Link
+          href="/admin/staff/new"
+          className={cn(buttonVariants({ variant: "default" }))}
+        >
           + Add account
         </Link>
       </header>
 
-      {accRes.error && (
+      {error && (
         <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
           Could not load the accounts. Refresh the page and try again.
         </p>
       )}
 
-      {accounts.length === 0 ? (
+      {(!staff || staff.length === 0) ? (
         <EmptyState />
       ) : (
         <div className="space-y-8">
-          {groupByBusiness(accounts).map((group) => (
+          {groupByBusiness(staff).map((group) => (
             <section key={group.id}>
               <h2 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 {group.logoUrl ? (
@@ -109,43 +113,38 @@ export default async function AccountsPage() {
                 {group.name}
               </h2>
               <ul className="space-y-2">
-                {group.members.map((a) => {
-                  const kiosk = a.kiosk_slug ? kioskBySlug.get(a.kiosk_slug) : undefined;
-                  const pinOn = a.pin_required || Boolean(kiosk?.pin_required);
+                {group.members.map((s) => {
                   return (
-                    <li key={a.id}>
-                      <Card className="transition hover:translate-x-0.5">
-                        <CardContent className="flex items-center gap-4 py-4">
-                          <Link href={`/admin/staff/${a.id}`} className="flex min-w-0 flex-1 items-center gap-4">
-                            <Avatar seed={a.email} />
+                    <li key={s.id}>
+                      <Link
+                        href={`/admin/staff/${s.id}`}
+                        className="block transition hover:translate-x-0.5"
+                      >
+                        <Card>
+                          <CardContent className="flex items-center gap-4 py-4">
+                            <Avatar seed={s.email} />
                             <div className="min-w-0 flex-1">
-                              <p className="truncate font-medium">{a.full_name}</p>
+                              <p className="truncate font-medium">
+                                {s.full_name}
+                              </p>
                               <p className="truncate text-xs text-muted-foreground">
-                                {a.email}
-                                {kiosk ? ` · Tablet: ${kiosk.name}` : ""}
+                                {s.email}
                               </p>
                             </div>
-                          </Link>
-                          <div className="flex items-center gap-2">
-                            {a.role === "owner" ? (
-                              <Badge tone="primary">Owner</Badge>
-                            ) : (
-                              <Badge tone={pinOn ? "success" : "neutral"}>{pinOn ? "Asks for a PIN" : "No PIN"}</Badge>
-                            )}
-                            {!a.is_active && <Badge tone="warning">Inactive</Badge>}
-                            {a.role === "check_in" && (
-                              <form action={setAccountPinAction}>
-                                <input type="hidden" name="staff_id" value={a.id} />
-                                <input type="hidden" name="on" value={pinOn ? "0" : "1"} />
-                                <SubmitButton variant="outline" size="sm">{pinOn ? "Turn PIN off" : "Turn PIN on"}</SubmitButton>
-                              </form>
-                            )}
-                          </div>
-                          <Link href={`/admin/staff/${a.id}`} aria-label={`Edit ${a.full_name}`} className="text-muted-foreground">
-                            ›
-                          </Link>
-                        </CardContent>
-                      </Card>
+                            <div className="flex items-center gap-2">
+                              <Badge tone={ROLE_TONE[s.role]}>
+                                {ROLE_LABEL[s.role]}
+                              </Badge>
+                              {!s.is_active && (
+                                <Badge tone="warning">Inactive</Badge>
+                              )}
+                            </div>
+                            <span aria-hidden className="text-muted-foreground">
+                              ›
+                            </span>
+                          </CardContent>
+                        </Card>
+                      </Link>
                     </li>
                   );
                 })}
@@ -162,8 +161,11 @@ function EmptyState() {
   return (
     <Card>
       <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
-        <p className="text-sm text-muted-foreground">No shared accounts yet.</p>
-        <Link href="/admin/staff/new?role=check_in" className={cn(buttonVariants({ variant: "default" }))}>
+        <p className="text-sm text-muted-foreground">No accounts yet.</p>
+        <Link
+          href="/admin/staff/new"
+          className={cn(buttonVariants({ variant: "default" }))}
+        >
           + Add your first account
         </Link>
       </CardContent>
