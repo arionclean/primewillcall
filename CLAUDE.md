@@ -78,8 +78,9 @@ src/
         tours/                 owner sees master tours; manager sees their tours only
           [id]/                edit-form (owner) vs manager-edit-form (manager)
           [id]/variants/new/   owner: add a business's copy of a tour
-        staff/                 Team. (tabs)/ = Team list (owner) + employees/ tab (owner +
-                               manager: tablet people, PINs, activity); (owner)/ = new/[id]
+        staff/                 Team. (tabs)/ = People (owner + manager: everyone with a PIN
+                               and/or a login, plus the activity log) and accounts/ (owner:
+                               shared desk logins + the PIN switch); (owner)/ = new/[id]
         unmatched/             owner-only. OTA email review queue (page + actions)
         groupon/               owner-only. per-product Groupon convenience fee config
         payments/              owner + manager. Stripe charges ledger + refunds
@@ -413,7 +414,9 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   unlocked until the person taps Lock (no idle or background lock, no lockout on wrong
   PINs, by the owner's choice), and stamps the employee on every event, sale and booking
   (`kiosk_events.employee_id`, `cash_sales.employee_id`, `bookings.kiosk_employee_id`).
-  Managed on `/admin/staff/employees` (owner + manager) with a live activity log. The **web
+  Managed on Team (`/admin/staff`: **People** = one card per person with a PIN and/or a
+  website login, linked by `kiosk_employees.staff_id`; **Accounts** = the shared desk
+  logins with one PIN switch for desk + tablet) with a live activity log. The **web
   app is tracked too**: the `log_staff_change` trigger writes `audit_log` for every
   staff edit (who, table, row, diff; system writes skipped), a login marked
   `staff.pin_required` ("Shared computer") gets the same PIN keypad and stamps the

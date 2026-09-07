@@ -813,6 +813,7 @@ export type Database = {
           name: string
           pin_hash: string
           pin_salt: string
+          staff_id: string | null
           updated_at: string
         }
         Insert: {
@@ -824,6 +825,7 @@ export type Database = {
           name: string
           pin_hash: string
           pin_salt: string
+          staff_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -835,9 +837,18 @@ export type Database = {
           name?: string
           pin_hash?: string
           pin_salt?: string
+          staff_id?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "kiosk_employees_staff_id_fkey"
+            columns: ["staff_id"]
+            isOneToOne: true
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       kiosk_events: {
         Row: {

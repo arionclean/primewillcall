@@ -110,6 +110,17 @@ export async function createStaffAction(
     }
   }
 
+  // Opened from a person's card (or the Add person form): attach this login to
+  // their PIN so the two stay one card on the People tab.
+  const linkEmployeeId = String(formData.get("link_employee_id") ?? "").trim();
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(linkEmployeeId)) {
+    const { error: linkErr } = await supabase
+      .from("kiosk_employees")
+      .update({ staff_id: inserted.id })
+      .eq("id", linkEmployeeId);
+    if (linkErr) console.error("[staff] could not attach the PIN to the new login:", linkErr);
+  }
+
   // Either create the auth user with a chosen password, or send them an email
   // invite to set their own. Both require the service role key.
   let warning: string | undefined;

@@ -3,9 +3,10 @@ import { getCurrentStaff } from "@/lib/auth";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 /**
- * The Team screen: one title, two tabs. "Team" is the staff logins (owner only);
- * "Employees" is the people who use the tablets and shared computers, with the
- * activity log. The tabs are routes, so the Employees filters live in its URL.
+ * The Team screen: one title, two tabs. "People" is everyone who works here
+ * (PIN and/or website login) with the activity log; "Accounts" is the shared
+ * desk and tablet logins, owner only. The tabs are routes, so the People
+ * filters live in its URL.
  */
 export default async function StaffTabsLayout({
   children,
@@ -14,14 +15,17 @@ export default async function StaffTabsLayout({
 }) {
   const { staff } = await getCurrentStaff();
   const supabase = await getSupabaseServerClient();
-  const { count } = await supabase
-    .from("kiosk_employees")
-    .select("id", { count: "exact", head: true })
-    .eq("is_active", true);
+  const [logins, pinOnly, accounts] = await Promise.all([
+    supabase.from("staff").select("id", { count: "exact", head: true }).in("role", ["owner", "business_manager"]),
+    supabase.from("kiosk_employees").select("id", { count: "exact", head: true }).is("staff_id", null),
+    supabase.from("staff").select("id", { count: "exact", head: true }).eq("role", "check_in"),
+  ]);
 
   const tabs: PageTab[] = [
-    ...(staff?.role === "owner" ? [{ href: "/admin/staff", label: "Team" }] : []),
-    { href: "/admin/staff/employees", label: "Employees", count: count ?? 0 },
+    { href: "/admin/staff", label: "People", count: (logins.count ?? 0) + (pinOnly.count ?? 0) },
+    ...(staff?.role === "owner"
+      ? [{ href: "/admin/staff/accounts", label: "Accounts", count: accounts.count ?? 0 }]
+      : []),
   ];
 
   return (

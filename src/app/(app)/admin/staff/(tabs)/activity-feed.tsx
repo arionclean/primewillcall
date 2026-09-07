@@ -24,8 +24,7 @@ type Props = {
   rows: ActivityRow[];
   pageSize: number;
   filter: ActivityFilter;
-  employees: PersonOption[];
-  accounts: PersonOption[];
+  people: PersonOption[];
   kiosks: KioskOption[];
   loadError: boolean;
 };
@@ -43,8 +42,11 @@ function matches(row: ActivityRow, f: ActivityFilter): boolean {
   if (t < new Date(f.startUtc).getTime() || t >= new Date(f.endUtcExclusive).getTime()) return false;
   if (f.source && row.source !== f.source) return false;
   const who = personParts(f.person);
-  if (who.employee && row.employeeId !== who.employee) return false;
-  if (who.staff && row.actorStaffId !== who.staff) return false;
+  if (who.employee || who.staff) {
+    const mine =
+      (who.employee && row.employeeId === who.employee) || (who.staff && row.actorStaffId === who.staff);
+    if (!mine) return false;
+  }
   if (f.kiosk && row.kioskSlug !== f.kiosk) return false;
   if (f.group && !(EVENT_GROUPS[f.group].events as readonly string[]).includes(row.event)) return false;
   if (!f.includeDebug && row.level === "debug") return false;
@@ -59,15 +61,21 @@ function matches(row: ActivityRow, f: ActivityFilter): boolean {
  * subscription per source, filtered here the same way the database filtered the
  * page). Nothing here re-renders the rest of the page.
  */
-export function ActivityFeed({ rows: initialRows, pageSize, filter, employees, accounts, kiosks, loadError }: Props) {
+export function ActivityFeed({ rows: initialRows, pageSize, filter, people, kiosks, loadError }: Props) {
   const [rows, setRows] = useState<ActivityRow[]>(initialRows);
   const [hasMore, setHasMore] = useState(initialRows.length >= pageSize);
   const [loading, setLoading] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState(false);
   const filterRef = useRef(filter);
   filterRef.current = filter;
-  const accountName = useRef(new Map(accounts.map((a) => [a.id, a.name])));
-  accountName.current = new Map(accounts.map((a) => [a.id, a.name]));
+  // Live web rows carry the login's id, not its name; the people list knows it.
+  const accountName = useRef(new Map<string, string>());
+  accountName.current = new Map(
+    people.flatMap((p) => {
+      const staffId = personParts(p.value).staff;
+      return staffId ? [[staffId, p.name] as [string, string]] : [];
+    }),
+  );
 
   // A new server render (filters changed) replaces what is held here.
   const filterKey = JSON.stringify(filter);
@@ -199,24 +207,11 @@ export function ActivityFeed({ rows: initialRows, pageSize, filter, employees, a
             <Field label="Person" htmlFor="act-person">
               <Select id="act-person" name="person" defaultValue={filter.person}>
                 <option value="">Everyone</option>
-                {employees.length > 0 && (
-                  <optgroup label="Employees">
-                    {employees.map((e) => (
-                      <option key={e.id} value={`e:${e.id}`}>
-                        {e.name}
-                      </option>
-                    ))}
-                  </optgroup>
-                )}
-                {accounts.length > 0 && (
-                  <optgroup label="Web logins">
-                    {accounts.map((a) => (
-                      <option key={a.id} value={`s:${a.id}`}>
-                        {a.name}
-                      </option>
-                    ))}
-                  </optgroup>
-                )}
+                {people.map((p) => (
+                  <option key={p.value} value={p.value}>
+                    {p.name}
+                  </option>
+                ))}
               </Select>
             </Field>
             <Field label="Tablet" htmlFor="act-kiosk">

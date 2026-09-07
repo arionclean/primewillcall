@@ -201,7 +201,7 @@ employee_name?, entity, entity_id? (text), action, changed text[], payload jsonb
 table staff edit (only for a real staff session; system writes are skipped) and by the
 `payments` function for its own writes. `employee_id` is the person behind a shared
 login (`staff.pin_required`), read from the `x-employee-id` request header. Read with
-`kiosk_events` through `activity_feed()` on `/admin/staff/employees`. Owner reads all; a
+`kiosk_events` through `activity_feed()` on `/admin/staff` (Team, People tab). Owner reads all; a
 manager their business's rows and their own; check-in their own. See
 docs/kiosk-employees.md "The web app".
 
@@ -433,6 +433,7 @@ business's current account.
   KS code) on every row. In the realtime publication. Same read policy as `cash_sales`.
 - `kiosk_employees` — the people who use the tablets (docs/kiosk-employees.md), one pool
   shared by every business (no business column, by the owner's choice): `name`,
+  `staff_id?` (the same person's website login, unique; links the People card),
   `pin_hash` + `pin_salt` (`sha256(salt:pin)`, unique across all active employees via the
   `kiosk_pin_in_use` definer function), `is_active`, `last_seen_at` / `last_seen_kiosk`.
   Any active staff reads; owner and business managers write. Referenced by

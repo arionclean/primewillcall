@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-/** The Employees page moved under Team; old links and bookmarks still land, filters included. */
+/** The Employees page became People, the first tab of Team. Old links still land. */
 export default async function EmployeesMoved({
   searchParams,
 }: {
@@ -10,5 +10,5 @@ export default async function EmployeesMoved({
   const qs = new URLSearchParams(
     Object.entries(sp).filter((e): e is [string, string] => typeof e[1] === "string"),
   ).toString();
-  redirect(qs ? `/admin/staff/employees?${qs}` : "/admin/staff/employees");
+  redirect(qs ? `/admin/staff?${qs}` : "/admin/staff");
 }

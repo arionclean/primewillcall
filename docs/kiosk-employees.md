@@ -36,13 +36,32 @@ which iPad; the employee PIN says who.
 - **Old builds** never call `kiosk-pin-verify` or read `pin_required`; nothing changes for
   them. Builds 9+ support it.
 
-## The admin page
+## The admin page: Team
 
-`/admin/staff/employees`, the Employees tab of Team (owner and any business manager
-manage the shared pool; a manager's Team link opens this tab; check-in accounts are
-redirected away):
-add an employee (name, PIN), change a PIN, deactivate or reactivate, remove (past
-activity keeps the name), and **Activity**, built for volume:
+The owner sees two tabs, a manager one. The model a new owner learns is short: a
+**person** works here and types a PIN; an **account** is a shared desk or tablet login.
+
+- **People** (`/admin/staff`, owner and any business manager): one card per person,
+  whether they have a PIN (a `kiosk_employees` row, for the tablets and shared
+  computers), their own website login (a `staff` row with role owner or manager), or
+  both. The two are linked by `kiosk_employees.staff_id`; the card shows the role, a
+  PIN / No PIN badge, the email and business, and when the PIN was last used. Actions:
+  Activity (filters the log to them, by either identity), Set / Change PIN (for a
+  login without a PIN this creates the linked PIN row), Edit login (owner), Add login
+  (owner; opens the team member form with the name filled in and the PIN attached),
+  and, for PIN-only people, Deactivate / Reactivate and Remove (past activity keeps
+  the name). **Add person** is a name and a PIN, with an owner-only "also give them a
+  website login" that continues into the team member form. Managers see the people
+  their RLS allows (their business's logins, every PIN).
+- **Accounts** (`/admin/staff/accounts`, owner only): the `check_in` logins, one per
+  desk or tablet, with the business, the tablet (`staff.kiosk_slug`) and one switch,
+  **Turn PIN on / off**, which sets `staff.pin_required` (the desk computer) and
+  `kiosks.pin_required` (its tablet) together. Add account opens the team member form
+  with the role preset. Editing an account is the same edit page as before.
+- Deactivating a login on its edit page does not pause a linked PIN; pause the PIN on
+  the person's card (a small gap, noted here on purpose).
+
+Below the people, **Activity**, built for volume:
 
 - Reads go through the `activity_feed` RPC (tablets and web as one stream, filters +
   keyset paging on `at, key`, 100 rows a page, "Load more" continues from the last row);
@@ -63,7 +82,8 @@ activity keeps the name), and **Activity**, built for volume:
   filter, so a new action shows within a second without re-rendering the page.
   (The earlier `useLiveRefresh` approach re-ran every query on every event, which a
   busy tablet would turn into a refresh a second.)
-- Each person's card has an **Activity** link that filters the log to them.
+- Each person's card has an **Activity** link that filters the log to them, by both
+  their PIN and their login (`personValue()` in `activity-shared.ts`).
 
 Labels and groups live in `src/lib/kiosk/events.ts`; a new event from the tablet needs
 a label and a group there.
@@ -130,5 +150,5 @@ screen re-checks every few seconds), so no reinstall.
 | `supabase/migrations/20260907195532_web_activity_log.sql` | `audit_log` trigger, `staff.pin_required`, web PIN functions, `activity_feed` |
 | `src/lib/employee-session.ts`, `src/app/(app)/employee-actions.ts`, `components/app/web-pin-lock.tsx`, `employee-chip.tsx` | the web PIN |
 | `supabase/functions/_shared/audit.ts` | explicit log rows from service-role functions (`payments`) |
-| `src/app/(app)/admin/staff/employees/*`, `src/lib/kiosk/pin.ts`, `src/lib/kiosk/events.ts` | the admin page (`activity-feed.tsx` is the log) |
+| `src/app/(app)/admin/staff/(tabs)/*`, `src/lib/kiosk/pin.ts`, `src/lib/kiosk/events.ts` | Team: People (`people-view.tsx`), Accounts, the log (`activity-feed.tsx`) |
 | PrimeKiosk `src/services/EmployeeSession.ts`, `src/context/EmployeeSessionContext.tsx` | session, keypad, pill |

@@ -1,7 +1,7 @@
 import { EVENT_GROUPS, type EventGroup } from "@/lib/kiosk/events";
 
 /**
- * Shapes and helpers the Employees page and its live feed share. No "use client"
+ * Shapes and helpers the Team page and its live feed share. No "use client"
  * here on purpose: the server component calls `rpcArgs` and `toRow` for the first
  * page, the client component for the pages after it and the live rows.
  */
@@ -31,7 +31,7 @@ export type ActivityFilter = {
   startUtc: string;
   endUtcExclusive: string;
   source: ActivitySource | "";
-  /** "e:<employee id>" or "s:<staff id>". */
+  /** A person: "<employee id or ->:<staff id or ->", see personValue(). */
   person: string;
   kiosk: string;
   group: EventGroup | "";
@@ -39,13 +39,28 @@ export type ActivityFilter = {
   includeDebug: boolean;
 };
 
-export type PersonOption = { id: string; name: string };
+/** A person as the filter lists them: one entry whether they have a PIN, a login, or both. */
+export type PersonOption = { value: string; name: string };
 export type KioskOption = { id: string; slug: string; name: string };
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * One person can act under two identities: their PIN (employee) on a tablet or a
+ * shared computer, and their own login (staff) on the web. The filter value
+ * carries both so the feed shows everything they did.
+ */
+export function personValue(employeeId: string | null, staffId: string | null): string {
+  if (!employeeId && !staffId) return "";
+  return `${employeeId ?? "-"}:${staffId ?? "-"}`;
+}
+
 export function personParts(person: string): { employee?: string; staff?: string } {
-  if (person.startsWith("e:")) return { employee: person.slice(2) };
-  if (person.startsWith("s:")) return { staff: person.slice(2) };
-  return {};
+  const [e = "", s = ""] = person.split(":");
+  return {
+    employee: UUID_RE.test(e) ? e : undefined,
+    staff: UUID_RE.test(s) ? s : undefined,
+  };
 }
 
 export function rpcArgs(f: ActivityFilter) {

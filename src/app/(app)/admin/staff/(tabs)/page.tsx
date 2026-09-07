@@ -1,173 +1,129 @@
-import Link from "next/link";
-
-import { Avatar } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
-import { redirect } from "next/navigation";
-
 import { getCurrentStaff } from "@/lib/auth";
+import { BUSINESS_TZ, getLocalDateRange, parseLocalYmd, todayLocalIso } from "@/lib/dates";
+import { isEventGroup } from "@/lib/kiosk/events";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
-const ROLE_LABEL = {
-  owner: "Owner",
-  business_manager: "Business manager",
-  check_in: "Check-in staff",
-} as const;
+import { ActivityFeed } from "./activity-feed";
+import {
+  personValue,
+  rpcArgs,
+  toRow,
+  type ActivityFilter,
+  type ActivityRow,
+  type KioskOption,
+  type PersonOption,
+} from "./activity-shared";
+import { PeopleView, type PersonRow } from "./people-view";
 
-const ROLE_TONE = {
-  owner: "primary",
-  business_manager: "info",
-  check_in: "neutral",
-} as const;
+const PAGE_SIZE = 100;
 
-type StaffRow = {
-  id: string;
-  full_name: string;
-  email: string;
-  phone: string | null;
-  role: keyof typeof ROLE_LABEL;
-  is_active: boolean;
-  user_id: string | null;
-  business: { id: string; name: string; logo_url: string | null } | null;
-};
-
-function groupByBusiness(staff: StaffRow[]) {
-  const groups = new Map<
-    string,
-    { id: string; name: string; logoUrl: string | null; members: StaffRow[] }
-  >();
-  for (const s of staff) {
-    const id = s.business?.id ?? "prime";
-    const name = s.business?.name ?? "Prime";
-    // Prime itself is not a business row, so it simply has no logo.
-    const logoUrl = s.business?.logo_url ?? null;
-    const group = groups.get(id) ?? { id, name, logoUrl, members: [] };
-    group.members.push(s);
-    groups.set(id, group);
-  }
-  return [...groups.values()].sort((a, b) => {
-    if (a.id === "prime") return -1;
-    if (b.id === "prime") return 1;
-    return a.name.localeCompare(b.name);
-  });
-}
-
-export default async function StaffListPage() {
-  // The team list is the owner's; a manager's Team page is the Employees tab.
+/**
+ * People: everyone who works here, as one card each, whether they have a PIN
+ * (a kiosk_employees row), a website login (a staff row with a managing role),
+ * or both (linked by kiosk_employees.staff_id). Shared desk logins are not
+ * people; they live on the Accounts tab. Below the people, the activity of
+ * tablets and web as one stream, read through the `activity_feed` RPC (filters
+ * from the URL, keyset paging); the client component keeps it live.
+ */
+export default async function PeoplePage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | undefined>>;
+}) {
   const { staff: me } = await getCurrentStaff();
-  if (me?.role !== "owner") redirect("/admin/staff/employees");
-
   const supabase = await getSupabaseServerClient();
-  const { data: staff, error } = await supabase
-    .from("staff")
-    .select(
-      `id, full_name, email, phone, role, is_active, user_id,
-       business:businesses!staff_business_id_fkey(id, name, logo_url)`,
-    )
-    .order("created_at", { ascending: true });
+  const sp = await searchParams;
 
-  // The screen shows a plain "could not load" line; the detail belongs in the
-  // server log, not on screen.
-  if (error) console.error("[staff] fetch error:", error);
+  const today = todayLocalIso(BUSINESS_TZ);
+  const day = parseLocalYmd(sp.day) ?? today;
+  const range = getLocalDateRange(day, BUSINESS_TZ);
+  const group = isEventGroup(sp.group) ? sp.group : "";
+  const filter: ActivityFilter = {
+    day,
+    isToday: day === today,
+    startUtc: range.startUtc,
+    endUtcExclusive: range.endUtcExclusive,
+    source: sp.source === "tablet" || sp.source === "web" ? sp.source : "",
+    person: (sp.person ?? "").slice(0, 80),
+    kiosk: (sp.kiosk ?? "").slice(0, 64),
+    group,
+    // The housekeeping group is nothing but debug rows, so asking for it means showing them.
+    includeDebug: group === "tablet",
+  };
+
+  const [staffRes, empRes, kioskRes, rowsRes] = await Promise.all([
+    supabase
+      .from("staff")
+      .select("id, full_name, email, role, is_active, business:businesses!staff_business_id_fkey(name)")
+      .in("role", ["owner", "business_manager"])
+      .order("full_name"),
+    supabase
+      .from("kiosk_employees")
+      .select("id, name, staff_id, is_active, last_seen_at, last_seen_kiosk")
+      .order("name"),
+    supabase.from("kiosks").select("id, slug, name").order("slug"),
+    supabase.rpc("activity_feed", { ...rpcArgs(filter), p_limit: PAGE_SIZE }),
+  ]);
+
+  for (const [label, r] of [["staff", staffRes], ["employees", empRes], ["kiosks", kioskRes], ["activity", rowsRes]] as const) {
+    if (r.error) console.error(`[people] ${label} fetch error:`, r.error);
+  }
+
+  // One card per person: a login with its PIN (if any), then the PIN-only people.
+  const logins = staffRes.data ?? [];
+  const employees = empRes.data ?? [];
+  const loginIds = new Set(logins.map((s) => s.id));
+  const byStaff = new Map(employees.filter((e) => e.staff_id).map((e) => [e.staff_id as string, e]));
+  const people: PersonRow[] = [
+    ...logins.map((s) => {
+      const e = byStaff.get(s.id);
+      return {
+        name: s.full_name,
+        employeeId: e?.id ?? null,
+        staffId: s.id,
+        email: s.email,
+        role: s.role as "owner" | "business_manager",
+        businessName: s.business?.name ?? null,
+        isActive: s.is_active,
+        lastSeenAt: e?.last_seen_at ?? null,
+        lastSeenKiosk: e?.last_seen_kiosk ?? null,
+      };
+    }),
+    ...employees
+      .filter((e) => !e.staff_id || !loginIds.has(e.staff_id))
+      .map((e) => ({
+        name: e.name,
+        employeeId: e.id,
+        staffId: null,
+        email: null,
+        role: null,
+        businessName: null,
+        isActive: e.is_active,
+        lastSeenAt: e.last_seen_at,
+        lastSeenKiosk: e.last_seen_kiosk,
+      })),
+  ].sort((a, b) => a.name.localeCompare(b.name));
+
+  const personOptions: PersonOption[] = people.map((p) => ({
+    value: personValue(p.employeeId, p.staffId),
+    name: p.name,
+  }));
+  const kiosks: KioskOption[] = (kioskRes.data ?? [])
+    .filter((k) => Boolean(k.slug))
+    .map((k) => ({ id: k.id, slug: k.slug ?? "", name: k.name }));
+  const rows: ActivityRow[] = (rowsRes.data ?? []).map(toRow);
 
   return (
-    <div>
-      <header className="mb-6 flex items-end justify-between">
-        <p className="text-sm text-muted-foreground">
-          Owners see everything; managers see one business; check-in staff see
-          specific tours.
-        </p>
-        <Link
-          href="/admin/staff/new"
-          className={cn(buttonVariants({ variant: "default" }))}
-        >
-          + Add team member
-        </Link>
-      </header>
-
-      {error && (
-        <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-          Could not load the team. Refresh the page and try again.
-        </p>
-      )}
-
-      {(!staff || staff.length === 0) ? (
-        <EmptyState />
-      ) : (
-        <div className="space-y-8">
-          {groupByBusiness(staff).map((group) => (
-            <section key={group.id}>
-              <h2 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                {group.logoUrl ? (
-                  // Decorative: the business name sits right next to it.
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={group.logoUrl}
-                    alt=""
-                    className="h-6 w-6 shrink-0 rounded border bg-background object-cover"
-                  />
-                ) : null}
-                {group.name}
-              </h2>
-              <ul className="space-y-2">
-                {group.members.map((s) => {
-                  return (
-                    <li key={s.id}>
-                      <Link
-                        href={`/admin/staff/${s.id}`}
-                        className="block transition hover:translate-x-0.5"
-                      >
-                        <Card>
-                          <CardContent className="flex items-center gap-4 py-4">
-                            <Avatar seed={s.email} />
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate font-medium">
-                                {s.full_name}
-                              </p>
-                              <p className="truncate text-xs text-muted-foreground">
-                                {s.email}
-                              </p>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Badge tone={ROLE_TONE[s.role]}>
-                                {ROLE_LABEL[s.role]}
-                              </Badge>
-                              {!s.is_active && (
-                                <Badge tone="warning">Inactive</Badge>
-                              )}
-                            </div>
-                            <span aria-hidden className="text-muted-foreground">
-                              ›
-                            </span>
-                          </CardContent>
-                        </Card>
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            </section>
-          ))}
-        </div>
-      )}
+    <div className="space-y-8">
+      <PeopleView people={people} isOwner={me?.role === "owner"} loadError={Boolean(staffRes.error || empRes.error)} />
+      <ActivityFeed
+        rows={rows}
+        pageSize={PAGE_SIZE}
+        filter={filter}
+        people={personOptions}
+        kiosks={kiosks}
+        loadError={Boolean(rowsRes.error)}
+      />
     </div>
-  );
-}
-
-function EmptyState() {
-  return (
-    <Card>
-      <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
-        <p className="text-sm text-muted-foreground">No team members yet.</p>
-        <Link
-          href="/admin/staff/new"
-          className={cn(buttonVariants({ variant: "default" }))}
-        >
-          + Add your first team member
-        </Link>
-      </CardContent>
-    </Card>
   );
 }
