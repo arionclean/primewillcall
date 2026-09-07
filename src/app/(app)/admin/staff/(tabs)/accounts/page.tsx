@@ -16,6 +16,7 @@ type AccountRow = {
   id: string;
   full_name: string;
   email: string;
+  role: "owner" | "business_manager" | "check_in";
   is_active: boolean;
   kiosk_slug: string | null;
   pin_required: boolean;
@@ -43,11 +44,11 @@ function groupByBusiness(accounts: AccountRow[]) {
 }
 
 /**
- * Accounts: the shared desk logins (role check_in), one per desk or tablet,
- * grouped by business the way the team list always was. Not people: a desk is
- * signed in once and the people who work it type their PIN. The one switch here
- * decides whether that desk asks for a PIN, on its computer and on its tablet
- * alike. Owner only.
+ * Accounts: the owner login under Prime, then the shared desk logins (role
+ * check_in), one per desk or tablet, grouped by business the way the team list
+ * always was. A desk is signed in once and the people who work it type their PIN.
+ * The one switch on a desk decides whether it asks for a PIN, on its computer and
+ * on its tablet alike. Owner only.
  */
 export default async function AccountsPage() {
   const { staff: me } = await getCurrentStaff();
@@ -58,10 +59,11 @@ export default async function AccountsPage() {
     supabase
       .from("staff")
       .select(
-        `id, full_name, email, is_active, kiosk_slug, pin_required,
+        `id, full_name, email, role, is_active, kiosk_slug, pin_required,
          business:businesses!staff_business_id_fkey(id, name, logo_url)`,
       )
-      .eq("role", "check_in")
+      // The owner login sits at the top under Prime, as the team list always showed it.
+      .in("role", ["owner", "check_in"])
       .order("created_at", { ascending: true }),
     supabase.from("kiosks").select("slug, name, pin_required"),
   ]);
@@ -73,8 +75,9 @@ export default async function AccountsPage() {
     <div>
       <header className="mb-6 flex items-end justify-between gap-4">
         <p className="max-w-2xl text-sm text-muted-foreground">
-          The logins for shared desks and tablets. A desk is signed in once; the people
-          who work it type their own PIN, so every action is recorded under the person.
+          The owner login and the logins for shared desks and tablets. A desk is signed in
+          once; the people who work it type their own PIN, so every action is recorded
+          under the person.
         </p>
         <Link href="/admin/staff/new?role=check_in" className={cn(buttonVariants({ variant: "default" }))}>
           + Add account
@@ -124,13 +127,19 @@ export default async function AccountsPage() {
                             </div>
                           </Link>
                           <div className="flex items-center gap-2">
-                            <Badge tone={pinOn ? "success" : "neutral"}>{pinOn ? "Asks for a PIN" : "No PIN"}</Badge>
+                            {a.role === "owner" ? (
+                              <Badge tone="primary">Owner</Badge>
+                            ) : (
+                              <Badge tone={pinOn ? "success" : "neutral"}>{pinOn ? "Asks for a PIN" : "No PIN"}</Badge>
+                            )}
                             {!a.is_active && <Badge tone="warning">Inactive</Badge>}
-                            <form action={setAccountPinAction}>
-                              <input type="hidden" name="staff_id" value={a.id} />
-                              <input type="hidden" name="on" value={pinOn ? "0" : "1"} />
-                              <SubmitButton variant="outline" size="sm">{pinOn ? "Turn PIN off" : "Turn PIN on"}</SubmitButton>
-                            </form>
+                            {a.role === "check_in" && (
+                              <form action={setAccountPinAction}>
+                                <input type="hidden" name="staff_id" value={a.id} />
+                                <input type="hidden" name="on" value={pinOn ? "0" : "1"} />
+                                <SubmitButton variant="outline" size="sm">{pinOn ? "Turn PIN off" : "Turn PIN on"}</SubmitButton>
+                              </form>
+                            )}
                           </div>
                           <Link href={`/admin/staff/${a.id}`} aria-label={`Edit ${a.full_name}`} className="text-muted-foreground">
                             ›

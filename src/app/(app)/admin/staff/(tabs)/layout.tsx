@@ -18,7 +18,7 @@ export default async function StaffTabsLayout({
   const [logins, pinOnly, accounts] = await Promise.all([
     supabase.from("staff").select("id", { count: "exact", head: true }).in("role", ["owner", "business_manager"]),
     supabase.from("kiosk_employees").select("id", { count: "exact", head: true }).is("staff_id", null),
-    supabase.from("staff").select("id", { count: "exact", head: true }).eq("role", "check_in"),
+    supabase.from("staff").select("id", { count: "exact", head: true }).in("role", ["owner", "check_in"]),
   ]);
 
   const tabs: PageTab[] = [
