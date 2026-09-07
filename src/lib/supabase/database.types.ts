@@ -2354,6 +2354,46 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      kiosk_activity: {
+        Args: {
+          p_before_at?: string
+          p_before_id?: number
+          p_employee?: string
+          p_events?: string[]
+          p_from: string
+          p_include_debug?: boolean
+          p_kiosk?: string
+          p_limit?: number
+          p_problems?: boolean
+          p_search?: string
+          p_to: string
+        }
+        Returns: {
+          app_build: string
+          at: string
+          employee_id: string
+          employee_name: string
+          event: string
+          id: number
+          kiosk_slug: string
+          level: string
+          payload: Json
+          ref: string
+        }[]
+      }
+      kiosk_activity_count: {
+        Args: {
+          p_employee?: string
+          p_events?: string[]
+          p_from: string
+          p_include_debug?: boolean
+          p_kiosk?: string
+          p_problems?: boolean
+          p_search?: string
+          p_to: string
+        }
+        Returns: number
+      }
       kiosk_pin_in_use: {
         Args: { p_except?: string; p_pin: string }
         Returns: boolean

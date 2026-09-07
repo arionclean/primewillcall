@@ -3,15 +3,12 @@
 import { useActionState, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Field } from "@/components/ui/field";
 import { FormSection } from "@/components/ui/form-section";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
 import { SubmitButton } from "@/components/ui/submit-button";
-import { eventDetail, eventLabel, PERSON_EVENTS } from "@/lib/kiosk/events";
-import { useLiveRefresh } from "@/lib/realtime/use-live-refresh";
 
 import {
   createEmployeeAction,
@@ -28,36 +25,14 @@ export type EmployeeRow = {
   lastSeenAt: string | null;
   lastSeenKiosk: string | null;
 };
-export type KioskOption = { id: string; slug: string; name: string };
-export type ActivityRow = {
-  id: number;
-  at: string;
-  event: string;
-  level: string;
-  ref: string | null;
-  payload: Record<string, unknown> | null;
-  kioskSlug: string | null;
-  employeeId: string | null;
-  employeeName: string | null;
-  appBuild: string | null;
-};
 
 type Props = {
   employees: EmployeeRow[];
-  kiosks: KioskOption[];
-  activity: ActivityRow[];
-  filters: { employee: string; day: string; kiosk: string };
   loadError: boolean;
 };
 
 const INITIAL: EmployeeActionState = {};
 
-const timeFmt = new Intl.DateTimeFormat("en-US", {
-  timeZone: "America/New_York",
-  hour: "numeric",
-  minute: "2-digit",
-  second: "2-digit",
-});
 const whenFmt = new Intl.DateTimeFormat("en-US", {
   timeZone: "America/New_York",
   month: "short",
@@ -71,10 +46,8 @@ function lastSeen(e: EmployeeRow): string {
   return `${whenFmt.format(new Date(e.lastSeenAt))}${e.lastSeenKiosk ? ` on ${e.lastSeenKiosk}` : ""}`;
 }
 
-export function EmployeesView({ employees, kiosks, activity, filters, loadError }: Props) {
-  // New events land within a second; the server re-renders with the same filters.
-  useLiveRefresh("employees-activity", [{ table: "kiosk_events", event: "INSERT" }]);
-
+/** The people and the add form. The activity log below is its own component. */
+export function EmployeesView({ employees, loadError }: Props) {
   const [createState, createAction] = useActionState(createEmployeeAction, INITIAL);
 
   return (
@@ -89,7 +62,7 @@ export function EmployeesView({ employees, kiosks, activity, filters, loadError 
 
       {loadError && (
         <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          Could not load everything. Refresh the page and try again.
+          Could not load the employees. Refresh the page and try again.
         </p>
       )}
 
@@ -131,91 +104,6 @@ export function EmployeesView({ employees, kiosks, activity, filters, loadError 
           </div>
         </FormSection>
       </form>
-
-      {/* Activity */}
-      <section className="space-y-3">
-        <div className="px-1">
-          <h2 className="text-lg font-semibold tracking-tight">Activity</h2>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Everything the tablets recorded that day, newest first. Updates live.
-          </p>
-        </div>
-        <Card>
-          <CardContent className="space-y-4 py-5">
-            <form method="get" className="grid gap-3 sm:grid-cols-4">
-              <Field label="Day" htmlFor="act-day">
-                <Input id="act-day" type="date" name="day" defaultValue={filters.day} />
-              </Field>
-              <Field label="Employee" htmlFor="act-emp">
-                <Select id="act-emp" name="employee" defaultValue={filters.employee}>
-                  <option value="">Everyone</option>
-                  {employees.map((e) => (
-                    <option key={e.id} value={e.id}>
-                      {e.name}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-              <Field label="Tablet" htmlFor="act-kiosk">
-                <Select id="act-kiosk" name="kiosk" defaultValue={filters.kiosk}>
-                  <option value="">All tablets</option>
-                  {kiosks.map((k) => (
-                    <option key={k.id} value={k.slug}>
-                      {k.name}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-              <div className="flex items-end">
-                <Button type="submit" variant="outline">
-                  Show
-                </Button>
-              </div>
-            </form>
-
-            {activity.length === 0 ? (
-              <p className="rounded-md border border-dashed bg-muted/30 px-3 py-3 text-sm text-muted-foreground">
-                Nothing recorded for this selection.
-              </p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="text-left text-xs uppercase tracking-wide text-muted-foreground">
-                    <tr>
-                      <th className="py-2 pr-3 font-medium">Time</th>
-                      <th className="py-2 pr-3 font-medium">Who</th>
-                      <th className="py-2 pr-3 font-medium">Tablet</th>
-                      <th className="py-2 pr-3 font-medium">What</th>
-                      <th className="py-2 font-medium">Details</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {activity.map((a) => {
-                      const person = PERSON_EVENTS.has(a.event);
-                      const detail = [eventDetail(a.event, a.payload), a.ref].filter(Boolean).join(" · ");
-                      return (
-                        <tr key={a.id} className={a.level === "error" ? "bg-red-50/60 dark:bg-red-950/20" : a.level === "warn" ? "bg-amber-50/60 dark:bg-amber-950/20" : ""}>
-                          <td className="whitespace-nowrap py-2 pr-3 tabular-nums text-muted-foreground">{timeFmt.format(new Date(a.at))}</td>
-                          <td className="whitespace-nowrap py-2 pr-3">
-                            {a.employeeName ? (
-                              <span className={person ? "font-medium" : ""}>{a.employeeName}</span>
-                            ) : (
-                              <span className="text-muted-foreground">Tablet</span>
-                            )}
-                          </td>
-                          <td className="whitespace-nowrap py-2 pr-3 text-muted-foreground">{a.kioskSlug ?? ""}</td>
-                          <td className="py-2 pr-3">{eventLabel(a.event)}</td>
-                          <td className="py-2 text-muted-foreground">{detail}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </section>
     </div>
   );
 }
@@ -237,6 +125,9 @@ function EmployeeCard({ employee }: { employee: EmployeeRow }) {
               <p className="text-xs text-muted-foreground">{lastSeen(employee)}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <a href={`?employee=${employee.id}#activity`} className={buttonVariants({ variant: "ghost", size: "sm" })}>
+                Activity
+              </a>
               <Button type="button" variant="outline" size="sm" onClick={() => setChangingPin((v) => !v)}>
                 {changingPin ? "Cancel" : "Change PIN"}
               </Button>

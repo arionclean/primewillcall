@@ -1,63 +1,87 @@
 import { BUSINESS_TZ, getLocalDateRange, parseLocalYmd, todayLocalIso } from "@/lib/dates";
+import { EVENT_GROUPS, isEventGroup } from "@/lib/kiosk/events";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
-import {
-  EmployeesView,
-  type ActivityRow,
-  type EmployeeRow,
-  type KioskOption,
-} from "./employees-view";
+import { ActivityFeed, type ActivityFilter, type ActivityRow, type KioskOption, type PersonOption } from "./activity-feed";
+import { EmployeesView } from "./employees-view";
+
+const PAGE_SIZE = 100;
+
+/** YYYY-MM-DD plus or minus whole days, no timezone involved. */
+function shiftYmd(ymd: string, days: number): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
 
 /**
  * The people who use the kiosk tablets (one pool shared by every business, each
- * with a 4-digit PIN) and what they did. The activity comes from kiosk_events, one
- * row per thing a tablet or the server recorded, filtered here by day, person and
- * kiosk; RLS scopes those rows by business.
+ * with a 4-digit PIN) and what they did. The activity is read through the
+ * `kiosk_activity` RPC, which applies the filters from the URL and pages by keyset,
+ * so a busy day never comes into memory; the client component keeps it live.
  */
 export default async function EmployeesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ employee?: string; day?: string; kiosk?: string }>;
+  searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const supabase = await getSupabaseServerClient();
-  const { employee: employeeFilter, day: dayParam, kiosk: kioskFilter } = await searchParams;
-  const day = parseLocalYmd(dayParam) ?? todayLocalIso(BUSINESS_TZ);
-  const { startUtc, endUtcExclusive } = getLocalDateRange(day, BUSINESS_TZ);
+  const sp = await searchParams;
 
-  const [empRes, kioskRes] = await Promise.all([
+  const today = todayLocalIso(BUSINESS_TZ);
+  let from = parseLocalYmd(sp.from) ?? today;
+  let to = parseLocalYmd(sp.to) ?? from;
+  if (to < from) [from, to] = [to, from];
+  const group = isEventGroup(sp.group) ? sp.group : "";
+  const filter: ActivityFilter = {
+    from,
+    to,
+    startUtc: getLocalDateRange(from, BUSINESS_TZ).startUtc,
+    endUtcExclusive: getLocalDateRange(to, BUSINESS_TZ).endUtcExclusive,
+    employee: /^[0-9a-f-]{36}$/i.test(sp.employee ?? "") ? (sp.employee as string) : "",
+    kiosk: (sp.kiosk ?? "").slice(0, 64),
+    group,
+    problems: sp.problems === "1",
+    // The housekeeping group is nothing but debug rows, so asking for it means showing them.
+    includeDebug: sp.debug === "1" || group === "tablet",
+    q: (sp.q ?? "").trim().slice(0, 80),
+  };
+  const args = {
+    p_from: filter.startUtc,
+    p_to: filter.endUtcExclusive,
+    p_employee: filter.employee || undefined,
+    p_kiosk: filter.kiosk || undefined,
+    p_events: filter.group ? [...EVENT_GROUPS[filter.group].events] : undefined,
+    p_problems: filter.problems,
+    p_include_debug: filter.includeDebug,
+    p_search: filter.q || undefined,
+  };
+
+  const [empRes, kioskRes, rowsRes, countRes] = await Promise.all([
     supabase
       .from("kiosk_employees")
       .select("id, name, is_active, last_seen_at, last_seen_kiosk")
       .order("name"),
     supabase.from("kiosks").select("id, slug, name").order("slug"),
+    supabase.rpc("kiosk_activity", { ...args, p_limit: PAGE_SIZE }),
+    supabase.rpc("kiosk_activity_count", args),
   ]);
 
-  let activityQuery = supabase
-    .from("kiosk_events")
-    .select("id, at, event, level, ref, payload, kiosk_slug, employee_id, employee_name, app_build")
-    .gte("at", startUtc)
-    .lt("at", endUtcExclusive)
-    .order("at", { ascending: false })
-    .limit(400);
-  if (employeeFilter) activityQuery = activityQuery.eq("employee_id", employeeFilter);
-  if (kioskFilter) activityQuery = activityQuery.eq("kiosk_slug", kioskFilter);
-  const actRes = await activityQuery;
-
-  for (const [label, r] of [["employees", empRes], ["kiosks", kioskRes], ["activity", actRes]] as const) {
+  for (const [label, r] of [["employees", empRes], ["kiosks", kioskRes], ["activity", rowsRes], ["count", countRes]] as const) {
     if (r.error) console.error(`[employees] ${label} fetch error:`, r.error);
   }
 
-  const employees: EmployeeRow[] = (empRes.data ?? []).map((e) => ({
+  const employees = (empRes.data ?? []).map((e) => ({
     id: e.id,
     name: e.name,
     isActive: e.is_active,
     lastSeenAt: e.last_seen_at,
     lastSeenKiosk: e.last_seen_kiosk,
   }));
+  const people: PersonOption[] = employees.map((e) => ({ id: e.id, name: e.name }));
   const kiosks: KioskOption[] = (kioskRes.data ?? [])
     .filter((k) => Boolean(k.slug))
     .map((k) => ({ id: k.id, slug: k.slug ?? "", name: k.name }));
-  const activity: ActivityRow[] = (actRes.data ?? []).map((a) => ({
+  const rows: ActivityRow[] = (rowsRes.data ?? []).map((a) => ({
     id: a.id,
     at: a.at,
     event: a.event,
@@ -70,13 +94,26 @@ export default async function EmployeesPage({
     appBuild: a.app_build,
   }));
 
+  const presets = [
+    { label: "Today", from: today, to: today },
+    { label: "Yesterday", from: shiftYmd(today, -1), to: shiftYmd(today, -1) },
+    { label: "Last 7 days", from: shiftYmd(today, -6), to: today },
+    { label: "Last 30 days", from: shiftYmd(today, -29), to: today },
+  ];
+
   return (
-    <EmployeesView
-      employees={employees}
-      kiosks={kiosks}
-      activity={activity}
-      filters={{ employee: employeeFilter ?? "", day, kiosk: kioskFilter ?? "" }}
-      loadError={Boolean(empRes.error || actRes.error)}
-    />
+    <div className="space-y-8">
+      <EmployeesView employees={employees} loadError={Boolean(empRes.error)} />
+      <ActivityFeed
+        rows={rows}
+        total={Number(countRes.data ?? rows.length)}
+        pageSize={PAGE_SIZE}
+        filter={filter}
+        presets={presets}
+        employees={people}
+        kiosks={kiosks}
+        loadError={Boolean(rowsRes.error)}
+      />
+    </div>
   );
 }

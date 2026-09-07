@@ -40,10 +40,40 @@ which iPad; the employee PIN says who.
 
 `/admin/employees` (owner and any business manager manage the shared pool; check-in
 accounts are redirected away):
-add an employee (name, business, PIN), change a PIN, deactivate or reactivate, remove
-(past activity keeps the name), the PIN on/off state of each tablet (read-only, flipped
-by SQL on request), and **Activity**: every event of a day, filterable by person and
-tablet, live. Labels live in `src/lib/kiosk/events.ts`.
+add an employee (name, PIN), change a PIN, deactivate or reactivate, remove (past
+activity keeps the name), and **Activity**, built for volume:
+
+- Reads go through the `kiosk_activity` RPC (filters + keyset paging on `at, id`,
+  100 rows a page, "Load more" continues from the last row) and `kiosk_activity_count`
+  for the total; both are SECURITY INVOKER so `kiosk_events` RLS still scopes them.
+  A busy day never comes into memory, and page 40 costs what page 1 does.
+- Filters, all in the URL: date range with presets (today, yesterday, 7 and 30
+  days), employee, tablet, **action group** (`EVENT_GROUPS` in
+  `src/lib/kiosk/events.ts`: sales, guests and bookings, sign-ins, card reader,
+  tablet housekeeping; each maps to exact event names so the filter is an index
+  lookup), problems only (warn + error), search (code, name, amount, anything in
+  the payload). Tablet housekeeping (`level = 'debug'`: foreground, background,
+  settings checks) is hidden unless asked for; that is what keeps the default view
+  readable. Partial indexes cover the default and the problems view.
+- Live: while the range includes now, the client (`activity-feed.tsx`) holds one
+  Realtime INSERT subscription on `kiosk_events` and prepends rows that pass the same
+  filter, so a new action shows within a second without re-rendering the page.
+  (The earlier `useLiveRefresh` approach re-ran every query on every event, which a
+  busy tablet would turn into a refresh a second.)
+- Each person's card has an **Activity** link that filters the log to them.
+
+Labels and groups live in `src/lib/kiosk/events.ts`; a new event from the tablet needs
+a label and a group there.
+
+## What the tablet records
+
+Sign in / wrong PIN / lock / sign out; check-in and undo; booking created; ticket QR
+scanned; receipt printed; sale opened from the sales list; cash sale recorded; the
+whole card sale story (details entered, started, card read, result, retry, cancelled,
+paid, completed, reused, expired, blocked on low battery); reader connected, dropped,
+reconnecting, disconnected by staff, battery; and the housekeeping (app opened,
+foreground, background, settings check). Every row carries the tablet, the app build
+and, when someone is signed in, the employee.
 
 ## Switch
 
@@ -63,5 +93,6 @@ screen re-checks every few seconds), so no reinstall.
 | `supabase/functions/kiosk-pin-verify` | the server-side PIN check; records the sign-in |
 | `supabase/functions/kiosk-config` | carries the employee list (hashes) for the local check |
 | `kiosk-sale-start`, `kiosk-sale-complete`, `kiosk-log`, `kiosk-cash-sale`, `kiosk-booking` | accept `employee_id` |
-| `src/app/(app)/admin/employees/*`, `src/lib/kiosk/pin.ts`, `src/lib/kiosk/events.ts` | the admin page |
+| `supabase/migrations/20260907192526_kiosk_activity_feed.sql` | `kiosk_activity` + `kiosk_activity_count` RPCs, partial indexes |
+| `src/app/(app)/admin/employees/*`, `src/lib/kiosk/pin.ts`, `src/lib/kiosk/events.ts` | the admin page (`activity-feed.tsx` is the log) |
 | PrimeKiosk `src/services/EmployeeSession.ts`, `src/context/EmployeeSessionContext.tsx` | session, keypad, pill |
