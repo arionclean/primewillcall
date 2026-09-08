@@ -79,7 +79,9 @@ src/
                                writes tour_slot_closures, which /gp respects
       admin/
         layout.tsx             any active staff allowed; sub-sections gate further
-        businesses/            owner-only (own layout gate). list/new/[id] + actions
+        businesses/            owner-only (own layout gate). (tabs)/ = the list + sources/
+                               (Booking sources: what the Schedule form offers; owner adds,
+                               hides, reorders, removes); new/ and [id]/ sit outside the tabs
         tours/                 owner sees master tours; manager sees their tours only
           [id]/                edit-form (owner) vs manager-edit-form (manager)
           [id]/variants/new/   owner: add a business's copy of a tour

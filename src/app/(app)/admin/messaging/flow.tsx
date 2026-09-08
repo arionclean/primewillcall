@@ -4,6 +4,10 @@ import { MessageCircle, MessageSquare } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
+
+// The switch moved to the shared primitives; kept here so existing imports work.
+export { Switch } from "@/components/ui/switch";
+
 import type { Channel } from "./messaging-lib";
 
 /**
@@ -64,58 +68,6 @@ export function channelIcon(channel: Channel) {
     <MessageCircle size={16} aria-hidden />
   ) : (
     <MessageSquare size={16} aria-hidden />
-  );
-}
-
-/** An on/off switch. With `name`, it also submits its value via a hidden input. */
-export function Switch({
-  checked,
-  onChange,
-  name,
-  label,
-  disabled,
-}: {
-  checked: boolean;
-  onChange: (value: boolean) => void;
-  name?: string;
-  label?: string;
-  disabled?: boolean;
-}) {
-  return (
-    <>
-      {name ? <input type="hidden" name={name} value={checked ? "1" : "0"} /> : null}
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        aria-label={label}
-        disabled={disabled}
-        onClick={() => onChange(!checked)}
-        className="relative inline-flex shrink-0 cursor-pointer items-center outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60"
-        style={{
-          width: 36,
-          height: 20,
-          borderRadius: 9999,
-          padding: 2,
-          backgroundColor: checked ? "#10b981" : "rgba(115, 115, 115, 0.35)",
-          transition: "background-color 150ms ease",
-          border: "none",
-        }}
-      >
-        <span
-          style={{
-            display: "inline-block",
-            width: 16,
-            height: 16,
-            borderRadius: 9999,
-            backgroundColor: "#ffffff",
-            boxShadow: "0 1px 2px rgba(0, 0, 0, 0.2)",
-            transform: checked ? "translateX(16px)" : "translateX(0)",
-            transition: "transform 150ms ease",
-          }}
-        />
-      </button>
-    </>
   );
 }
 

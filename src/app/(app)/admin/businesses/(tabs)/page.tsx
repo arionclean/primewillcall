@@ -19,13 +19,10 @@ export default async function BusinessesListPage() {
 
   return (
     <div>
-      <header className="mb-6 flex items-end justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Businesses</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Each business keeps its own tours, bookings, and customers.
-          </p>
-        </div>
+      <header className="mb-4 flex items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          Each business keeps its own tours, bookings, and customers.
+        </p>
         <Link
           href="/admin/businesses/new"
           className={cn(buttonVariants({ variant: "default" }))}

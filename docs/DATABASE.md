@@ -712,7 +712,9 @@ source and only accepts an active row; the value is stored verbatim as
 `bookings.source_channel`, so a desk booking never lands blank ("Direct") again. Seeded
 with the desk's real cases: Manual, Phone reservation, Miami Tour Bus, Big Dave, the
 OTAs phoned in (Viator, GetYourGuide, Groupon, Civitatis) and the five website labels.
-Owner-edited in SQL (no screen yet); read by every active staffer.
+Owner-edited on the **Booking sources** tab of `/admin/businesses` (add, hide, reorder,
+remove; no rename, since the name is stored on every booking that picked it, so a
+misspelt source is hidden and a fresh one added); read by every active staffer.
 
 ### analytics_bookings (drill-down)
 
