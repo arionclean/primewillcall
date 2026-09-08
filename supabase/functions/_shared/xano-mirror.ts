@@ -93,6 +93,18 @@ function checkIn(b: MirrorBooking): { checked: boolean; check_in_time: number | 
 }
 
 /** The full booking/v12 record for a booking born here. `ref` is its internal id. */
+/**
+ * The balance due, in the two fields the iPad reads: `payment_status` "pending" makes
+ * the tablet show "Payment Pending" and offer cash or card, and `price` (cents) is the
+ * amount it then collects. So `price` is what the guest still owes, never the booking
+ * total. Paid in full: "completed", and no amount to collect.
+ */
+export function balanceFields(b: MirrorBooking): Record<string, unknown> {
+  return b.due_cents > 0
+    ? { payment_status: "pending", price: b.due_cents }
+    : { payment_status: "completed", price: null };
+}
+
 export function buildCreatePayload(b: MirrorBooking, ref: string): Record<string, unknown> {
   const { first, last } = splitName(b.customer?.full_name);
   const startMs = new Date(b.starts_at).getTime();
@@ -119,6 +131,7 @@ export function buildCreatePayload(b: MirrorBooking, ref: string): Record<string
     paxs: b.pax_adult + b.pax_child,
     status: XANO_STATUS[b.status],
     ...checkIn(b),
+    ...balanceFields(b),
     live: true,
     trigger: false,
     kiosk: "",
@@ -163,6 +176,9 @@ export function buildUpdatePayload(b: MirrorBooking, fields: string[]): Record<s
   }
   if (has("notes")) {
     updates.note = b.notes ?? null;
+  }
+  if (has("due")) {
+    Object.assign(updates, balanceFields(b));
   }
   if (has("business_tour_id")) {
     updates.product = xanoProductId(b) ?? "";

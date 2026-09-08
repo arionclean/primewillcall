@@ -273,7 +273,7 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
 ## Known gaps / roadmap
 
 - **Xano mirror** (built 2026-09-08): every booking change made here (new booking,
-  time / product / pax / status / note edit, check-in, void) is copied into Xano
+  time / product / pax / status / note / balance due edit, check-in, void) is copied into Xano
   through an outbox (`xano_mirror_queue`, filled by the `enqueue_xano_mirror`
   trigger, drained every minute by the `xano-mirror-dispatch` edge function), so the
   iPads, which still read Xano, see it, and a rollback loses nothing. The Xano copy

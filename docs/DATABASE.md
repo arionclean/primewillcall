@@ -185,8 +185,10 @@ re-reads Xano's newest pages every run and never judges a row created after the 
 price in `total_cents`. The desk used to type it into the guest's name ("Alfred B Owes
 $36"); now `/schedule` takes it as its own field (`create_booking(p_due_cents)`), the
 bookings list shows an "Owes $36" tag to every role, and the edit form clears it once
-collected. The kiosk collecting it against the booking (instead of creating a second
-sale) is the pending half.
+collected. It also reaches the iPad through the Xano mirror (Xano `payment_status`
+"pending" + `price` = the balance), which shows "Payment Pending" and collects it; the
+tablet's "completed" comes back through the sync and clears it here (queue field
+`due`, see docs/xano-mirror.md).
 
 `public_token` (UNIQUE, NOT NULL, default `generate_booking_token()`) identifies a
 booking on the public booking page (`/booking/<token>`, no auth). Native bookings

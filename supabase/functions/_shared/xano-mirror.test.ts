@@ -93,6 +93,26 @@ Deno.test("create: cancelled is spelled Xano's way, check-in carries its time", 
   assertEquals(p.check_in_time, Date.parse("2026-09-08T18:00:00.000Z"));
 });
 
+Deno.test("create: a balance due is pending with the amount to collect, paid in full is completed", () => {
+  const owing = buildCreatePayload(booking({ due_cents: 2000 }), "SB-ABC");
+  assertEquals(owing.payment_status, "pending");
+  assertEquals(owing.price, 2000);
+  const paid = buildCreatePayload(booking({ due_cents: 0 }), "SB-ABC");
+  assertEquals(paid.payment_status, "completed");
+  assertEquals(paid.price, null);
+});
+
+Deno.test("update: a balance change sends the two payment fields, nothing else", () => {
+  assertEquals(buildUpdatePayload(booking({ due_cents: 1500 }), ["due"]), {
+    payment_status: "pending",
+    price: 1500,
+  });
+  assertEquals(buildUpdatePayload(booking({ due_cents: 0 }), ["due"]), {
+    payment_status: "completed",
+    price: null,
+  });
+});
+
 Deno.test("update: only the changed fields, nothing Xano owns", () => {
   const u = buildUpdatePayload(booking({ pax_adult: 3 }), ["pax"]);
   assertEquals(u, { adult: 3, child: 1, infant: 1, paxs: 4 });

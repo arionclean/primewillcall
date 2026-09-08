@@ -30,13 +30,21 @@ staff edits a booking here
 
 | Change here | Xano gets | How |
 | --- | --- | --- |
-| New booking from `/schedule` | a new row: product, company, name, pax, time, status, note, our public token as `bookingConfirmation_id`, **no phone, no email** | `booking/v12` |
-| Time, product, pax, status, note, check-in / un-check | only those fields | `PATCH booking/{id}` |
+| New booking from `/schedule` | a new row: product, company, name, pax, time, status, note, the balance due, our public token as `bookingConfirmation_id`, **no phone, no email** | `booking/v12` |
+| Time, product, pax, status, note, check-in / un-check, balance due | only those fields | `PATCH booking/{id}` |
 | Void / restore | status `canceled` / back to its status | same PATCH |
 
+The **balance due** (`bookings.due_cents`) goes as the two fields the iPad reads:
+`payment_status` "pending" plus `price` = the amount still owed (cents), or
+"completed" with no price once paid. So the tablet shows "Payment Pending" and
+collects exactly the balance. When it does, it marks Xano "completed"; the echo
+does not carry that field, so while a balance is open the sync reads the Xano row
+on each echo (one GET, read only) and clears `due_cents` here when it is completed.
+The queue field is `due`.
+
 Not mirrored, on purpose: the guest's phone and email (see "No double SMS"),
-customer edits, amount due, voucher codes, the kiosk employee, extra voucher photos,
-prices. Xano has no place for them or must not have them.
+customer edits, voucher codes, the kiosk employee, extra voucher photos, the
+booking total. Xano has no place for them or must not have them.
 
 Who creates what in Xano:
 

@@ -23,7 +23,7 @@
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { withSentry } from "../_shared/sentry.ts";
-import { xanoRowId } from "../_shared/xano-api.ts";
+import { xanoGetBookingByInternalId, xanoRowId } from "../_shared/xano-api.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -316,6 +316,18 @@ async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
         const guarded = await queuedFields(known.id);
         if (!guarded.has("checked_in_at")) patch.checked_in_at = checkedAt;
       }
+      // A balance the guest still owed: the iPad collects it and marks Xano's
+      // payment_status "completed". The echo does not carry that field, so while a
+      // balance is open, each echo reads the Xano row (one GET, read only) and a
+      // completed payment clears the balance here. Our own mirror keeps Xano
+      // "pending" until then, so a stale echo cannot clear it early.
+      if (known.due_cents > 0) {
+        const xanoRow = await xanoGetBookingByInternalId(internalId);
+        if (xanoRow.ok && clean(xanoRow.value?.payment_status)?.toLowerCase() === "completed") {
+          const guarded = await queuedFields(known.id);
+          if (!guarded.has("due")) patch.due_cents = 0;
+        }
+      }
       const { error } = await sb.from("bookings").update(patch).eq("id", known.id);
       if (error) return { legacy_id: legacyId, ok: false, error: error.message };
       return { legacy_id: legacyId, ok: true };
@@ -473,7 +485,7 @@ async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
 /** What we hold for a booking Xano is telling us about. */
 const EXISTING_SELECT =
   "id, legacy_id, legacy_reference, business_id, business_tour_id, customer_id, starts_at, ends_at, " +
-  "business_tour:business_tours(tour_id), customer:customers(phone)";
+  "due_cents, business_tour:business_tours(tour_id), customer:customers(phone)";
 
 interface Existing {
   id: string;
@@ -484,6 +496,7 @@ interface Existing {
   customer_id: string;
   starts_at: string;
   ends_at: string;
+  due_cents: number;
   business_tour: { tour_id: string } | null;
   customer: { phone: string | null } | null;
 }

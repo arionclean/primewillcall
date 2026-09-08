@@ -149,7 +149,7 @@ async function processRow(sb: SupabaseClient, row: QueueRow): Promise<Outcome> {
   // An update, or a create whose row Xano already has (a retry after a success we
   // never recorded): send the changed fields, or everything when we do not know.
   const fields = row.op === "create"
-    ? ["starts_at", "business_tour_id", "status", "pax", "checked_in_at", "notes"]
+    ? ["starts_at", "business_tour_id", "status", "pax", "checked_in_at", "notes", "due"]
     : row.fields;
   const updates = buildUpdatePayload(b, fields);
   if (Object.keys(updates).length === 0) return { kind: "sent" };
