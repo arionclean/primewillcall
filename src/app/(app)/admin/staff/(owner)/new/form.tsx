@@ -340,7 +340,7 @@ export function NewStaffForm({
           description="What this team member can do with bookings. You can change these later."
           contentClassName="grid gap-3 sm:grid-cols-2"
         >
-          {CAPABILITY_OPTIONS.filter((cap) => !cap.roles || (role !== "" && cap.roles.includes(role))).map((cap) => (
+          {CAPABILITY_OPTIONS.filter((cap) => !cap.roles || cap.roles.includes(role as StaffRole)).map((cap) => (
             <label
               key={cap.name}
               className="flex cursor-pointer items-start gap-2.5 rounded-md border px-3 py-2.5 text-sm transition hover:bg-muted/50"
