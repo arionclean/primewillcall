@@ -98,6 +98,11 @@ Deno.serve(withSentry("gp-book", async (req) => {
   if (!businessTourId || !customerName) {
     return json({ ok: false, error: "missing_fields", message: "Name and product are required." }, 400);
   }
+  // The page requires a phone before it lets the guest continue. Re-check it here so a
+  // caller that skips the form cannot create a booking we have no way to reach.
+  if (!phone || phone.length < 10) {
+    return json({ ok: false, error: "missing_phone", message: "A phone number is required." }, 400);
+  }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(slotStart)) {
     return json({ ok: false, error: "bad_datetime", message: "Pick a valid date and time." }, 400);
   }

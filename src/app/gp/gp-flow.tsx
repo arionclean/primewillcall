@@ -130,7 +130,9 @@ export function GrouponFlow() {
     setMinDate(ny);
   }, []);
 
-  const continueEnabled = Boolean(name.trim()) && Boolean(slotValue);
+  // The phone is how the guest gets their confirmation and how we reach them on the
+  // day, so a full 10-digit US number is required before they can continue.
+  const continueEnabled = Boolean(name.trim()) && Boolean(slotValue) && phone.length === 10;
 
   const loadSlots = useCallback(
     async (forDate: string, businessTourId: string | undefined) => {
