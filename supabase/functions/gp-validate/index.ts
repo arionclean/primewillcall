@@ -113,6 +113,21 @@ Deno.serve(withSentry("gp-validate", async (req) => {
     );
   }
 
+  // The app's summary screen: readable code, but no people count on it. Ask for
+  // the page behind "View Voucher" rather than booking 1 guest by default.
+  if ((result as { summary_screen?: unknown }).summary_screen === true) {
+    return json(
+      {
+        valid: false,
+        error: "summary_screen",
+        message:
+          "That is the voucher summary screen, and it does not show how many people the voucher is for. In the Groupon app, tap \"View Voucher\" and take a screenshot of the page that opens.",
+        imageUrl,
+      },
+      200,
+    );
+  }
+
   if (!result.valid || !result.matched) {
     const reason = typeof result.reason === "string" ? result.reason : "";
     return json(

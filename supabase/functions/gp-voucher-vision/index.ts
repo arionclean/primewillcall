@@ -303,11 +303,20 @@ Deno.serve(withSentry("gp-voucher-vision", async (req) => {
       ? "voucher does not name one of our Groupon storefronts"
       : "voucher does not match a supported product";
 
+  // Groupon's "Voucher Detail" summary screen carries the code and the barcode but
+  // never the option (how many people); the full voucher is behind its "View
+  // Voucher" button. The page asks for that one instead of guessing 1 guest.
+  const lower = text.toLowerCase();
+  const summaryScreen =
+    lower.includes("view voucher") &&
+    (lower.includes("mark as used") || lower.includes("scan in store") || lower.includes("voucher detail"));
+
   return json(
     {
       ok: true,
       valid: !!matched,
       matched,
+      summary_screen: summaryScreen,
       passengers: ex?.passengers ?? 1,
       voucher_code: pickVoucherCode(ex?.voucher, text),
       reason,

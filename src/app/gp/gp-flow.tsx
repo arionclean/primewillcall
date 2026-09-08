@@ -113,7 +113,7 @@ export function GrouponFlow() {
     { totalCents: number; free: boolean } | null
   >(null);
 
-  const [modal, setModal] = useState<{ open: boolean; message: string; preview: string | null }>({
+  const [modal, setModal] = useState<{ open: boolean; message: string; preview: string | null; howTo?: boolean }>({
     open: false,
     message: "",
     preview: null,
@@ -193,6 +193,7 @@ export function GrouponFlow() {
         imageUrl?: string | null;
         reason?: string;
         message?: string;
+        error?: string;
       }>("gp-validate", form);
 
       if (json?.valid && json.businessTourId) {
@@ -234,13 +235,15 @@ export function GrouponFlow() {
         loadSlots(date, next.businessTourId);
       } else {
         setShowPayment(false);
+        const howTo = json?.error === "summary_screen";
         setModal({
           open: true,
           message:
             json?.message ||
             json?.reason ||
             `We could not match that voucher. Call us at ${SUPPORT_PHONE_DISPLAY} for help.`,
-          preview: localPreview,
+          preview: howTo ? null : localPreview,
+          howTo,
         });
       }
     } catch {
@@ -319,21 +322,21 @@ export function GrouponFlow() {
           </div>
 
           <div className="gp-panel gp-upload">
-            <figure className="gp-preview">
-              {gallery.length === 0 ? (
-                <div className="gp-preview-empty">
-                  <UploadIcon />
-                  <span>Your voucher photo appears here</span>
-                </div>
-              ) : (
+            {gallery.length === 0 ? (
+              <div className="gp-howto">
+                <p className="gp-howto-title">How to take the screenshot</p>
+                <HowToFrames />
+              </div>
+            ) : (
+              <figure className="gp-preview">
                 <div className="gp-gallery">
                   {gallery.map((src, i) => (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img key={i} src={src} alt={`Voucher ${i + 1}`} />
                   ))}
                 </div>
-              )}
-            </figure>
+              </figure>
+            )}
 
             <div className="gp-upload-controls">
               <input
@@ -566,6 +569,11 @@ export function GrouponFlow() {
           >
             <WarnIcon />
             <p className="gp-modal-msg">{modal.message}</p>
+            {modal.howTo && (
+              <div className="gp-howto gp-howto-in-modal">
+                <HowToFrames />
+              </div>
+            )}
             {modal.preview && (
               // eslint-disable-next-line @next/next/no-img-element
               <img className="gp-modal-preview" src={modal.preview} alt="Uploaded voucher" />
@@ -589,13 +597,58 @@ export function GrouponFlow() {
   );
 }
 
-function UploadIcon() {
+
+/**
+ * The two frames of the screenshot guide: the Groupon app's Voucher Detail screen
+ * (a real screenshot with the code and barcode covered) with the View Voucher
+ * button circled, then a sketch of the page it opens with the option highlighted.
+ * Shown above the upload until a voucher is in, and in the dialog when the
+ * uploaded shot was the summary screen.
+ */
+function HowToFrames() {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M12 16V4" />
-      <path d="M7 9l5-5 5 5" />
-      <path d="M5 20h14" />
-    </svg>
+    <div className="gp-howto-steps">
+      <figure className="gp-howto-step">
+        <div className="gp-howto-frame">
+          <span className="gp-howto-badge">1</span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/gp/voucher-detail-example.jpg"
+            alt="Groupon app: the voucher summary screen, with the View Voucher button circled"
+          />
+          <span className="gp-howto-mask gp-howto-mask-code" aria-hidden>
+            ••••••••
+          </span>
+          <span className="gp-howto-mask gp-howto-mask-barcode" aria-hidden />
+          <span className="gp-howto-pointer" aria-hidden>
+            <ArrowDownIcon />
+          </span>
+          <span className="gp-howto-ring" aria-hidden />
+        </div>
+        <figcaption className="gp-howto-caption">
+          In the Groupon app, open your voucher and tap <strong>View Voucher</strong>.
+        </figcaption>
+      </figure>
+      <figure className="gp-howto-step">
+        <div className="gp-howto-frame gp-howto-mock" aria-hidden>
+          <span className="gp-howto-badge">2</span>
+          <span className="gp-mock-bar gp-mock-bar-top" />
+          <div className="gp-mock-title">Miami Star Island 90 Minute Cruise</div>
+          <div className="gp-mock-sub">Miami Star Island Cruises</div>
+          <div className="gp-mock-option">
+            Option: Cruise for <strong>Four</strong>
+          </div>
+          <div className="gp-mock-label">Redemption Code</div>
+          <div className="gp-mock-code">••••••••</div>
+          <span className="gp-mock-bar gp-mock-bar-a" />
+          <span className="gp-mock-bar gp-mock-bar-b" />
+        </div>
+        <figcaption className="gp-howto-caption">
+          Screenshot the page that opens. It shows how many people your voucher is for, and
+          the code.
+        </figcaption>
+      </figure>
+    </div>
   );
 }
 
@@ -640,14 +693,12 @@ const CSS = `
 .gp-helper { margin: 6px 0 0; font-size: clamp(14px, 1.8vw, 19px); opacity: 0.95; }
 .gp-card { background: var(--gp-card); border-radius: 16px; padding: 16px; color: var(--gp-text); animation: gp-rise 320ms ease both; }
 .gp-step-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
-.gp-pill { background: var(--gp-ink); color: #fff; border-radius: 999px; padding: 5px 14px; font-size: 13px; font-weight: 800; }
+.gp-pill { flex-shrink: 0; white-space: nowrap; background: var(--gp-ink); color: #fff; border-radius: 999px; padding: 5px 14px; font-size: 13px; font-weight: 800; }
 .gp-title { margin: 0; font-size: clamp(18px, 2.4vw, 26px); font-weight: 700; color: #46494d; }
 .gp-panel { background: var(--gp-panel); border-radius: 14px; padding: 16px; }
 
 .gp-upload { display: grid; grid-template-columns: minmax(0, 280px) 1fr; gap: 18px; align-items: start; }
 .gp-preview { margin: 0; width: 100%; height: 320px; border-radius: 14px; overflow: hidden; background: #d4d8db; box-shadow: inset 0 0 0 1px rgba(70,74,77,0.08); }
-.gp-preview-empty { width: 100%; height: 100%; display: grid; place-content: center; gap: 8px; justify-items: center; color: #8a9096; font-size: 13px; text-align: center; padding: 16px; }
-.gp-preview-empty svg { width: 42px; height: 42px; color: var(--gp-green-ink); }
 .gp-gallery { width: 100%; height: 100%; padding: 8px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; overflow: auto; align-content: start; }
 .gp-gallery img { width: 100%; aspect-ratio: 3 / 5; object-fit: cover; border-radius: 10px; }
 .gp-upload-controls { display: grid; gap: 12px; align-content: start; }
@@ -705,6 +756,36 @@ const CSS = `
 @keyframes gp-rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes gp-spin { to { transform: rotate(360deg); } }
 @keyframes gp-hint { 0%, 100% { transform: translateY(0); opacity: 0.92; } 50% { transform: translateY(5px); opacity: 1; } }
+
+/* The screenshot guide: a real Voucher Detail screen (code and barcode covered)
+   with the View Voucher button circled, then a sketch of the page it opens. */
+.gp-howto { grid-column: 1 / -1; margin: 0 0 4px; }
+.gp-howto-title { margin: 0 0 10px; font-size: 14px; font-weight: 800; color: var(--gp-ink); text-align: center; }
+.gp-howto-steps { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; max-width: 560px; margin: 0 auto; }
+.gp-howto-step { margin: 0; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.gp-howto-frame { position: relative; width: min(100%, 240px); border-radius: 14px; overflow: hidden; background: #fff; box-shadow: 0 6px 18px rgba(0,0,0,0.12); }
+.gp-howto-frame img { display: block; width: 100%; height: auto; }
+.gp-howto-badge { position: absolute; z-index: 2; top: 8px; left: 8px; background: var(--gp-ink); color: #fff; font-size: 12px; font-weight: 800; border-radius: 999px; padding: 3px 9px; }
+.gp-howto-mask { position: absolute; background: #e5e7eb; border-radius: 8px; }
+.gp-howto-mask-code { top: 25.2%; left: 7%; width: 86%; height: 5%; display: flex; align-items: center; justify-content: center; font-family: ui-monospace, SFMono-Regular, monospace; font-weight: 700; font-size: 14px; letter-spacing: 3px; color: #6b7280; }
+.gp-howto-mask-barcode { top: 46.5%; left: 22%; width: 60%; height: 22.5%; background: repeating-linear-gradient(90deg, #d1d5db 0 3px, #f3f4f6 3px 6px); }
+.gp-howto-ring { position: absolute; top: 77.3%; left: 4.5%; width: 91%; height: 5.6%; border: 3px solid #ef4444; border-radius: 999px; box-shadow: 0 0 0 4px rgba(239,68,68,0.25); }
+.gp-howto-pointer { position: absolute; top: 69.5%; left: 50%; transform: translateX(-50%); color: #ef4444; animation: gp-hint 1.5s ease-in-out infinite; }
+.gp-howto-pointer svg { width: 34px; height: 34px; }
+.gp-howto-caption { margin: 0; font-size: 13px; line-height: 1.35; text-align: center; color: var(--gp-text); }
+.gp-howto-in-modal { margin: 0; width: 100%; }
+.gp-howto-in-modal .gp-howto-frame { width: min(100%, 200px); }
+.gp-howto-mock { aspect-ratio: 460 / 1000; padding: 14px 12px; display: flex; flex-direction: column; gap: 10px; text-align: left; }
+.gp-mock-bar { display: block; height: 8px; border-radius: 4px; background: #e5e7eb; }
+.gp-mock-bar-top { width: 40%; margin-top: 28px; }
+.gp-mock-bar-a { width: 70%; margin-top: auto; }
+.gp-mock-bar-b { width: 55%; }
+.gp-mock-title { font-size: 13px; font-weight: 800; color: #111827; line-height: 1.25; }
+.gp-mock-sub { font-size: 11px; color: #6b7280; }
+.gp-mock-option { padding: 8px 10px; border-radius: 8px; border: 3px solid #ef4444; box-shadow: 0 0 0 4px rgba(239,68,68,0.2); font-size: 13px; color: #111827; }
+.gp-mock-option strong { color: #b91c1c; }
+.gp-mock-label { font-size: 11px; font-weight: 700; color: #111827; }
+.gp-mock-code { border: 1px dashed #9ca3af; border-radius: 8px; padding: 8px; text-align: center; font-family: ui-monospace, SFMono-Regular, monospace; letter-spacing: 3px; color: #6b7280; background: #f3f4f6; }
 
 @media (max-width: 760px) {
   .gp-upload { grid-template-columns: 1fr; }
