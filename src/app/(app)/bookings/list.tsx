@@ -145,6 +145,23 @@ const voidStampFormatter = new Intl.DateTimeFormat("en-US", {
  * A void sets status to cancelled as well, so the stamp is checked first and
  * the row reads "Voided" rather than "Cancelled".
  */
+/**
+ * "Kiosk cash" / "Kiosk card" for a sale made on the desk's tablet, else null.
+ * The channels are the ones the kiosk writes (and Xano mirrors back); the
+ * analytics labels fold the same three into "Kiosk - Cash" / "Kiosk - Card".
+ */
+function kioskSaleLabel(channel: string | null): string | null {
+  switch ((channel ?? "").toLowerCase()) {
+    case "kiosk-sale-cash":
+      return "Kiosk cash";
+    case "kiosk-sale-card":
+    case "kiosk-sale-tap":
+      return "Kiosk card";
+    default:
+      return null;
+  }
+}
+
 function statusBadge(
   status: BookingStatus,
   voided = false,
@@ -1579,6 +1596,9 @@ function BookingRowItem({
   // What the guest still owes at the desk; shown to every role, the desk
   // collects it. Replaces the old "Owes $36" typed into the name.
   const owes = booking.due_cents > 0 ? formatCents(booking.due_cents) : null;
+  // A sale rung up on the desk's own tablet, cash or card. The desk needs to tell
+  // those from reservations at a glance.
+  const kioskTag = kioskSaleLabel(booking.source_channel);
   const tint = tourTint(color);
 
   return (
@@ -1609,6 +1629,7 @@ function BookingRowItem({
               </Badge>
             ) : null}
             {owes ? <Badge tone="warning">Owes {owes}</Badge> : null}
+            {kioskTag ? <Badge tone="info">{kioskTag}</Badge> : null}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
             <span className="font-mono tabular-nums">#{shortRef}</span>
@@ -1735,7 +1756,7 @@ function BookingRowItem({
         <HoverTooltip label={name}>
           <p className="truncate font-semibold">{displayName}</p>
         </HoverTooltip>
-        {badge || owes ? (
+        {badge || owes || kioskTag ? (
           <div className="mt-0.5 flex flex-wrap gap-1">
             {badge ? (
               <Badge
@@ -1746,6 +1767,7 @@ function BookingRowItem({
               </Badge>
             ) : null}
             {owes ? <Badge tone="warning">Owes {owes}</Badge> : null}
+            {kioskTag ? <Badge tone="info">{kioskTag}</Badge> : null}
           </div>
         ) : null}
         {voucherCodes.length > 0 ? (
