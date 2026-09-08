@@ -10,8 +10,8 @@ counting toward analytics. Xano "canceled" does propagate; only deletes are lost
 What it does.
   1. Reads Xano through the PUBLIC, read-only listing
      GET https://xmhi-aj9d-cnsb.n7.xano.io/api:0AUqUbBn/booking/v1?page=N&per_page=1000
-     (id desc, no auth), caching each page under --cache (default: ./.reconcile-cache).
-     Xano is never written to.
+     (id desc, no auth), the whole table every run, a copy of each page kept under
+     --cache (default: ./.reconcile-cache) as a record. Xano is never written to.
   2. Reads every Supabase booking that came from Xano (legacy_id set) with the service
      role key from .env.local (the key is never printed).
   3. A Supabase row is PRESENT in Xano if any of these hit, mirroring the keying in
@@ -21,10 +21,10 @@ What it does.
         public_token     equals a Xano bookingConfirmation_id (the 9-char Bubble token)
         legacy_reference equals a Xano booking_reference or internal_id
      Anything else is a GHOST. Ghosts already cancelled are left alone.
-     Two guards against a booking that is simply NEWER than the Xano read: the newest
-     Xano pages are always re-downloaded (a cached dump goes stale in minutes, and the
-     first live run voided 13 fresh bookings that way, restored the same minute), and
-     a Supabase row created after the Xano read minus a margin is never judged.
+     Two guards against a booking that is simply NEWER than the Xano read: Supabase is
+     read first and Xano in full afterwards (the first live run used a 20-minute-old
+     Xano dump and voided 13 fresh bookings, restored the same minute), and a Supabase
+     row created after the Xano read minus a margin is never judged.
   4. Dry run prints the classification. With --live it voids the active ghosts through
      PostgREST: status -> cancelled plus the void stamp (voided_at, void_reason,
      voided_from_status; voided_by_staff_id stays null: this is the system, not a
@@ -35,7 +35,6 @@ What it does.
 Usage.
   python3 scripts/reconcile_xano_ghosts.py            # dry run, full report
   python3 scripts/reconcile_xano_ghosts.py --live     # void the active ghosts
-  python3 scripts/reconcile_xano_ghosts.py --refresh  # ignore the page cache
 
 First run: 2026-09-07, 278 ghosts (1,337 pax, tours June..September 2026) voided.
 """
@@ -67,42 +66,41 @@ def clean(v):
     return v or None
 
 
-FRESH_PAGES = 3  # always re-read the newest pages: new bookings land there
+def fetch_page(page):
+    for attempt in range(4):
+        try:
+            with urllib.request.urlopen(XANO_LIST + str(page), timeout=120) as r:
+                return json.loads(r.read())
+        except Exception as e:  # noqa: BLE001
+            print(f"  page {page}: retry {attempt + 1} ({e})", file=sys.stderr)
+            time.sleep(3)
+    raise SystemExit(f"could not fetch Xano page {page}")
 
 
-def fetch_xano(cache, refresh):
-    """Every Xano booking, newest first. Cached per page; --refresh re-downloads.
-    The first FRESH_PAGES are re-downloaded on every run regardless, so a booking
-    made since the last run is in the set before anything is judged."""
+def fetch_xano(cache):
+    """Every Xano booking, read in full on every run (about 100 pages, a few minutes).
+
+    Always the whole listing, never a cached page: the listing is id-descending, so
+    each new booking pushes every older row one slot down, and a page cached earlier
+    is stale both for what was created since and for what slid onto it from the page
+    above. The first live run learned that the hard way. The pages are still written
+    under --cache, purely as a record of what Xano said this run."""
     os.makedirs(cache, exist_ok=True)
-    rows, page = [], 1
+    rows, page = {}, 1
     while True:
-        path = os.path.join(cache, f"page_{page:03d}.json")
-        if os.path.exists(path) and not refresh and page > FRESH_PAGES:
-            d = json.load(open(path))
-        else:
-            for attempt in range(4):
-                try:
-                    with urllib.request.urlopen(XANO_LIST + str(page), timeout=120) as r:
-                        raw = r.read()
-                    d = json.loads(raw)
-                    open(path, "wb").write(raw)
-                    break
-                except Exception as e:  # noqa: BLE001
-                    print(f"  page {page}: retry {attempt + 1} ({e})", file=sys.stderr)
-                    time.sleep(3)
-            else:
-                raise SystemExit(f"could not fetch Xano page {page}")
+        d = fetch_page(page)
         items = d.get("items", [])
         if not items:
             break
-        rows.extend(items)
+        for r in items:
+            rows[r["id"]] = r
+        open(os.path.join(cache, f"page_{page:03d}.json"), "w").write(json.dumps(d))
         if page % 10 == 0:
             print(f"  xano page {page}: {len(rows):,} rows so far", flush=True)
         if not d.get("nextPage"):
             break
         page += 1
-    return rows
+    return list(rows.values())
 
 
 def fetch_supabase(url, key):
@@ -153,7 +151,6 @@ def pax(r):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--live", action="store_true", help="void the active ghosts")
-    ap.add_argument("--refresh", action="store_true", help="re-download every Xano page")
     ap.add_argument("--cache", default=os.path.join(ROOT, ".reconcile-cache"))
     args = ap.parse_args()
 
@@ -168,7 +165,7 @@ def main():
     print(f"supabase rows from Xano: {len(sb):,}")
 
     print("reading Xano (public listing, read-only)...")
-    xano = fetch_xano(args.cache, args.refresh)
+    xano = fetch_xano(args.cache)
     ids = {r["id"] for r in xano}
     print(f"xano rows: {len(xano):,} (ids {min(ids)}..{max(ids)}; {max(ids) - len(ids):,} ids gone = deleted over time)")
     keys, refs, tokens = xano_identities(xano)
