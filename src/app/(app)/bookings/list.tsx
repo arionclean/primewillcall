@@ -220,6 +220,8 @@ export type BookingRow = {
   groupon_voucher_urls: string[];
   groupon_voucher_codes: string[];
   source_channel: string | null;
+  /** Where the booking came from, as the owner labels it (Viator, Groupon, a website). Computed by the database. */
+  source_label: string | null;
   groupon_redeemed_at: string | null;
   /** The void stamp: set when staff void the booking. The row stays. */
   voided_at: string | null;
@@ -890,7 +892,12 @@ export function BookingsList({
             row.business_tour_id !== known.business_tour_id) ||
           (row.customer_id !== undefined && row.customer_id !== known.customer_id) ||
           (row.voided_by_staff_id !== undefined &&
-            row.voided_by_staff_id !== known.voided_by_staff_id)
+            row.voided_by_staff_id !== known.voided_by_staff_id) ||
+          // The source label is computed by the database and never in a change
+          // payload, so a relabelled channel (the Xano round trip renames a
+          // Groupon booking) is read again rather than merged stale.
+          (row.source_channel !== undefined &&
+            row.source_channel !== known.source_channel)
         ) {
           return refetch();
         }
@@ -1554,6 +1561,10 @@ function BookingRowItem({
   onToggleNote: (trigger: HTMLElement | null) => void;
 }) {
   const shortRef = booking.id.slice(0, 8).toUpperCase();
+  // The owner reads where a booking came from, not its ID (the ID is copied,
+  // never read). Staff keep the ID: it is what they quote on the desk.
+  const showSource = role === "owner";
+  const sourceLabel = booking.source_label ?? "Direct";
   const name = booking.customer?.full_name ?? "";
   const displayName = name
     ? privacyOn
@@ -1634,7 +1645,11 @@ function BookingRowItem({
             {kioskTag ? <Badge tone="info">{kioskTag}</Badge> : null}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
-            <span className="font-mono tabular-nums">#{shortRef}</span>
+            {showSource ? (
+              <span className="truncate">{sourceLabel}</span>
+            ) : (
+              <span className="font-mono tabular-nums">#{shortRef}</span>
+            )}
             {displayPhone ? (
               <>
                 <span aria-hidden>·</span>
@@ -1718,12 +1733,28 @@ function BookingRowItem({
       ) : null}
 
       {/* Dense grid for desktop (lg and up). */}
-      <div className="hidden items-center gap-3 px-3 py-3 text-sm lg:grid lg:grid-cols-[7rem_minmax(11rem,1.3fr)_minmax(8.5rem,.85fr)_3rem_2.5rem_minmax(10rem,1.1fr)_auto]">
-      {/* ID + copy */}
-      <div className="flex w-fit items-center gap-1 justify-self-start">
-        <span className="shrink-0 text-xs font-medium text-muted-foreground">
-          ID
-        </span>
+      <div
+        className={cn(
+          "hidden items-center gap-3 px-3 py-3 text-sm lg:grid",
+          showSource
+            ? "lg:grid-cols-[10rem_minmax(11rem,1.3fr)_minmax(8.5rem,.85fr)_3rem_2.5rem_minmax(10rem,1.1fr)_auto]"
+            : "lg:grid-cols-[7rem_minmax(11rem,1.3fr)_minmax(8.5rem,.85fr)_3rem_2.5rem_minmax(10rem,1.1fr)_auto]",
+        )}
+      >
+      {/* Copy the ID, then the ID (staff) or the source (owner) */}
+      <div
+        className={cn(
+          "flex min-w-0 items-center gap-1",
+          // The source fills its column so a long name clips inside it; the
+          // ID hugs its text as before.
+          showSource ? "w-full" : "w-fit justify-self-start",
+        )}
+      >
+        {showSource ? null : (
+          <span className="shrink-0 text-xs font-medium text-muted-foreground">
+            ID
+          </span>
+        )}
         {!privacyOn ? (
           <button
             type="button"
@@ -1748,9 +1779,15 @@ function BookingRowItem({
             )}
           </button>
         ) : null}
-        <span className="hidden font-mono text-xs text-muted-foreground tabular-nums sm:inline">
-          {shortRef}
-        </span>
+        {showSource ? (
+          <HoverTooltip label={sourceLabel} className="min-w-0 flex-1">
+            <p className="truncate text-xs text-muted-foreground">{sourceLabel}</p>
+          </HoverTooltip>
+        ) : (
+          <span className="hidden font-mono text-xs text-muted-foreground tabular-nums sm:inline">
+            {shortRef}
+          </span>
+        )}
       </div>
 
       {/* Customer name + status badge */}

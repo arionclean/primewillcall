@@ -2399,6 +2399,7 @@ export type Database = {
         }[]
       }
       app_norm: { Args: { s: string }; Returns: string }
+      booking_source_label: { Args: { p_channel: string }; Returns: string }
       bookings_checkin_manifest: {
         Args: { p_end: string; p_start: string }
         Returns: {
@@ -2770,6 +2771,10 @@ export type Database = {
           last_direction: Database["public"]["Enums"]["sms_direction"]
           message_count: number
         }[]
+      }
+      source_label: {
+        Args: { b: Database["public"]["Tables"]["bookings"]["Row"] }
+        Returns: string
       }
       stripe_payments_summary: {
         Args: { p_end: string; p_start: string }

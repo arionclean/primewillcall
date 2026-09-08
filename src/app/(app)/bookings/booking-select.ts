@@ -28,6 +28,11 @@ export type BookingViewCaps = Pick<
  * cannot do this, which is why the same rule lives here and in the Realtime
  * patch below (`withheldKeys`). Both the server page and the browser refetch
  * use it, so the two reads never disagree.
+ *
+ * `source_label` is not a column but the database's computed one
+ * (`source_label(bookings)`): the owner-edited display name for the raw
+ * `source_channel`, the same one /analytics shows. It rides on this read so
+ * the list never carries the mapping itself.
  */
 export function bookingSelect(caps: BookingViewCaps): string {
   return `
@@ -44,6 +49,7 @@ export function bookingSelect(caps: BookingViewCaps): string {
   checked_in_at,
   peek,
   source_channel,
+  source_label,
   groupon_redeemed_at,
   voided_at,
   voided_by_staff_id,
@@ -72,6 +78,7 @@ export function normalizeBookingRow(raw: unknown): BookingRow {
   return {
     ...r,
     notes: r.notes ?? null,
+    source_label: r.source_label ?? null,
     void_reason: r.void_reason ?? null,
     voided_by: r.voided_by ?? null,
     groupon_voucher_urls: r.groupon_voucher_urls ?? [],

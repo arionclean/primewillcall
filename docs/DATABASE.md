@@ -672,7 +672,11 @@ which is where the jet ski sells) meant nothing to staff.
 
 `channel (pk, raw source_channel, matched case-insensitively), label, updated_at`. The
 `analytics_source_tour` RPC left-joins it and shows `coalesce(label, raw, 'Direct')`. A
-channel with no row shows as is. The raw value on the booking is never rewritten: RLS
+channel with no row shows as is. The same rule is `booking_source_label(text)`, and
+`source_label(bookings)` exposes it as a PostgREST computed column: the bookings list
+adds `source_label` to its select (`bookingSelect()`), and the owner's rows show it in
+place of the ID (the copy button stays; staff still see the ID). A Realtime change
+payload never carries it, so the list reads the row again when `source_channel` changes. The raw value on the booking is never rewritten: RLS
 (unpaid /gp rows), the Redeem chip and the Xano mirror all key on `source_channel`. Read by
 every active staffer (the RPC is SECURITY INVOKER), edited by the owner only. There is no
 screen for it yet; edit rows in SQL. One format: an OTA is its brand name, a website
