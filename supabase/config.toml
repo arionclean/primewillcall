@@ -21,11 +21,12 @@ verify_jwt = false
 [functions.stripe-webhook]
 verify_jwt = false
 
-# Everything else keeps verify_jwt = true: the staff UI and the public /gp page
-# both call them with a Supabase token attached, and the remaining two are invoked
-# with the service role key.
+# Make's email connector calls this with only x-webhook-secret (EMAIL_PARSE_SECRET,
+# checked inside the function), never a Supabase token. It was deployed with the
+# gateway check ON on 2026-09-07 18:13 UTC and every email parse answered 401 until
+# the next day; bookings still arrived through the Xano echo, so nothing was lost.
 [functions.email-booking-parse]
-verify_jwt = true
+verify_jwt = false
 
 # Xano sends only x-webhook-secret, never a Supabase token.
 [functions.xano-booking-sync]
