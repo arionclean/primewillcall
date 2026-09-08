@@ -278,8 +278,9 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   internal id is stamped in `bookings.xano_internal_id` before Xano is called, so
   the echo is matched to its row and, for a booking born here, applies only the
   iPad check-in and Peek. `legacy_id` stays null on bookings born here on purpose:
-  every ownership rule reads it. Switch: `xano_mirror_settings.enabled`. The owner
-  dashboard shows what is waiting or failed. See [`docs/xano-mirror.md`](docs/xano-mirror.md).
+  every ownership rule reads it. Switch: `xano_mirror_settings.enabled`. Nothing in
+  the app shows the queue (the owner's choice); read it by SQL. See
+  [`docs/xano-mirror.md`](docs/xano-mirror.md).
 - Customers list (scoped by business) not built.
 - Profile / settings not built.
 - **Messaging automations** (`/admin/messaging`) are built: owner rules grouped as

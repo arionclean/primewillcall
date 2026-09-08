@@ -222,7 +222,8 @@ into Xano through an outbox (`docs/xano-mirror.md`). Migration `20260908100000_x
 - `xano_mirror_queue`: `booking_id`, `op` (`create`/`update`), `fields` (the mirrored
   fields that changed, merged across edits), `status` (`pending`/`sending`/`sent`/`failed`),
   `attempts`, `next_attempt_at`, `last_error`. Partial unique index: one pending row
-  per booking. RLS: owner select only; nothing writes through the API.
+  per booking. RLS: owner select only; nothing writes through the API. No screen
+  reads it either (the owner's choice); it is read by SQL.
 - `enqueue_xano_mirror()` (AFTER INSERT OR UPDATE on bookings, SECURITY DEFINER):
   skips writes whose `x-sync-origin` request header is `xano` (the sync, the ghost
   script) or `mirror` (the kiosk sale flow, the worker); on INSERT queues a `create`

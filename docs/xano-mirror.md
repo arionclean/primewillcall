@@ -120,8 +120,16 @@ marked `failed` at once, because retrying cannot help:
 | Xano no longer has this booking. / Xano has no row for this booking. | Xano deleted it. The ghost script will void it here; nothing to do. |
 | The booking no longer exists here. | Deleted here before the send. Nothing to do. |
 
-The owner's dashboard shows a "Copy to the old system" card whenever anything is
-waiting or failed, with the guest, date and reason for the failures.
+Nothing in the app shows the queue (the owner asked not to see it). Read it by SQL:
+
+```sql
+select status, count(*) from public.xano_mirror_queue group by status;
+select q.last_error, c.full_name, b.starts_at
+  from public.xano_mirror_queue q
+  join public.bookings b on b.id = q.booking_id
+  join public.customers c on c.id = b.customer_id
+ where q.status = 'failed' order by q.updated_at desc;
+```
 
 ## Finding the Xano row for an update
 

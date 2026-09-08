@@ -3,7 +3,6 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { KpiStrip } from "@/components/dashboard/kpi-strip";
-import { MirrorNotice } from "@/components/dashboard/mirror-notice";
 import { MonthChart } from "@/components/dashboard/month-chart";
 import { OnboardingCta } from "@/components/dashboard/onboarding-cta";
 import { TourTallyStrip } from "@/components/dashboard/tour-tally";
@@ -75,7 +74,6 @@ export default async function DashboardPage({
         // deciding it has nothing to say is worse than arriving a beat late.
         <Suspense fallback={null}>
           <OnboardingChecks />
-          <MirrorChecks />
         </Suspense>
       )}
 
@@ -155,57 +153,6 @@ async function OnboardingChecks() {
           href="/admin/tours/new"
         />
       )}
-    </div>
-  );
-}
-
-/**
- * Owner-only: booking changes still on their way to the old system, and the ones
- * that could not be copied (docs/xano-mirror.md). Nothing to show is the normal
- * case, so the whole card stays out of the page then.
- */
-async function MirrorChecks() {
-  const supabase = await getSupabaseServerClient();
-  const [waiting, failed] = await Promise.all([
-    supabase
-      .from("xano_mirror_queue")
-      .select("id", { count: "exact", head: true })
-      .in("status", ["pending", "sending"]),
-    supabase
-      .from("xano_mirror_queue")
-      .select(
-        "id, last_error, booking:bookings(starts_at, customer:customers(full_name))",
-        { count: "exact" },
-      )
-      .eq("status", "failed")
-      .order("updated_at", { ascending: false })
-      .limit(5),
-  ]);
-
-  const waitingCount = waiting.count ?? 0;
-  const failedCount = failed.count ?? 0;
-  if (waitingCount === 0 && failedCount === 0) return null;
-
-  const dateLabel = new Intl.DateTimeFormat("en-US", {
-    timeZone: BUSINESS_TZ,
-    month: "short",
-    day: "numeric",
-  });
-
-  return (
-    <div className="mt-6">
-      <MirrorNotice
-        waitingCount={waitingCount}
-        failedCount={failedCount}
-        failures={(failed.data ?? []).map((row) => ({
-          id: row.id,
-          guest: row.booking?.customer?.full_name ?? "Guest",
-          date: row.booking?.starts_at
-            ? dateLabel.format(new Date(row.booking.starts_at))
-            : "",
-          reason: row.last_error ?? "",
-        }))}
-      />
     </div>
   );
 }
