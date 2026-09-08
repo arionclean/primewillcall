@@ -20,6 +20,7 @@ import {
   type KioskOption,
   type PersonOption,
 } from "./activity-shared";
+import { liveChannelName } from "@/lib/realtime/channel-name";
 
 type Props = {
   rows: ActivityRow[];
@@ -99,7 +100,7 @@ export function ActivityFeed({ rows: initialRows, pageSize, filter, people, acco
       setRows((prev) => (prev.some((r) => r.key === row.key) ? prev : [row, ...prev]));
     };
     const channel = supabase
-      .channel("employees-activity-feed")
+      .channel(liveChannelName("employees-activity-feed"))
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "kiosk_events" }, (msg) => {
         const n = msg.new as Record<string, unknown>;
         add(

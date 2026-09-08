@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { liveChannelName } from "@/lib/realtime/channel-name";
 
 /**
  * Keep the signed-in staffer's access token in step with their staff row.
@@ -61,7 +62,7 @@ export function StaffClaimsSync({ staffId }: { staffId: string }) {
     };
 
     const channel = supabase
-      .channel(`staff:${staffId}`)
+      .channel(liveChannelName(`staff:${staffId}`))
       .on(
         "postgres_changes",
         {

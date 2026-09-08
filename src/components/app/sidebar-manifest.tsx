@@ -15,6 +15,7 @@ import {
 } from "@/lib/dates";
 import { queryKeys } from "@/lib/query/keys";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { liveChannelName } from "@/lib/realtime/channel-name";
 
 type ManifestRow = {
   slot_start: string;
@@ -94,7 +95,7 @@ export function SidebarManifest({ businessId }: { businessId: string | null }) {
     // manifest RPC here. RLS is still the boundary; the filter is the saving.
     const supabase = getSupabaseBrowserClient();
     const channel = supabase
-      .channel("sidebar-manifest")
+      .channel(liveChannelName("sidebar-manifest"))
       .on(
         "postgres_changes",
         {

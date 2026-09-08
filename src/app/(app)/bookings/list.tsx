@@ -54,6 +54,7 @@ import {
 } from "./booking-select";
 import { PaymentLinkButton } from "./payment-link-button";
 import { CopiedBubble, VoucherCodes } from "./voucher-codes";
+import { liveChannelName } from "@/lib/realtime/channel-name";
 
 const PRIVACY_KEY = "pwc.bookings.privacy";
 const TOUR_FILTER_KEY = "pwc.bookings.tours";
@@ -855,7 +856,7 @@ export function BookingsList({
     };
 
     const channel = supabase
-      .channel("bookings-list")
+      .channel(liveChannelName("bookings-list"))
       .on("postgres_changes", changes, (payload) => {
         // A change event carries the flat bookings row, never the joined tour
         // or customer this list renders. So anything expressible against a row

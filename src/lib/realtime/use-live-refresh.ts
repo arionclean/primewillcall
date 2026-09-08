@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
 
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { liveChannelName } from "@/lib/realtime/channel-name";
 
 /** One table to watch, optionally narrowed the way Realtime filters are written. */
 export type LiveTable = {
@@ -70,7 +71,7 @@ export function useLiveRefresh(
     };
     document.addEventListener("visibilitychange", onVisible);
 
-    let channel = supabase.channel(channelName);
+    let channel = supabase.channel(liveChannelName(channelName));
     for (const t of watched) {
       channel = channel.on(
         "postgres_changes",

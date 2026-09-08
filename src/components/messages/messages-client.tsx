@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatUsPhoneDisplay, normalizeUsPhone } from "@/lib/sms/format";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { liveChannelName } from "@/lib/realtime/channel-name";
 
 type Channel = "sms" | "whatsapp";
 
@@ -293,7 +294,7 @@ export function MessagesClient() {
       loadConversations();
     };
     const channel = supabase
-      .channel("messaging-threads")
+      .channel(liveChannelName("messaging-threads"))
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "sms_messages" },
