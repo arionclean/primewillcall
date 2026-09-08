@@ -115,7 +115,10 @@ Deno.serve(withSentry("gp-validate", async (req) => {
 
   // The app's summary screen: readable code, but no people count on it. Ask for
   // the page behind "View Voucher" rather than booking 1 guest by default.
-  if ((result as { summary_screen?: unknown }).summary_screen === true) {
+  // Switched off for now (2026-09-07 evening): a guest mid-redemption was stuck on
+  // it. Flip to true to ask for the View Voucher page again.
+  const REFUSE_SUMMARY_SCREEN = false;
+  if (REFUSE_SUMMARY_SCREEN && (result as { summary_screen?: unknown }).summary_screen === true) {
     return json(
       {
         valid: false,
