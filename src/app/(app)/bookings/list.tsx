@@ -964,7 +964,9 @@ export function BookingsList({
     setDraftTourIds((current) => {
       // No selection means "All tours", so the first tap selects just this one.
       if (current.length === 0) return ids;
-      const next = ids.every((id) => current.includes(id))
+      // A group counts as selected when any of its copies is (a saved selection
+      // may predate the other business's copy), so a tap always flips it whole.
+      const next = ids.some((id) => current.includes(id))
         ? current.filter((x) => !ids.includes(x))
         : [...current, ...ids.filter((id) => !current.includes(id))];
       if (next.length === 0 || next.length === tours.length) return [];
@@ -974,12 +976,24 @@ export function BookingsList({
 
   // ── Filtering + grouping ───────────────────────────────────────────────────
 
+  // The selection widened to whole tour names: a saved selection may hold only
+  // one business's copy of a tour (from before this login could see the other
+  // business's copies), and "Miami City Tour combo" must still mean every
+  // business's guests on it.
+  const effectiveTourSet = useMemo(() => {
+    const set = new Set<string>();
+    for (const g of tourGroups) {
+      if (g.ids.some((id) => selectedTourSet.has(id))) g.ids.forEach((id) => set.add(id));
+    }
+    return set;
+  }, [tourGroups, selectedTourSet]);
+
   const filtered = useMemo(() => {
     // Text search lives in the global sidebar search (Cmd/Ctrl+K). Here we only
     // filter by the selected tour; the date is already scoped by the page.
     if (selectedTourIds.length === 0) return bookings;
-    return bookings.filter((b) => selectedTourSet.has(b.business_tour_id));
-  }, [bookings, selectedTourIds.length, selectedTourSet]);
+    return bookings.filter((b) => effectiveTourSet.has(b.business_tour_id));
+  }, [bookings, selectedTourIds.length, effectiveTourSet]);
 
   const groups = useMemo(() => groupByTime(filtered), [filtered]);
 
@@ -1413,7 +1427,7 @@ export function BookingsList({
               </button>
 
               {tourGroups.map((group) => {
-                const isSelected = group.ids.every((id) =>
+                const isSelected = group.ids.some((id) =>
                   draftTourIds.includes(id),
                 );
                 return (
