@@ -48,6 +48,10 @@ verify_jwt = true
 [functions.gp-validate]
 verify_jwt = true
 
+# Called only by gp-validate, server to server with the service key.
+[functions.gp-voucher-vision]
+verify_jwt = true
+
 [functions.gp-book]
 verify_jwt = true
 
