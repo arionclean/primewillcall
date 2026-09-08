@@ -206,6 +206,12 @@ webhook, and OTA status resends update rather than duplicate), else the Xano
 unique (the bulk import also stored channel/payment placeholders like `Groupon` and
 `kiosk-sale-card` there), so it is a label, never a dedup key.
 
+The sync treats a booking it already holds differently from a new one: for an
+existing row it applies only what Xano owns (status, time, pax, check-in, reference,
+channel, token, Peek, photos), never the business's copy of the tour (unless the
+master tour changed), the guest row, the price or the breakdown. See "The echo of a
+Xano-born booking" in `docs/xano-mirror.md`.
+
 `xano_internal_id` and `xano_booking_id` say where the booking lives in Xano: its
 `internal_id` (what `booking/v12` adds or edits by, and what Xano's echo is matched
 on) and its numeric row id (what the iPad's PATCH addresses). The sync stamps both

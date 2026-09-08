@@ -83,7 +83,7 @@ const STATUS_MAP: Record<string, string> = {
   pending: "pending",
 };
 
-type Rec = { business_tour_id: string; business_id: string };
+type Rec = { business_tour_id: string; business_id: string; tour_id: string };
 type Maps = {
   byProduct: Record<string, Rec>;
   byName: Record<string, Rec>;
@@ -96,13 +96,13 @@ async function tourMap(): Promise<Maps> {
   if (cache && Date.now() - cache.at < 300_000) return cache;
   const { data, error } = await sb
     .from("business_tours")
-    .select("id,name,legacy_product_id,business_id");
+    .select("id,name,legacy_product_id,business_id,tour_id");
   if (error) throw new Error(`business_tours: ${error.message}`);
   const byProduct: Record<string, Rec> = {};
   const byName: Record<string, Rec> = {};
   const byId: Record<string, Rec> = {};
   for (const r of data ?? []) {
-    const rec: Rec = { business_tour_id: r.id, business_id: r.business_id };
+    const rec: Rec = { business_tour_id: r.id, business_id: r.business_id, tour_id: r.tour_id };
     byId[r.id] = rec;
     if (r.legacy_product_id) byProduct[String(r.legacy_product_id)] = rec;
     byName[norm(r.name)] = rec;
@@ -115,11 +115,11 @@ async function tourMap(): Promise<Maps> {
 async function recForBusinessTour(btid: string): Promise<Rec | null> {
   const { data } = await sb
     .from("business_tours")
-    .select("id, business_id")
+    .select("id, business_id, tour_id")
     .eq("id", btid)
     .maybeSingle();
   return data
-    ? { business_tour_id: data.id as string, business_id: data.business_id as string }
+    ? { business_tour_id: data.id as string, business_id: data.business_id as string, tour_id: data.tour_id as string }
     : null;
 }
 
@@ -291,16 +291,16 @@ async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
     ...(xanoId ? { xano_booking_id: xanoId } : {}),
   };
 
-  // A row we already know by its Xano internal id.
-  let knownId: string | null = null;
+  // A row we already know: by its Xano internal id first, else by the sync key.
+  let existing: Existing | null = null;
   if (internalId) {
     const { data: known, error: knownErr } = await sb
       .from("bookings")
-      .select("id, legacy_id")
+      .select(EXISTING_SELECT)
       .eq("xano_internal_id", internalId)
       .order("created_at", { ascending: true })
       .limit(1)
-      .maybeSingle<{ id: string; legacy_id: string | null }>();
+      .maybeSingle<Existing>();
     if (knownErr) {
       // Falling through would upsert by legacy_id and, for a booking born here,
       // mint a twin. Better to fail the record and let Xano's retry find us.
@@ -313,22 +313,23 @@ async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
       const patch: Record<string, unknown> = { ...xanoIds };
       if (typeof row.peek === "boolean") patch.peek = row.peek;
       if (checkedRaw !== undefined && checkedRaw !== null) {
-        const { data: waiting } = await sb
-          .from("xano_mirror_queue")
-          .select("id")
-          .eq("booking_id", known.id)
-          .in("status", ["pending", "sending"])
-          .contains("fields", ["checked_in_at"])
-          .limit(1);
-        if (!waiting?.length) patch.checked_in_at = checkedAt;
+        const guarded = await queuedFields(known.id);
+        if (!guarded.has("checked_in_at")) patch.checked_in_at = checkedAt;
       }
       const { error } = await sb.from("bookings").update(patch).eq("id", known.id);
       if (error) return { legacy_id: legacyId, ok: false, error: error.message };
       return { legacy_id: legacyId, ok: true };
     }
-    // A Xano-born row we know: update it in place, so a changed reference (a new
-    // legacy_id) edits the booking instead of minting a twin.
-    if (known) knownId = known.id;
+    existing = known;
+  }
+  if (!existing) {
+    const { data: byKey, error: keyErr } = await sb
+      .from("bookings")
+      .select(EXISTING_SELECT)
+      .eq("legacy_id", legacyId)
+      .maybeSingle<Existing>();
+    if (keyErr) return { legacy_id: legacyId, ok: false, error: `lookup by legacy id: ${keyErr.message}` };
+    existing = byKey;
   }
 
   // Prefer an already-resolved business_tour_id (e.g. from email-booking-parse);
@@ -346,55 +347,12 @@ async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
   const name = parseName(row);
   const incomingPhone = clean(row.phone);
 
-  // A Xano row that carries no phone must not replace a customer we already have a
-  // number for.
-  //
-  // Our own /gp bookings come back through here. The mirror sends phone "null" on
-  // purpose, so Xano cannot text the guest twice, and on the round trip that used to
-  // mint a phone-less twin of the customer and repoint the booking at it. The booking
-  // confirmation still went out (it fires on insert, before this runs), which is why
-  // this stayed invisible, but everything later had no number left to text: the
-  // review funnel found every /gp guest unreachable.
-  //
-  // Only when the row has no phone at all. One that carries a phone is authoritative
-  // exactly as before, and a booking we have never seen still goes through the normal
-  // name + phone match. Checked before findOrCreateCustomer so the duplicate is never
-  // created in the first place.
-  let customerId: string | null = null;
-  if (!norm(incomingPhone)) {
-    const { data: prior } = await sb
-      .from("bookings")
-      .select("customer_id, customer:customers(phone)")
-      .eq("legacy_id", legacyId)
-      .maybeSingle<{ customer_id: string | null; customer: { phone: string | null } | null }>();
-    if (prior?.customer_id && norm(prior.customer?.phone)) {
-      customerId = prior.customer_id;
-    }
-  }
-  if (!customerId) {
-    customerId = await findOrCreateCustomer(
-      rec.business_id,
-      name,
-      incomingPhone,
-      clean(row.email),
-    );
-  }
-
   let a = toInt(row.adult);
   const c = toInt(row.child);
   const inf = toInt(row.infant);
   if (a + c + inf === 0) a = toInt(row.paxs);
 
   const startMs = new Date(starts).getTime();
-  const ends = new Date(startMs + 90 * 60 * 1000).toISOString();
-
-  const price = clean(row.price);
-  let totalCents = 0;
-  if (price) {
-    const f = Number(price);
-    if (Number.isFinite(f)) totalCents = Math.round(f * 100);
-  }
-
   const status = STATUS_MAP[(clean(row.status) ?? "").toLowerCase()] ?? "confirmed";
 
   // Xano's bookingConfirmation_id is the token in the booking link the guest was
@@ -403,6 +361,80 @@ async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
   // column's default generates a token on insert (and an update leaves the
   // existing one untouched, since the key is omitted from the payload).
   const confirmationToken = clean(row.bookingConfirmation_id);
+
+  if (existing) {
+    // A booking we already hold. Xano owns its status, time, pax, check-in, reference
+    // and channel, and those are taken. It does NOT own which business's copy of the
+    // tour the booking sits on, the guest row, the price or the pax breakdown: the
+    // old blanket upsert rewrote all of those on every echo, which moved bookings
+    // between businesses (they vanished from that desk's screen), minted guest
+    // twins and zeroed totals. A field with a change of ours still queued for Xano
+    // is left alone too, so a slow send never loses an edit (docs/xano-mirror.md).
+    const guarded = await queuedFields(existing.id);
+    const patch: Record<string, unknown> = {
+      ...xanoIds,
+      legacy_id: legacyId,
+      legacy_reference: clean(row.booking_reference) ?? existing.legacy_reference,
+    };
+    const channel = clean(row.booking_channel);
+    if (channel) patch.source_channel = channel;
+    if (!guarded.has("status")) patch.status = status;
+    if (!guarded.has("starts_at") && startMs !== new Date(existing.starts_at).getTime()) {
+      // Keep the booking's own duration: the tour's, not a fixed 90 minutes.
+      const duration = new Date(existing.ends_at).getTime() - new Date(existing.starts_at).getTime();
+      patch.starts_at = starts;
+      patch.ends_at = new Date(startMs + (duration > 0 ? duration : 90 * 60 * 1000)).toISOString();
+    }
+    if (!guarded.has("pax")) {
+      patch.pax_adult = a;
+      patch.pax_child = c;
+      patch.pax_infant = inf;
+    }
+    if (!guarded.has("checked_in_at") && checkedRaw !== undefined && checkedRaw !== null) {
+      patch.checked_in_at = checkedAt;
+    }
+    // A real product change (a different master tour) moves the booking, and it
+    // stays on this business's own copy of the new tour when there is one.
+    if (!guarded.has("business_tour_id") && rec.tour_id !== existing.business_tour?.tour_id) {
+      const { data: own } = await sb
+        .from("business_tours")
+        .select("id")
+        .eq("business_id", existing.business_id)
+        .eq("tour_id", rec.tour_id)
+        .maybeSingle<{ id: string }>();
+      patch.business_tour_id = own?.id ?? rec.business_tour_id;
+      patch.business_id = own ? existing.business_id : rec.business_id;
+    }
+    // Xano has a phone we lack (the email connector filled it in later): take it.
+    // Never a new guest row.
+    if (norm(incomingPhone) && !norm(existing.customer?.phone)) {
+      await sb.from("customers").update({ phone: incomingPhone }).eq("id", existing.customer_id);
+    }
+    if (confirmationToken) patch.public_token = confirmationToken;
+    if (typeof row.peek === "boolean") patch.peek = row.peek;
+    if (Array.isArray(row.image_url)) patch.groupon_voucher_urls = imageUrls(row.image_url);
+
+    const { error } = await sb.from("bookings").update(patch).eq("id", existing.id);
+    if (error) return { legacy_id: legacyId, ok: false, error: error.message };
+    return { legacy_id: legacyId, ok: true };
+  }
+
+  // A booking we have never seen: the full record.
+  const customerId = await findOrCreateCustomer(
+    rec.business_id,
+    name,
+    incomingPhone,
+    clean(row.email),
+  );
+
+  const ends = new Date(startMs + 90 * 60 * 1000).toISOString();
+
+  const price = clean(row.price);
+  let totalCents = 0;
+  if (price) {
+    const f = Number(price);
+    if (Number.isFinite(f)) totalCents = Math.round(f * 100);
+  }
 
   const payload = {
     business_id: rec.business_id,
@@ -423,20 +455,52 @@ async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
     source_channel: clean(row.booking_channel),
     ...xanoIds,
     ...(confirmationToken ? { public_token: confirmationToken } : {}),
-    // Peek + voucher photos travel with the full Xano record. Mapped only when
-    // the payload carries the field, so partial payloads (e.g. from
-    // email-booking-parse) never clobber existing values.
     ...(typeof row.peek === "boolean" ? { peek: row.peek } : {}),
     ...(Array.isArray(row.image_url)
       ? { groupon_voucher_urls: imageUrls(row.image_url) }
       : {}),
   };
 
-  const { error } = knownId
-    ? await sb.from("bookings").update(payload).eq("id", knownId)
-    : await sb.from("bookings").upsert(payload, { onConflict: "legacy_id" });
+  // Upsert, not insert: two deliveries of a new booking can race, and the second
+  // must land on the first one's row.
+  const { error } = await sb
+    .from("bookings")
+    .upsert(payload, { onConflict: "legacy_id" });
   if (error) return { legacy_id: legacyId, ok: false, error: error.message };
   return { legacy_id: legacyId, ok: true };
+}
+
+/** What we hold for a booking Xano is telling us about. */
+const EXISTING_SELECT =
+  "id, legacy_id, legacy_reference, business_id, business_tour_id, customer_id, starts_at, ends_at, " +
+  "business_tour:business_tours(tour_id), customer:customers(phone)";
+
+interface Existing {
+  id: string;
+  legacy_id: string | null;
+  legacy_reference: string | null;
+  business_id: string;
+  business_tour_id: string;
+  customer_id: string;
+  starts_at: string;
+  ends_at: string;
+  business_tour: { tour_id: string } | null;
+  customer: { phone: string | null } | null;
+}
+
+/**
+ * The mirrored fields of a booking with a change of ours still on its way to Xano
+ * (docs/xano-mirror.md). The echo must not overwrite those: the worker sends the
+ * booking's current state, so the echo would revert the edit and the send would
+ * then carry the reverted value.
+ */
+async function queuedFields(bookingId: string): Promise<Set<string>> {
+  const { data } = await sb
+    .from("xano_mirror_queue")
+    .select("fields")
+    .eq("booking_id", bookingId)
+    .in("status", ["pending", "sending"]);
+  return new Set((data ?? []).flatMap((q: { fields: string[] }) => q.fields));
 }
 
 // Xano image fields arrive as an array of URL strings or of file objects with

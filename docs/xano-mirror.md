@@ -93,12 +93,37 @@ The price: Xano cannot text, call or review-ask a guest booked here. Accepted.
 The "nothing changed" check is not a brake: an echo always differs in the fields
 the sync reshapes. Identity is what protects the row.
 
+### The echo of a Xano-born booking
+
+Before the mirror, Xano echoed a booking only when Xano itself changed it. Now every
+check-in or edit made here comes back as an echo too, so the sync's old blanket
+upsert became a live hazard: it re-resolved the tour from the product id (which
+moved a booking from Key West's copy of a tour to Miami's, so the Key West desk lost
+sight of it the moment they checked the guest in), minted a new guest row under the
+other business, zeroed `total_cents` and wiped the pax breakdown. On the rollout's
+first morning that happened to five bookings; they were put back by hand.
+
+The sync now separates the two cases:
+
+- **A booking we have never seen** gets the full record, as before.
+- **A booking we already hold** (found by `xano_internal_id`, else by `legacy_id`)
+  takes only what Xano owns: status, time (keeping the booking's own duration),
+  pax, check-in, reference, channel, confirmation token, Peek, voucher photos. It
+  never changes which business's copy of the tour the booking sits on unless the
+  master tour itself changed (a real product change in Bubble), and then it prefers
+  that business's own copy of the new tour. It never replaces the guest row (it
+  fills in a phone we lack, nothing more) and never touches the price or the
+  breakdown. That last rule also stops the kiosk 100x total drift the echo used to
+  cause.
+
 ### Stale echo
 
-A check-in change of ours that is still queued (`fields` contains `checked_in_at`,
-status pending or sending) beats the echo: the sync skips the echo's check-in
-then. Everything else the worker sends is the booking's current state, so a burst
-of edits collapses into one send and ordering cannot matter.
+A field with a change of ours still queued (`fields` of a pending or sending row)
+is left alone by the echo, on every booking: a check-in, a status, a time, pax, a
+product. Otherwise a slow send could see its edit reverted by an echo and then
+faithfully send the reverted value. Everything the worker sends is the booking's
+current state, so a burst of edits collapses into one send and ordering cannot
+matter.
 
 ## The queue
 
