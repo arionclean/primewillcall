@@ -40,6 +40,8 @@ interface Payload {
   next_source?: string;
   /** void_cash: why, in the voider's words. Required. */
   reason?: string;
+  /** payment_link on a Groupon booking: how many more guests to charge the fee for. */
+  guests?: number;
 }
 
 /**
@@ -421,7 +423,7 @@ Deno.serve(withSentry("payments", async (req) => {
       const { data: booking } = await scoped
         .from("bookings")
         .select(
-          "id, business_id, total_cents, status, public_token, customer:customers(email), business_tour:business_tours(name)",
+          "id, business_id, total_cents, status, source_channel, public_token, customer:customers(email), business_tour:business_tours(name, groupon_fee_cents)",
         )
         .eq("id", id)
         .maybeSingle();
@@ -430,7 +432,18 @@ Deno.serve(withSentry("payments", async (req) => {
         return json({ error: "This booking is cancelled." }, 400);
       }
 
-      const amount = booking.total_cents ?? 0;
+      // A Groupon booking's price is the voucher; what we charge is the per-guest
+      // convenience fee, the same line /gp charges. Staff use this when a guest
+      // paid for fewer people than the voucher covers: the link charges the fee
+      // for the missing guests and lands on Payments like the first one did.
+      const tour = booking.business_tour as { name?: string; groupon_fee_cents?: number | null } | null;
+      const isGroupon = (booking.source_channel ?? "").startsWith("groupon");
+      const grouponFee = tour?.groupon_fee_cents ?? 0;
+      const guests = Math.max(1, Math.min(20, Math.floor(Number(payload.guests ?? 1)) || 1));
+      const amount = isGroupon ? grouponFee * guests : (booking.total_cents ?? 0);
+      if (isGroupon && grouponFee <= 0) {
+        return json({ error: "This product has no Groupon fee to charge." }, 400);
+      }
       if (amount <= 0) return json({ error: "This booking has no amount to charge." }, 400);
 
       const { data: biz } = await db
@@ -444,12 +457,15 @@ Deno.serve(withSentry("payments", async (req) => {
 
       const metadata = {
         [STRIPE_META.bookingId]: booking.id,
-        [STRIPE_META.source]: "online",
+        [STRIPE_META.source]: isGroupon ? "groupon" : "online",
         [STRIPE_META.businessId]: booking.business_id,
       };
       const dest = booking.public_token ? `${base}/booking/${booking.public_token}` : base;
       const email = (booking.customer as { email?: string } | null)?.email;
-      const tourName = (booking.business_tour as { name?: string } | null)?.name ?? "Booking";
+      const tourName = tour?.name ?? "Booking";
+      const lineName = isGroupon
+        ? `Groupon convenience fee (${tourName}), ${guests} guest${guests === 1 ? "" : "s"}`
+        : tourName;
 
       // The platform fee is read from the same env the webhook uses, so one
       // number governs every charge the app creates.
@@ -465,7 +481,7 @@ Deno.serve(withSentry("payments", async (req) => {
             {
               price_data: {
                 currency: "usd",
-                product_data: { name: tourName },
+                product_data: { name: lineName },
                 unit_amount: amount,
               },
               quantity: 1,

@@ -2849,6 +2849,7 @@ function EditBookingModal({
                     bookingId={booking.id}
                     amountCents={booking.total_cents}
                     status={booking.status}
+                    isGroupon={(booking.source_channel ?? "").startsWith("groupon")}
                     disabled={busy}
                   />
                 ) : null}
