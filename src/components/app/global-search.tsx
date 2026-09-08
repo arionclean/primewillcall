@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { Search, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { BUSINESS_TZ, getLocalDateRange, todayLocalIso } from "@/lib/dates";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -160,34 +161,34 @@ export function GlobalSearch() {
           filters.push(`phone.ilike.%${digits}%`);
         }
 
-        const { data: customers, error: custErr } = await supabase
-          .from("customers")
-          .select("id, full_name, phone")
-          .or(filters.join(","))
-          .limit(30);
-        if (custErr) throw new Error(custErr.message);
-
-        const customerIds = (customers ?? []).map((c) => c.id);
-        if (customerIds.length === 0) {
-          if (!cancelled) {
-            setResults([]);
-            setSearching(false);
-            setActiveIndex(0);
-          }
-          return;
-        }
-
-        const { data: bookings, error: bookErr } = await supabase
-          .from("bookings")
-          .select(
-            `id, starts_at, status, voided_at, pax_adult, pax_child, pax_infant, customer_id,
+        // One query, filtered on the guest through the join, so a common name
+        // ("will" matches hundreds of guests) can never push today's booking out.
+        // Today and upcoming come first, soonest at the top; then the past,
+        // most recent first: that is the order a desk looks for a guest in.
+        const guestFilter = filters.join(",");
+        const select = `id, starts_at, status, voided_at, pax_adult, pax_child, pax_infant, customer_id,
              business_tour:business_tours!bookings_business_tour_id_fkey(name, tour:tours(name)),
-             customer:customers!bookings_customer_id_fkey(id, full_name, phone)`,
-          )
-          .in("customer_id", customerIds)
-          .order("starts_at", { ascending: false })
-          .limit(25);
-        if (bookErr) throw new Error(bookErr.message);
+             customer:customers!bookings_customer_id_fkey!inner(id, full_name, phone)`;
+        const todayStart = getLocalDateRange(todayLocalIso(BUSINESS_TZ), BUSINESS_TZ).startUtc;
+        const [upcoming, past] = await Promise.all([
+          supabase
+            .from("bookings")
+            .select(select)
+            .or(guestFilter, { referencedTable: "customer" })
+            .gte("starts_at", todayStart)
+            .order("starts_at", { ascending: true })
+            .limit(15),
+          supabase
+            .from("bookings")
+            .select(select)
+            .or(guestFilter, { referencedTable: "customer" })
+            .lt("starts_at", todayStart)
+            .order("starts_at", { ascending: false })
+            .limit(10),
+        ]);
+        if (upcoming.error) throw new Error(upcoming.error.message);
+        if (past.error) throw new Error(past.error.message);
+        const bookings = [...(upcoming.data ?? []), ...(past.data ?? [])];
 
         const mapped: SearchResult[] = (
           (bookings ?? []) as unknown as RawBooking[]
