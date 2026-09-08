@@ -107,18 +107,23 @@ def fetch_supabase(url, key):
     """Every booking that came from Xano (legacy_id set)."""
     cols = ("id,legacy_id,legacy_reference,public_token,starts_at,status,voided_at,created_at,"
             "source_channel,pax_adult,pax_child,pax_infant,customer:customers(full_name)")
-    rows, offset, step = [], 0, 1000
+    # Keyset paging on the primary key. Offset paging over a non-unique sort column
+    # (starts_at, created_at) is not stable across requests: on 2026-09-07 a
+    # created_at-ordered read of the table returned 1,934 rows twice and skipped
+    # as many, which made 2,062 Xano bookings look missing here. The id is unique
+    # and indexed, so every row is read exactly once.
+    rows, last = [], None
     while True:
+        after = f"&id=gt.{last}" if last else ""
         req = urllib.request.Request(
-            f"{url}/rest/v1/bookings?select={cols}&legacy_id=not.is.null&order=starts_at.asc",
-            headers={"apikey": key, "Authorization": f"Bearer {key}",
-                     "Range": f"{offset}-{offset + step - 1}", "Range-Unit": "items"})
+            f"{url}/rest/v1/bookings?select={cols}&legacy_id=not.is.null&order=id.asc&limit=1000{after}",
+            headers={"apikey": key, "Authorization": f"Bearer {key}"})
         with urllib.request.urlopen(req, timeout=120) as r:
             chunk = json.loads(r.read())
         rows.extend(chunk)
-        if len(chunk) < step:
+        if len(chunk) < 1000:
             return rows
-        offset += step
+        last = chunk[-1]["id"]
 
 
 def xano_identities(rows):
@@ -235,8 +240,12 @@ def main():
                 data=json.dumps({"status": "cancelled", "voided_at": stamp, "void_reason": reason,
                                  "voided_from_status": status}).encode(),
                 method="PATCH",
+                # The void reflects a delete Xano already made, so it must not be
+                # mirrored back to Xano: the origin header tells the trigger so
+                # (docs/xano-mirror.md).
                 headers={"apikey": key, "Authorization": f"Bearer {key}",
-                         "Content-Type": "application/json", "Prefer": "return=representation"})
+                         "Content-Type": "application/json", "Prefer": "return=representation",
+                         "x-sync-origin": "xano"})
             with urllib.request.urlopen(req, timeout=120) as r:
                 done += len(json.load(r))
             print(f"  voided {done:,}/{len(active):,}", flush=True)

@@ -206,6 +206,36 @@ webhook, and OTA status resends update rather than duplicate), else the Xano
 unique (the bulk import also stored channel/payment placeholders like `Groupon` and
 `kiosk-sale-card` there), so it is a label, never a dedup key.
 
+`xano_internal_id` and `xano_booking_id` say where the booking lives in Xano: its
+`internal_id` (what `booking/v12` adds or edits by, and what Xano's echo is matched
+on) and its numeric row id (what the iPad's PATCH addresses). The sync stamps both
+from every echo; the mirrors stamp the internal id BEFORE calling Xano. A booking
+born here therefore keeps `legacy_id` null (every "is this ours" rule reads that)
+and is still recognised when Xano echoes it back. See "Xano mirror" below.
+
+### Xano mirror (bookings -> Xano)
+
+The reverse of `xano-booking-sync`: every booking change made in this app is copied
+into Xano through an outbox (`docs/xano-mirror.md`). Migration `20260908100000_xano_mirror.sql`.
+
+- `xano_mirror_settings` (single row): `enabled` (default false). Owner select/update.
+- `xano_mirror_queue`: `booking_id`, `op` (`create`/`update`), `fields` (the mirrored
+  fields that changed, merged across edits), `status` (`pending`/`sending`/`sent`/`failed`),
+  `attempts`, `next_attempt_at`, `last_error`. Partial unique index: one pending row
+  per booking. RLS: owner select only; nothing writes through the API.
+- `enqueue_xano_mirror()` (AFTER INSERT OR UPDATE on bookings, SECURITY DEFINER):
+  skips writes whose `x-sync-origin` request header is `xano` (the sync, the ghost
+  script) or `mirror` (the kiosk sale flow, the worker); on INSERT queues a `create`
+  only for a booking born here that no other mirror owns (`legacy_id` null, not
+  Groupon, not awaiting payment); on UPDATE queues an `update` when time, product,
+  status, pax, check-in or note changed and the booking has a Xano row to address.
+  `xano_mirror_origin()` reads the header; `text_array_union()` merges the fields.
+- `claim_xano_mirror_rows(batch)` (SECURITY DEFINER, service_role only): the worker's
+  `FOR UPDATE SKIP LOCKED` claim; a row stuck in `sending` for ten minutes goes back
+  to pending first.
+- pg_cron job `xano-mirror-dispatch`, every minute, same shape as the messaging
+  dispatcher (vault `dispatch_cron_secret`).
+
 ### create_booking() (the one way a booking is created)
 
 `create_booking(p_business_tour_id, p_date, p_slot_start, p_customer_name, ...)` inserts

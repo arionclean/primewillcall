@@ -117,10 +117,10 @@ supabase/functions/            Deno edge functions. Everything public, webhook-d
                                run-booking-automations, dispatch-scheduled-messages,
                                enqueue-review-asks, email-booking-parse, kiosk-*,
                                gp-slots, gp-validate, gp-book, xano-booking-sync,
-                               whatsapp-send, whatsapp-templates.
+                               xano-mirror-dispatch, whatsapp-send, whatsapp-templates.
                                `_shared/` holds the modules they share (sms.ts,
                                whatsapp.ts, staff-auth.ts, gp.ts, ny-time.ts,
-                               parse-booking-email.ts).
+                               parse-booking-email.ts, xano-api.ts, xano-mirror.ts).
 supabase/config.toml           per-function `verify_jwt`. Not optional: the CLI defaults a
                                function to JWT ON, which breaks any caller that cannot send
                                a Supabase token (pg_cron sends only `x-cron-secret`, Twilio
@@ -129,7 +129,9 @@ supabase/config.toml           per-function `verify_jwt`. Not optional: the CLI 
 docs/                          ARCHITECTURE, DATABASE, platform-migration, shadcn-foundation
 scripts/                       import_legacy_bookings.py (one-way Xano -> Supabase tunnel);
                                reconcile_xano_ghosts.py (bookings Xano deleted that still
-                               count here: dry run reports, --live VOIDS them, never deletes)
+                               count here: dry run reports, --live VOIDS them, never deletes);
+                               stamp_xano_ids.py (one-time: stamp bookings synced before
+                               the mirror with their Xano ids; Xano read-only)
 src/app/_archive, src/components/_archive   legacy Bubble pages, kept as reference only.
                                Underscore prefix means Next does NOT route them. Do not
                                import from here in live code.
@@ -265,6 +267,19 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
 
 ## Known gaps / roadmap
 
+- **Xano mirror** (built 2026-09-08): every booking change made here (new booking,
+  time / product / pax / status / note edit, check-in, void) is copied into Xano
+  through an outbox (`xano_mirror_queue`, filled by the `enqueue_xano_mirror`
+  trigger, drained every minute by the `xano-mirror-dispatch` edge function), so the
+  iPads, which still read Xano, see it, and a rollback loses nothing. The Xano copy
+  of a booking born here has **no phone** (Xano's SMS trigger keys on it; this app
+  already texted the guest). The loop is closed two ways: the sync's writes carry
+  the `x-sync-origin: xano` header (the trigger skips them) and the booking's Xano
+  internal id is stamped in `bookings.xano_internal_id` before Xano is called, so
+  the echo is matched to its row and, for a booking born here, applies only the
+  iPad check-in and Peek. `legacy_id` stays null on bookings born here on purpose:
+  every ownership rule reads it. Switch: `xano_mirror_settings.enabled`. The owner
+  dashboard shows what is waiting or failed. See [`docs/xano-mirror.md`](docs/xano-mirror.md).
 - Customers list (scoped by business) not built.
 - Profile / settings not built.
 - **Messaging automations** (`/admin/messaging`) are built: owner rules grouped as

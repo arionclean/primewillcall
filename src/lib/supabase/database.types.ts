@@ -202,6 +202,8 @@ export type Database = {
           voided_from_status:
             | Database["public"]["Enums"]["booking_status"]
             | null
+          xano_booking_id: number | null
+          xano_internal_id: string | null
         }
         Insert: {
           awaiting_payment?: boolean
@@ -242,6 +244,8 @@ export type Database = {
           voided_from_status?:
             | Database["public"]["Enums"]["booking_status"]
             | null
+          xano_booking_id?: number | null
+          xano_internal_id?: string | null
         }
         Update: {
           awaiting_payment?: boolean
@@ -282,6 +286,8 @@ export type Database = {
           voided_from_status?:
             | Database["public"]["Enums"]["booking_status"]
             | null
+          xano_booking_id?: number | null
+          xano_internal_id?: string | null
         }
         Relationships: [
           {
@@ -2244,6 +2250,74 @@ export type Database = {
           },
         ]
       }
+      xano_mirror_queue: {
+        Row: {
+          attempts: number
+          booking_id: string
+          created_at: string
+          fields: string[]
+          id: number
+          last_error: string | null
+          next_attempt_at: string
+          op: string
+          sent_at: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          booking_id: string
+          created_at?: string
+          fields?: string[]
+          id?: never
+          last_error?: string | null
+          next_attempt_at?: string
+          op: string
+          sent_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          booking_id?: string
+          created_at?: string
+          fields?: string[]
+          id?: never
+          last_error?: string | null
+          next_attempt_at?: string
+          op?: string
+          sent_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "xano_mirror_queue_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      xano_mirror_settings: {
+        Row: {
+          enabled: boolean
+          id: boolean
+          updated_at: string
+        }
+        Insert: {
+          enabled?: boolean
+          id?: boolean
+          updated_at?: string
+        }
+        Update: {
+          enabled?: boolean
+          id?: boolean
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -2359,6 +2433,28 @@ export type Database = {
         SetofOptions: {
           from: "*"
           to: "scheduled_messages"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      claim_xano_mirror_rows: {
+        Args: { batch?: number }
+        Returns: {
+          attempts: number
+          booking_id: string
+          created_at: string
+          fields: string[]
+          id: number
+          last_error: string | null
+          next_attempt_at: string
+          op: string
+          sent_at: string | null
+          status: string
+          updated_at: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "xano_mirror_queue"
           isOneToOne: false
           isSetofReturn: true
         }
@@ -2686,6 +2782,10 @@ export type Database = {
           txn_count: number
         }[]
       }
+      text_array_union: {
+        Args: { a: string[]; b: string[] }
+        Returns: string[]
+      }
       void_booking: {
         Args: { p_booking_id: string; p_reason: string }
         Returns: {
@@ -2703,6 +2803,7 @@ export type Database = {
         }[]
       }
       whatsapp_window_open: { Args: { p_phone: string }; Returns: boolean }
+      xano_mirror_origin: { Args: never; Returns: string }
     }
     Enums: {
       booking_status:

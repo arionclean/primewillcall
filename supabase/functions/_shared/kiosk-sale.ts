@@ -39,7 +39,13 @@ export const SWEEP_MIN_AGE_MS = 60_000;
 export const ABANDON_AFTER_MS = 30 * 60_000;
 
 export function serviceClient(): SupabaseClient {
-  return createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
+  // The kiosk flow posts its own booking to Xano, so its booking writes must not be
+  // mirrored a second time: the header tells the enqueue_xano_mirror trigger so
+  // (docs/xano-mirror.md).
+  return createClient(SUPABASE_URL, SERVICE_KEY, {
+    auth: { persistSession: false },
+    global: { headers: { "x-sync-origin": "mirror" } },
+  });
 }
 
 export function json(obj: unknown, status: number): Response {

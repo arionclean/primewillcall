@@ -5,8 +5,17 @@
 // bulk CSV import (scripts/import_xano_bookings.py) and upsert by legacy_id, so
 // re-sending a booking updates it instead of duplicating.
 //
-// This only ever WRITES to Supabase. It never calls Xano back. Bookings created
-// natively in this app have no legacy_id and are never touched by the sync.
+// This only ever WRITES to Supabase. It never calls Xano back.
+//
+// Bookings born in this app reach Xano through the mirror (docs/xano-mirror.md) and
+// come back here as an echo. Such a row is recognised by its Xano internal id
+// (bookings.xano_internal_id, stamped before Xano was called) and Xano is not the
+// source of truth for it, so the echo applies only the two flags staff toggle on
+// the Xano side (the iPad check-in, Peek) and never the rest of the record.
+//
+// Every write this function makes carries the `x-sync-origin: xano` request header,
+// which the enqueue_xano_mirror trigger reads to know the write came from Xano and
+// must not be mirrored back. That is what keeps the two systems out of a loop.
 //
 // Auth: send header `x-webhook-secret: <XANO_WEBHOOK_SECRET>` (set that secret on
 // the function in Supabase). Deployed with JWT verification off so Xano does not
@@ -14,6 +23,7 @@
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { withSentry } from "../_shared/sentry.ts";
+import { xanoRowId } from "../_shared/xano-api.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -21,7 +31,12 @@ const WEBHOOK_SECRET = Deno.env.get("XANO_WEBHOOK_SECRET") ?? "";
 
 const sb = createClient(SUPABASE_URL, SERVICE_KEY, {
   auth: { persistSession: false },
+  global: { headers: { "x-sync-origin": "xano" } },
 });
+
+/** A booking this platform created: legacy_id null, or the Groupon mirror's prefix. */
+const bornHere = (legacyId: string | null): boolean =>
+  legacyId == null || legacyId.startsWith("ota-GP-");
 
 // ── helpers (ported from the import script) ───────────────────────────────────
 const norm = (s: unknown): string =>
@@ -251,6 +266,71 @@ async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
     };
   }
 
+  const checkedRaw = row.checked;
+  const checked =
+    checkedRaw === true ||
+    checkedRaw === 1 ||
+    clean(checkedRaw) === "1" ||
+    clean(checkedRaw) === "true";
+  const checkedAt = checked ? epochToIso(row.check_in_time) ?? starts : null;
+
+  // Where the row lives in Xano, when the payload says. Learned here so an edit made
+  // in this app can be sent back to the right Xano row (docs/xano-mirror.md).
+  //
+  // Two payload shapes reach this function. A full Xano record (the kiosk's
+  // dual-write posts Xano's response) carries `internal_id` and `id`. Xano's own
+  // trigger, "new platform/sync booking to supabase_v1", sends a NORMALIZED record
+  // instead: no `internal_id`, no `id`, no `bookingConfirmation_id`; its `unique_id`
+  // is Xano's unique_id when set, else the internal_id. In Xano the two are equal
+  // (kiosk) or unique_id is empty, so `unique_id` is the internal id in practice,
+  // and the worker verifies it against Xano before relying on it.
+  const internalId = clean(row.internal_id) ?? clean(row.unique_id);
+  const xanoId = xanoRowId(row);
+  const xanoIds = {
+    ...(internalId ? { xano_internal_id: internalId } : {}),
+    ...(xanoId ? { xano_booking_id: xanoId } : {}),
+  };
+
+  // A row we already know by its Xano internal id.
+  let knownId: string | null = null;
+  if (internalId) {
+    const { data: known, error: knownErr } = await sb
+      .from("bookings")
+      .select("id, legacy_id")
+      .eq("xano_internal_id", internalId)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle<{ id: string; legacy_id: string | null }>();
+    if (knownErr) {
+      // Falling through would upsert by legacy_id and, for a booking born here,
+      // mint a twin. Better to fail the record and let Xano's retry find us.
+      return { legacy_id: legacyId, ok: false, error: `lookup by internal id: ${knownErr.message}` };
+    }
+    if (known && bornHere(known.legacy_id)) {
+      // The echo of a booking born here. Xano is not its source of truth: take only
+      // what staff toggle on the Xano side, the iPad check-in and Peek, and the row
+      // id. A check-in change of ours still waiting to go out wins over the echo.
+      const patch: Record<string, unknown> = { ...xanoIds };
+      if (typeof row.peek === "boolean") patch.peek = row.peek;
+      if (checkedRaw !== undefined && checkedRaw !== null) {
+        const { data: waiting } = await sb
+          .from("xano_mirror_queue")
+          .select("id")
+          .eq("booking_id", known.id)
+          .in("status", ["pending", "sending"])
+          .contains("fields", ["checked_in_at"])
+          .limit(1);
+        if (!waiting?.length) patch.checked_in_at = checkedAt;
+      }
+      const { error } = await sb.from("bookings").update(patch).eq("id", known.id);
+      if (error) return { legacy_id: legacyId, ok: false, error: error.message };
+      return { legacy_id: legacyId, ok: true };
+    }
+    // A Xano-born row we know: update it in place, so a changed reference (a new
+    // legacy_id) edits the booking instead of minting a twin.
+    if (known) knownId = known.id;
+  }
+
   // Prefer an already-resolved business_tour_id (e.g. from email-booking-parse);
   // otherwise match by product / supplier / company for raw Xano payloads.
   const btid = clean(row.business_tour_id);
@@ -308,14 +388,6 @@ async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
   const startMs = new Date(starts).getTime();
   const ends = new Date(startMs + 90 * 60 * 1000).toISOString();
 
-  const checkedRaw = row.checked;
-  const checked =
-    checkedRaw === true ||
-    checkedRaw === 1 ||
-    clean(checkedRaw) === "1" ||
-    clean(checkedRaw) === "true";
-  const checkedAt = checked ? epochToIso(row.check_in_time) ?? starts : null;
-
   const price = clean(row.price);
   let totalCents = 0;
   if (price) {
@@ -349,6 +421,7 @@ async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
     legacy_id: legacyId,
     legacy_reference: clean(row.booking_reference),
     source_channel: clean(row.booking_channel),
+    ...xanoIds,
     ...(confirmationToken ? { public_token: confirmationToken } : {}),
     // Peek + voucher photos travel with the full Xano record. Mapped only when
     // the payload carries the field, so partial payloads (e.g. from
@@ -359,9 +432,9 @@ async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
       : {}),
   };
 
-  const { error } = await sb
-    .from("bookings")
-    .upsert(payload, { onConflict: "legacy_id" });
+  const { error } = knownId
+    ? await sb.from("bookings").update(payload).eq("id", knownId)
+    : await sb.from("bookings").upsert(payload, { onConflict: "legacy_id" });
   if (error) return { legacy_id: legacyId, ok: false, error: error.message };
   return { legacy_id: legacyId, ok: true };
 }

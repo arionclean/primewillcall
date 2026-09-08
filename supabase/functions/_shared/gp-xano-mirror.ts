@@ -30,18 +30,18 @@
  * Never throws. A mirror failure is logged and the guest's booking stands: the Supabase
  * row is the source of truth for the test.
  *
- * OFF unless the GP_XANO_MIRROR secret is "true" AND XANO_API_TOKEN is set. This is the
- * only path in the codebase that writes to Xano; delete this file, its secrets, and the
- * call in index.ts when the test ends. See docs/gp-xano-mirror.md.
+ * OFF unless the GP_XANO_MIRROR secret is "true" AND XANO_API_TOKEN is set. The general
+ * mirror (docs/xano-mirror.md) leaves Groupon creation to this module and picks up any
+ * later edit through bookings.xano_internal_id, which is stamped here alongside
+ * legacy_id. See docs/gp-xano-mirror.md.
  */
 
-const XANO_BOOKINGS_API = "https://xmhi-aj9d-cnsb.n7.xano.io/api:0AUqUbBn";
 const XANO_GP_CHANNEL = "groupon-surcharge";
-const TIMEOUT_MS = 8_000;
 
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 
 import { nyDateString } from "./ny-time.ts";
+import { xanoCreateBooking, xanoRowId } from "./xano-api.ts";
 
 /** Booking reference shared by both systems. Also the Xano internal_id. */
 export function gpMirrorRef(): string {
@@ -88,7 +88,7 @@ function splitName(full: string): { first: string; last: string } {
 
 export async function mirrorGpBookingToXano(
   input: GpMirrorInput,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; xanoBookingId?: number | null }> {
   if (!gpMirrorEnabled()) return { ok: false, error: "disabled" };
   if (!input.legacyCompanyId || !input.legacyProductId) {
     return { ok: false, error: "product is not linked to Xano" };
@@ -139,24 +139,9 @@ export async function mirrorGpBookingToXano(
     check_in_time: null,
   };
 
-  try {
-    const res = await fetch(`${XANO_BOOKINGS_API}/booking/v12`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${Deno.env.get("XANO_API_TOKEN")}`,
-      },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      return { ok: false, error: `Xano ${res.status}: ${text.slice(0, 200)}` };
-    }
-    return { ok: true };
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) };
-  }
+  const res = await xanoCreateBooking(payload);
+  if (!res.ok) return { ok: false, error: res.error };
+  return { ok: true, xanoBookingId: xanoRowId(res.value) };
 }
 
 /**
@@ -218,9 +203,11 @@ export async function mirrorGrouponBooking(
   const ref = gpMirrorRef();
 
   // Claim the row before calling Xano, so two concurrent deliveries cannot both mirror.
+  // The internal id is what Xano's echo is matched on, and what a later edit made
+  // here is sent back to (docs/xano-mirror.md).
   const { data: claimed } = await sb
     .from("bookings")
-    .update({ legacy_id: gpMirrorLegacyId(ref) })
+    .update({ legacy_id: gpMirrorLegacyId(ref), xano_internal_id: ref })
     .eq("id", bookingId)
     .is("legacy_id", null)
     .select("id");
@@ -254,5 +241,9 @@ export async function mirrorGrouponBooking(
   });
   if (!mirror.ok) {
     console.error(`[gp] Xano mirror failed for booking ${bookingId} (${ref}): ${mirror.error}`);
+    return;
+  }
+  if (mirror.xanoBookingId) {
+    await sb.from("bookings").update({ xano_booking_id: mirror.xanoBookingId }).eq("id", bookingId);
   }
 }

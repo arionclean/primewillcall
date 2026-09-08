@@ -30,6 +30,10 @@ verify_jwt = true
 # Xano sends only x-webhook-secret, never a Supabase token.
 [functions.xano-booking-sync]
 verify_jwt = false
+
+# The Xano mirror worker (docs/xano-mirror.md): pg_cron with x-cron-secret.
+[functions.xano-mirror-dispatch]
+verify_jwt = false
 [functions.whatsapp-send]
 verify_jwt = true
 
