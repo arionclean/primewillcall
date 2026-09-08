@@ -37,6 +37,7 @@ import { DateField } from "@/components/ui/date-field";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { Textarea } from "@/components/ui/textarea";
 import { queryKeys } from "@/lib/query/keys";
+import { isGrouponChannel } from "@/lib/source-type";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import {
   BOOKING_VOID_REASONS,
@@ -1575,8 +1576,10 @@ function BookingRowItem({
   const checkedIn = booking.checked_in_at != null;
   // Groupon vouchers are redeemed on Groupon's platform, then marked here by
   // whoever holds the Redeem Groupon vouchers permission (owners always do).
+  // Xano's Groupon page labels its bookings "groupon-surcharge", so the toggle
+  // keys on the shared classifier, not on one spelling.
   const canRedeem =
-    caps.canRedeemGroupon && booking.source_channel === "groupon";
+    caps.canRedeemGroupon && isGrouponChannel(booking.source_channel);
   const redeemed = booking.groupon_redeemed_at != null;
   // The codes go with the toggle: the code is what Groupon asks for.
   const voucherCodes = caps.canRedeemGroupon ? booking.groupon_voucher_codes : [];
