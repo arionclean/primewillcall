@@ -99,6 +99,8 @@ const CAPABILITY_OPTIONS: {
     | "can_view_payments";
   label: string;
   hint: string;
+  /** Only these roles get the switch; the others never see the screen it gates. */
+  roles?: StaffRole[];
 }[] = [
   {
     name: "can_create_bookings",
@@ -132,21 +134,25 @@ const CAPABILITY_OPTIONS: {
   },
   {
     name: "can_use_caja",
+    roles: ["check_in"],
     label: "Use Caja",
     hint: "Open Caja: the desk's own cash and card for the day, and the end-of-night count. Check-in logins only.",
   },
   {
     name: "can_manage_sales",
+    roles: ["business_manager"],
     label: "Refund, void and move sales",
     hint: "On the Payments page: refund a card or cash sale, void a cash sale, move a sale to another kiosk. The passcode is still asked. Managers.",
   },
   {
     name: "can_manage_team",
+    roles: ["business_manager"],
     label: "Manage the team",
     hint: "On Team: add employees, change PINs, pause or remove them. Off: they can look but not change. Managers.",
   },
   {
     name: "can_view_payments",
+    roles: ["business_manager"],
     label: "See Payments",
     hint: "Open the Payments page with their business's sales and totals. Off: the page is hidden. Managers.",
   },
@@ -358,7 +364,7 @@ export function EditStaffForm({
           description="What this team member can do with bookings. Changes take effect right away, even while they are signed in."
           contentClassName="grid gap-3 sm:grid-cols-2"
         >
-          {CAPABILITY_OPTIONS.map((cap) => (
+          {CAPABILITY_OPTIONS.filter((cap) => !cap.roles || cap.roles.includes(role)).map((cap) => (
             <label
               key={cap.name}
               className="flex cursor-pointer items-start gap-2.5 rounded-md border px-3 py-2.5 text-sm transition hover:bg-muted/50"
