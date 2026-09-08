@@ -93,7 +93,11 @@ without touching it:
   not involved.
 - **History:** Twilio is the shared source of truth. The `sms-sync` edge function pulls both
   directions from the Twilio Messages API (incremental, deduped by `twilio_sid`), so
-  Xano-sent messages also appear in threads. The page runs a sync on load.
+  Xano-sent messages also appear in threads. The page runs a sync on load. Every row,
+  synced or written by us, gets its `customer_id` and `business_id` from the
+  `link_message_customer` trigger (BEFORE INSERT on both message tables, matched on
+  `customers.phone_last10`). That business is what a manager's RLS scopes by, so a
+  synced Xano message sits in the same thread as the reply it got.
 - **Live updates:** Supabase Realtime on `sms_messages` inserts (publication added in
   the migration); the conversation list comes from the `sms_conversations()` RPC
   (one aggregated row per customer number).

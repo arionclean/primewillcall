@@ -2498,6 +2498,13 @@ export type Database = {
           tour_name: string
         }[]
       }
+      message_link_customer: {
+        Args: { p_at: string; p_business_id?: string; p_phone: string }
+        Returns: {
+          business_id: string
+          customer_id: string
+        }[]
+      }
       messaging_conversations: {
         Args: { p_before?: string; p_limit?: number; p_search?: string }
         Returns: {

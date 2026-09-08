@@ -50,6 +50,10 @@ and tested but receives nothing until the console is changed. Both behave identi
       first: it is the base of the `/r/<token>` review link.
 - [ ] Optional: notifications when a customer texts in (Xano pings the merchant today;
       here it is only visible in `/messages`)
+- [ ] Cleanup: drop the edge-function phone lookups (`findCustomerByPhone` in
+      `_shared/sms.ts` and `_shared/whatsapp.ts`, plus the copy in
+      `src/lib/sms/messages.ts`). The `link_message_customer` trigger links every row
+      now, so they are a redundant first pass with a narrower match.
 - [ ] Cleanup: regenerate `src/lib/supabase/database.types.ts` (sms tables are untyped
       casts today), and remove the Xano SMS endpoints/functions once everything is off
 

@@ -690,6 +690,16 @@ RLS is enabled on all app tables. Every policy is expressed through the
 `current_staff()` SECURITY DEFINER function, which returns the caller's
 `(staff_id, role, business_id)`. This avoids recursive policy lookups on `staff`.
 
+**Messages are scoped by the customer's business.** `sms_messages` and
+`whatsapp_messages` carry `business_id`, and that is what a manager's SELECT policy
+matches. The column is filled by the `link_message_customer` BEFORE INSERT trigger:
+`message_link_customer()` resolves the counterpart phone through
+`customers.phone_last10`, preferring the customer whose latest booking precedes the
+message when a phone belongs to customers in several businesses. It runs for every
+writer, including the Twilio history sync that copies in the messages Xano sends,
+which is what used to leave a manager seeing only the guest's replies. A row whose
+phone matches no customer stays NULL and is visible to the owner only.
+
 Two costs of RLS to design around (both bit the Messages list, see
 `messaging_conversations`):
 
