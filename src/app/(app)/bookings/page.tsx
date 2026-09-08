@@ -83,7 +83,10 @@ export default async function BookingsPage({
             range={range}
             role={staff.role}
             caps={caps}
-            businessId={staff.business_id}
+            // Only a manager is one business. A check-in login watches every
+            // business's guests on its tours, so its live feed must not be
+            // narrowed to its own business (RLS still scopes it).
+            businessId={staff.role === "business_manager" ? staff.business_id : null}
           />
         </Suspense>
       </div>
@@ -120,7 +123,10 @@ async function BookingsPanel({
   const bookings = ((data ?? []) as unknown[]).map(normalizeBookingRow);
 
   // Role-scoped tour variants for the filter + edit dropdown. Owner sees all
-  // rows; manager and check-in are scoped to their own business.
+  // rows; a manager is scoped to their own business. A check-in login is not:
+  // it checks in every business's guests on its tours (RLS returns every
+  // business's copy of an assigned tour), and the filter groups copies by name,
+  // so "Miami 5 in 1 City Tour" covers Key West's guests and Miami's alike.
   let tourQuery = supabase
     .from("business_tours")
     .select(
@@ -131,7 +137,7 @@ async function BookingsPanel({
     )
     .order("name", { ascending: true });
 
-  if (role !== "owner") {
+  if (role === "business_manager") {
     tourQuery = tourQuery.eq(
       "business_id",
       businessId ?? "00000000-0000-0000-0000-000000000000",

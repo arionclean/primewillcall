@@ -813,8 +813,10 @@ export function BookingsList({
         void queryClient.invalidateQueries({ queryKey: bookingsKey });
       });
 
-    // Non-owners only react to their own business's changes, so an unrelated
-    // business updating a booking never wakes this screen.
+    // A manager only reacts to their own business's changes, so an unrelated
+    // business updating a booking never wakes this screen. The owner and a
+    // check-in login (every business's guests on its tours) get the whole
+    // stream; RLS is what scopes it.
     const changes = {
       event: "*",
       schema: "public",

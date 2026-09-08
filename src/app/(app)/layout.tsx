@@ -42,7 +42,10 @@ export default async function AppLayout({
         canCreateBookings={staffCapabilities(staff).canCreateBookings}
         canUseCaja={staffCapabilities(staff).canUseCaja}
         canViewPayments={staffCapabilities(staff).canViewPayments}
-        businessId={staff.business_id}
+        // The sidebar Manifest narrows its live feed to this business. Only a
+        // manager is one business; a check-in login counts every business's
+        // guests on its tours, so it gets the whole stream (RLS scopes it).
+        businessId={staff.role === "business_manager" ? staff.business_id : null}
         employee={employee}
       >
         {children}

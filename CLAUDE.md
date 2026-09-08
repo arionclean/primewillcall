@@ -39,9 +39,12 @@ Realtime). Supabase project id: `qbnizuhozzwkiitfkjee`.
 - `business_manager` — belongs to one business (`staff.business_id`). Manages that
   business's bookings, customers, and its own copy of each assigned tour (name + prices).
 - `check_in` — desk staff for one business (the kiosk accounts). Sees bookings on
-  assigned tours, checks guests in, and can create bookings on those tours from
-  `/schedule`. Lands on `/bookings` (no dashboard; the sidebar Manifest shows
-  today's remaining check-ins per departure).
+  assigned tours **from every business** (one desk checks in Key West's and Miami
+  Skyline's guests alike; RLS keys on `staff_tours`, and since 2026-09-08 the login
+  can also read every business's copy of those tours, so the bookings screen names
+  and filters them), checks guests in, and can create bookings on its own
+  business's tours from `/schedule`. Lands on `/bookings` (no dashboard; the
+  sidebar Manifest shows today's remaining check-ins per departure).
 
 Non-owner staff also carry per-person booking permissions, owner-editable in the
 "Permissions" section of `/admin/staff/[id]`. Six are write permissions

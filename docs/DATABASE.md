@@ -764,8 +764,12 @@ General shape:
 - **owner**: full access to everything.
 - **business_manager**: read + write rows belonging to their `business_id`
   (`bookings`, `customers`, `business_tours`, `tour_pax_tiers` via the parent business).
-- **check_in**: read `business_tours` / `tour_pax_tiers` for their business; read,
-  insert and update `bookings` only for tours they are assigned to via `staff_tours`
+- **check_in**: read `business_tours` / `tour_pax_tiers` for their business AND every
+  business's copy of a tour they are assigned to (plus those businesses' rows in
+  `businesses`), since 2026-09-08 (`checkin_sees_all_copies`): one desk checks in
+  Key West's and Miami Skyline's guests alike, and the bookings screen needs the
+  other copy's name, tiers and filter entry. Read only; writes stay on their own
+  business. Read, insert and update `bookings` only for tours they are assigned to via `staff_tours`
   (each write also gated by the `staff.can_*` capability columns). Can insert
   `customers` for their business. Void (never delete) only when `can_void_bookings` is on.
 
