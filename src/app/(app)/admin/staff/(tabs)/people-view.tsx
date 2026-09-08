@@ -30,6 +30,8 @@ export type EmployeeRow = {
 
 type Props = {
   employees: EmployeeRow[];
+  /** Owner, or a manager with "Manage the team". Off: the list is read-only. */
+  canManage: boolean;
   loadError: boolean;
 };
 
@@ -50,16 +52,18 @@ function lastSeen(e: EmployeeRow): string {
 }
 
 /** The people who type a PIN, and the Add employee dialog. */
-export function PeopleView({ employees, loadError }: Props) {
+export function PeopleView({ employees, canManage, loadError }: Props) {
   const [adding, setAdding] = useState(false);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-end">
-        <Button type="button" onClick={() => setAdding(true)}>
-          + Add employee
-        </Button>
-      </div>
+      {canManage && (
+        <div className="flex items-center justify-end">
+          <Button type="button" onClick={() => setAdding(true)}>
+            + Add employee
+          </Button>
+        </div>
+      )}
 
       {loadError && (
         <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -71,15 +75,17 @@ export function PeopleView({ employees, loadError }: Props) {
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
             <p className="text-sm text-muted-foreground">No employees yet.</p>
-            <Button type="button" onClick={() => setAdding(true)}>
-              + Add your first employee
-            </Button>
+            {canManage && (
+              <Button type="button" onClick={() => setAdding(true)}>
+                + Add your first employee
+              </Button>
+            )}
           </CardContent>
         </Card>
       ) : (
         <ul className="space-y-2">
           {employees.map((e) => (
-            <EmployeeCard key={e.id} employee={e} />
+            <EmployeeCard key={e.id} employee={e} canManage={canManage} />
           ))}
         </ul>
       )}
@@ -127,7 +133,7 @@ function AddEmployeeDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-function EmployeeCard({ employee }: { employee: EmployeeRow }) {
+function EmployeeCard({ employee, canManage }: { employee: EmployeeRow; canManage: boolean }) {
   const [changingPin, setChangingPin] = useState(false);
   const [confirmingRemove, setConfirmingRemove] = useState(false);
   const [pinState, pinAction] = useActionState(setEmployeePinAction, INITIAL);
@@ -149,6 +155,8 @@ function EmployeeCard({ employee }: { employee: EmployeeRow }) {
               <Link href={activityHref} className={buttonVariants({ variant: "ghost", size: "sm" })}>
                 Activity
               </Link>
+              {canManage && (
+                <>
               <Button type="button" variant="outline" size="sm" onClick={() => setChangingPin((v) => !v)}>
                 {changingPin ? "Cancel" : "Change PIN"}
               </Button>
@@ -162,6 +170,8 @@ function EmployeeCard({ employee }: { employee: EmployeeRow }) {
               <Button type="button" variant="ghost" size="sm" className="text-destructive" onClick={() => setConfirmingRemove(true)}>
                 Remove
               </Button>
+                </>
+              )}
             </div>
           </div>
 

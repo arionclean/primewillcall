@@ -14,6 +14,7 @@ type AppShellProps = {
   fullName: string;
   canCreateBookings: boolean;
   canUseCaja: boolean;
+  canViewPayments: boolean;
   businessId: string | null;
   /** The person unlocked on a shared login; null on a personal one. */
   employee: { name: string } | null;
@@ -25,6 +26,7 @@ export function AppShell({
   fullName,
   canCreateBookings,
   canUseCaja,
+  canViewPayments,
   businessId,
   employee,
   children,
@@ -36,6 +38,7 @@ export function AppShell({
         fullName={fullName}
         canCreateBookings={canCreateBookings}
         canUseCaja={canUseCaja}
+        canViewPayments={canViewPayments}
         businessId={businessId}
         employee={employee}
       />
@@ -49,7 +52,8 @@ export function AppShell({
             role={role}
             canCreateBookings={canCreateBookings}
             canUseCaja={canUseCaja}
-              />
+            canViewPayments={canViewPayments}
+          />
           {role === "check_in" && (
             // Suspense: SidebarManifest reads the URL via useSearchParams.
             <Suspense fallback={null}>

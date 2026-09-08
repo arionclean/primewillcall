@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { getCurrentStaff } from "@/lib/auth";
+import { getCurrentStaff, staffCapabilities } from "@/lib/auth";
 import { nyDateISO, nyLocalToUtcIso, shiftDayISO } from "@/lib/dashboard/queries";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -47,6 +47,8 @@ export default async function PaymentsPage({
   const { staff } = await getCurrentStaff();
   if (!staff || !staff.is_active) redirect("/login?next=/admin/payments");
   if (staff.role === "check_in") redirect("/dashboard");
+  const caps = staffCapabilities(staff);
+  if (!caps.canViewPayments) redirect("/dashboard");
 
   const sp = await searchParams;
   const to = sp.to ?? nyDateISO();
@@ -186,6 +188,7 @@ export default async function PaymentsPage({
   return (
     <PaymentsView
       role={staff.role}
+      canManageSales={caps.canManageSales}
       items={items}
       summary={summaryRows?.[0] ?? null}
       kiosks={(kioskRows ?? []).flatMap((k) => (k.slug ? [k.slug] : []))}

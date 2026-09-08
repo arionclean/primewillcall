@@ -38,6 +38,7 @@ type NavItem = {
   matchPrefix?: string; // path prefix that highlights this item
   needsCreateBookings?: boolean; // hidden when the staffer can't create bookings
   needsCaja?: boolean; // hidden when the staffer's Caja switch is off
+  needsPayments?: boolean; // hidden when a manager's "See Payments" switch is off
   badge?: BadgeKey; // renders its own outstanding-work count, fetched after paint
 };
 
@@ -139,6 +140,7 @@ const SECTIONS: NavSection[] = [
       {
         href: "/admin/payments",
         label: "Payments",
+        needsPayments: true,
         icon: CreditCard,
         roles: ["owner", "business_manager"],
         matchPrefix: "/admin/payments",
@@ -182,11 +184,13 @@ export function AppSidebar({
   role,
   canCreateBookings,
   canUseCaja,
+  canViewPayments,
   onNavigate,
 }: {
   role: StaffRole;
   canCreateBookings: boolean;
   canUseCaja: boolean;
+  canViewPayments: boolean;
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
@@ -226,7 +230,8 @@ export function AppSidebar({
           (it) =>
             it.roles.includes(role) &&
             (!it.needsCreateBookings || canCreateBookings) &&
-            (!it.needsCaja || canUseCaja),
+            (!it.needsCaja || canUseCaja) &&
+            (!it.needsPayments || canViewPayments),
         );
         if (visible.length === 0) return null;
         return (

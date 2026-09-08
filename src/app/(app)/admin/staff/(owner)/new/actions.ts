@@ -40,6 +40,9 @@ export async function createStaffAction(
   const can_redeem_groupon = formData.get("can_redeem_groupon") === "1";
   const can_view_details = formData.get("can_view_details") === "1";
   const can_use_caja = formData.get("can_use_caja") === "1";
+  const can_manage_sales = formData.get("can_manage_sales") === "1";
+  const can_manage_team = formData.get("can_manage_team") === "1";
+  const can_view_payments = formData.get("can_view_payments") === "1";
   const tour_ids = formData
     .getAll("tour_ids")
     .map((v) => String(v))
@@ -84,6 +87,9 @@ export async function createStaffAction(
       can_redeem_groupon,
       can_view_details,
       can_use_caja,
+      can_manage_sales,
+      can_manage_team,
+      can_view_payments,
     })
     .select("id")
     .single();

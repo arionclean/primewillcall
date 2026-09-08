@@ -118,6 +118,10 @@ Deno.serve(withSentry("payments", async (req) => {
   // The passcode gates everything that moves money or moves whose numbers it
   // counts toward. The payment link creates no charge, so it is not gated.
   if (action !== "payment_link") {
+    // The owner's per-manager switch (Team > Permissions > "Refund, void and move sales").
+    if (staff.role === "business_manager" && !staff.can_manage_sales) {
+      return json({ error: "Not authorized." }, 403);
+    }
     const pinError = checkPin(payload.pin);
     if (pinError) return json({ error: pinError }, 403);
   }

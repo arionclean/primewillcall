@@ -1,3 +1,4 @@
+import { getCurrentStaff, staffCapabilities } from "@/lib/auth";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 import { loadEmployees } from "../people";
@@ -9,7 +10,9 @@ import { PeopleView } from "../people-view";
  * the Activity tab.
  */
 export default async function PeoplePage() {
+  const { staff } = await getCurrentStaff();
   const supabase = await getSupabaseServerClient();
   const { employees, error } = await loadEmployees(supabase);
-  return <PeopleView employees={employees} loadError={error} />;
+  const canManage = staff ? staffCapabilities(staff).canManageTeam : false;
+  return <PeopleView employees={employees} canManage={canManage} loadError={error} />;
 }

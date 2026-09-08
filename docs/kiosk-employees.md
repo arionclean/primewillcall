@@ -42,7 +42,8 @@ Three tabs (Accounts, People, Activity; Team opens on Accounts for the owner, on
 for a manager), the model a new owner learns in one sentence: a **person** works here and
 types a PIN; an **account** is a login.
 
-- **People** (`/admin/staff/people`, owner and any business manager): the employees who type a
+- **People** (`/admin/staff/people`, owner and any business manager; a manager changes
+  things only with the `can_manage_team` switch, otherwise the list is read-only): the employees who type a
   PIN, one pool for every business. A card per person with Active / Inactive, when the
   PIN was last used and where (a tablet, or the web), and Activity (opens the log
   filtered to them), Change PIN, Deactivate / Reactivate, Remove (past activity keeps

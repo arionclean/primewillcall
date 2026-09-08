@@ -140,6 +140,8 @@ function sourceLabel(source: string | null): string | null {
 
 type PaymentsViewProps = {
   role: StaffRole;
+  /** Refund, void and move: owners always, managers by the owner's switch. */
+  canManageSales: boolean;
   items: FeedItem[];
   summary: Summary;
   kiosks: string[];
@@ -304,6 +306,7 @@ function saleAmounts(item: FeedItem): { amount: number; refunded: number } {
 
 export function PaymentsView({
   role,
+  canManageSales,
   items,
   summary,
   kiosks,
@@ -403,7 +406,7 @@ export function PaymentsView({
 
   // Re-tagging a sale moves no money, so it needs no passcode: owner and the
   // business's own manager may do it. (check_in never reaches this page.)
-  const canMove = role === "owner" || role === "business_manager";
+  const canMove = role === "owner" || (role === "business_manager" && canManageSales);
 
   const pageCount = Math.max(1, Math.ceil(total / perPage));
   const firstRow = total === 0 ? 0 : (page - 1) * perPage + 1;
@@ -799,6 +802,7 @@ export function PaymentsView({
                 // Supabase, so Vercel cannot see it. An unconfigured platform is
                 // reported by the function when the refund is actually attempted.
                 const refundable =
+                  canMove &&
                   txn.object_type === "charge" &&
                   txn.status !== "disputed" &&
                   txn.amount - (txn.amount_refunded ?? 0) > 0;

@@ -26,6 +26,7 @@ type AppTopbarProps = {
   fullName: string;
   canCreateBookings: boolean;
   canUseCaja: boolean;
+  canViewPayments: boolean;
   businessId: string | null;
   employee: { name: string } | null;
 };
@@ -35,6 +36,7 @@ export function AppTopbar({
   fullName,
   canCreateBookings,
   canUseCaja,
+  canViewPayments,
   businessId,
   employee,
 }: AppTopbarProps) {
@@ -46,6 +48,7 @@ export function AppTopbar({
             role={role}
             canCreateBookings={canCreateBookings}
             canUseCaja={canUseCaja}
+            canViewPayments={canViewPayments}
             businessId={businessId}
           />
           <Link

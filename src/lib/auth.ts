@@ -22,6 +22,12 @@ export type CurrentStaff = {
   can_redeem_groupon: boolean;
   can_view_details: boolean;
   can_use_caja: boolean;
+  /** Manager may refund, void and move sales on Payments. */
+  can_manage_sales: boolean;
+  /** Manager may add, edit, pause and remove employees on Team. */
+  can_manage_team: boolean;
+  /** Manager may open the Payments page at all. Screen-level. */
+  can_view_payments: boolean;
   /** A shared login: the web asks for an employee PIN before use. */
   pin_required: boolean;
 };
@@ -42,7 +48,7 @@ function staffFromClaims(claims: Record<string, unknown>): CurrentStaff | null |
   // A token minted before a permission column existed says nothing about it,
   // so it is treated like one that predates the hook. Point this at the
   // newest column whenever one ships.
-  if (!("can_void_bookings" in s)) return undefined;
+  if (!("can_view_payments" in s)) return undefined;
   return {
     id: s.id,
     full_name: typeof s.full_name === "string" ? s.full_name : "",
@@ -59,6 +65,9 @@ function staffFromClaims(claims: Record<string, unknown>): CurrentStaff | null |
     can_redeem_groupon: s.can_redeem_groupon === true,
     can_view_details: s.can_view_details === true,
     can_use_caja: s.can_use_caja === true,
+    can_manage_sales: s.can_manage_sales === true,
+    can_manage_team: s.can_manage_team === true,
+    can_view_payments: s.can_view_payments === true,
     pin_required: s.pin_required === true,
   };
 }
@@ -103,7 +112,7 @@ export const getCurrentStaff = cache(async () => {
   const { data: staff } = await supabase
     .from("staff")
     .select(
-      "id, full_name, role, business_id, is_active, kiosk_slug, can_create_bookings, can_edit_bookings, can_check_in, can_void_bookings, can_add_to_peek, can_view_attachments, can_redeem_groupon, can_view_details, can_use_caja, pin_required",
+      "id, full_name, role, business_id, is_active, kiosk_slug, can_create_bookings, can_edit_bookings, can_check_in, can_void_bookings, can_add_to_peek, can_view_attachments, can_redeem_groupon, can_view_details, can_use_caja, can_manage_sales, can_manage_team, can_view_payments, pin_required",
     )
     .eq("user_id", user.id)
     .maybeSingle();
@@ -126,6 +135,12 @@ export type StaffCapabilities = {
   canViewDetails: boolean;
   /** Open Caja, the desk's own cash + card for the day. Check-in logins. */
   canUseCaja: boolean;
+  /** Refund, void and move sales on Payments. Managers; owners always. */
+  canManageSales: boolean;
+  /** Add, edit, pause and remove employees on Team. Managers; owners always. */
+  canManageTeam: boolean;
+  /** Open the Payments page. Managers; owners always. Screen-level. */
+  canViewPayments: boolean;
 };
 
 /**
@@ -146,6 +161,9 @@ export function staffCapabilities(staff: {
   can_redeem_groupon: boolean;
   can_view_details: boolean;
   can_use_caja: boolean;
+  can_manage_sales: boolean;
+  can_manage_team: boolean;
+  can_view_payments: boolean;
 }): StaffCapabilities {
   if (staff.role === "owner") {
     return {
@@ -158,6 +176,9 @@ export function staffCapabilities(staff: {
       canRedeemGroupon: true,
       canViewDetails: true,
       canUseCaja: true,
+      canManageSales: true,
+      canManageTeam: true,
+      canViewPayments: true,
     };
   }
   return {
@@ -170,5 +191,8 @@ export function staffCapabilities(staff: {
     canRedeemGroupon: staff.can_redeem_groupon,
     canViewDetails: staff.can_view_details,
     canUseCaja: staff.can_use_caja,
+    canManageSales: staff.can_manage_sales,
+    canManageTeam: staff.can_manage_team,
+    canViewPayments: staff.can_view_payments,
   };
 }

@@ -54,7 +54,9 @@ ID, name, phone, guests and check-in status, or hides the voucher photos. Those 
 screen-level (RLS cannot hide a column): `bookingSelect()` leaves the withheld columns
 out of the read. One is a screen switch, `can_use_caja` (default on): whether a check-in
 login gets the Caja screen; `current_kiosk_slug()` returns NULL without it, so RLS
-backs it. Owners always have all nine. See `docs/DATABASE.md`.
+backs it. Three are **manager switches** (`can_manage_sales`: refund, void and move
+sales; `can_manage_team`: change the People tab; `can_view_payments`: open Payments),
+all default on. Owners always have all twelve. See `docs/DATABASE.md`.
 
 A Postgres trigger links `auth.users` to a `staff` row by email on sign-up. The
 `current_staff()` SECURITY DEFINER function returns `(staff_id, role, business_id)` and

@@ -23,6 +23,8 @@ export interface Staff {
   role: StaffRole;
   business_id: string | null;
   is_active: boolean;
+  /** Manager may refund, void and move sales. Owners always. */
+  can_manage_sales: boolean;
 }
 
 export type StaffAuth =
@@ -43,7 +45,7 @@ export async function requireStaff(req: Request): Promise<StaffAuth> {
 
   const { data: staff } = await db
     .from("staff")
-    .select("id, role, business_id, is_active")
+    .select("id, role, business_id, is_active, can_manage_sales")
     .eq("user_id", user.id)
     .maybeSingle();
 

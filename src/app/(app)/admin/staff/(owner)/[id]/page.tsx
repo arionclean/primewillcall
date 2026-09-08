@@ -22,7 +22,7 @@ export default async function EditStaffPage({
       supabase
         .from("staff")
         .select(
-          "id, full_name, email, role, business_id, is_active, can_create_bookings, can_edit_bookings, can_check_in, can_void_bookings, can_add_to_peek, can_view_attachments, can_redeem_groupon, can_view_details, can_use_caja, pin_required",
+          "id, full_name, email, role, business_id, is_active, can_create_bookings, can_edit_bookings, can_check_in, can_void_bookings, can_add_to_peek, can_view_attachments, can_redeem_groupon, can_view_details, can_use_caja, can_manage_sales, can_manage_team, can_view_payments, pin_required",
         )
         .eq("id", id)
         .maybeSingle(),
@@ -76,6 +76,9 @@ export default async function EditStaffPage({
             can_redeem_groupon: staff.can_redeem_groupon,
             can_view_details: staff.can_view_details,
             can_use_caja: staff.can_use_caja,
+            can_manage_sales: staff.can_manage_sales,
+            can_manage_team: staff.can_manage_team,
+            can_view_payments: staff.can_view_payments,
             pin_required: staff.pin_required,
           }}
           businesses={businesses ?? []}

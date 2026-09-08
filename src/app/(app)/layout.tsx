@@ -41,6 +41,7 @@ export default async function AppLayout({
         fullName={staff.full_name}
         canCreateBookings={staffCapabilities(staff).canCreateBookings}
         canUseCaja={staffCapabilities(staff).canUseCaja}
+        canViewPayments={staffCapabilities(staff).canViewPayments}
         businessId={staff.business_id}
         employee={employee}
       >

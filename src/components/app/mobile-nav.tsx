@@ -23,11 +23,13 @@ export function MobileNav({
   role,
   canCreateBookings,
   canUseCaja,
+  canViewPayments,
   businessId,
 }: {
   role: StaffRole;
   canCreateBookings: boolean;
   canUseCaja: boolean;
+  canViewPayments: boolean;
   businessId: string | null;
 }) {
   const [open, setOpen] = useState(false);
@@ -85,6 +87,7 @@ export function MobileNav({
                   role={role}
                   canCreateBookings={canCreateBookings}
                   canUseCaja={canUseCaja}
+                  canViewPayments={canViewPayments}
                   onNavigate={() => setOpen(false)}
                 />
                 {role === "check_in" && (

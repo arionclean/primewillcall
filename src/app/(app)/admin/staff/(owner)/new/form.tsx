@@ -62,7 +62,10 @@ type CapabilityName =
   | "can_view_attachments"
   | "can_redeem_groupon"
   | "can_view_details"
-  | "can_use_caja";
+  | "can_use_caja"
+  | "can_manage_sales"
+  | "can_manage_team"
+  | "can_view_payments";
 
 const CAPABILITY_OPTIONS: {
   name: CapabilityName;
@@ -103,6 +106,21 @@ const CAPABILITY_OPTIONS: {
     name: "can_use_caja",
     label: "Use Caja",
     hint: "Open Caja: the desk's own cash and card for the day, and the end-of-night count. Check-in logins only.",
+  },
+  {
+    name: "can_manage_sales",
+    label: "Refund, void and move sales",
+    hint: "On the Payments page: refund a card or cash sale, void a cash sale, move a sale to another kiosk. The passcode is still asked. Managers.",
+  },
+  {
+    name: "can_manage_team",
+    label: "Manage the team",
+    hint: "On Team: add employees, change PINs, pause or remove them. Off: they can look but not change. Managers.",
+  },
+  {
+    name: "can_view_payments",
+    label: "See Payments",
+    hint: "Open the Payments page with their business's sales and totals. Off: the page is hidden. Managers.",
   },
   {
     name: "can_view_details",
@@ -152,6 +170,9 @@ export function NewStaffForm({
     can_redeem_groupon: false,
     can_view_details: true,
     can_use_caja: true,
+    can_manage_sales: true,
+    can_manage_team: true,
+    can_view_payments: true,
   });
   const [password, setPassword] = useState<string>("");
   const [copied, setCopied] = useState(false);

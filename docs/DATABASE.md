@@ -45,8 +45,8 @@ booking page (`/booking/<token>`).
 `id uuid pk, user_id? (-> auth.users), business_id? (-> businesses), role enum,
 full_name, email, phone?, is_active, can_create_bookings, can_edit_bookings,
 can_check_in, can_void_bookings, can_add_to_peek, can_view_attachments,
-can_redeem_groupon, can_view_details, can_use_caja, pin_required, created_at,
-updated_at`
+can_redeem_groupon, can_view_details, can_use_caja, can_manage_sales, can_manage_team,
+can_view_payments, pin_required, created_at, updated_at`
 Role enum (`staff_role`): `owner`, `business_manager`, `check_in`. `owner` has no
 `business_id`. A trigger links a new `auth.users` row to its `staff` row by email.
 
@@ -76,6 +76,16 @@ a column, so `bookingSelect()` in `bookings/list.tsx` leaves the withheld column
 of both the server read and the browser refetch, and the Realtime patch drops them
 from change payloads. A change payload on the wire still carries every column the
 row policy allows; treat the view switches as privacy on the device, not a boundary.
+
+**Manager switches** (all default on, so a manager keeps what they had until the owner
+turns one off; owners always have them; check-in accounts never do):
+`can_manage_sales` gates the `payments` function's money actions (refund a card or cash
+sale, void a cash sale, move a sale between kiosks; the passcode is still asked) and the
+matching buttons on `/admin/payments`; `can_manage_team` gates the People tab's writes
+(add employee, change PIN, pause, remove), in the server actions and in the
+`kiosk_employees` insert / update / delete policies, which read the caller's own staff
+row; `can_view_payments` hides the Payments link and page (screen-level, the RPCs stay
+RLS-scoped by business).
 
 **Caja switch** (`can_use_caja`, default on) decides whether a check-in login gets
 `/caja` (the desk's own cash + card for the day and the end-of-night count). The

@@ -22,8 +22,9 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 async function canManage(): Promise<string | null> {
   const { user, staff } = await getCurrentStaff();
   if (!user || !staff || !staff.is_active) return "Not signed in.";
-  if (staff.role === "owner" || staff.role === "business_manager") return null;
-  return "Only the owner or a business manager can manage employees.";
+  if (staff.role === "owner") return null;
+  if (staff.role === "business_manager" && staff.can_manage_team) return null;
+  return "You are not allowed to change the team.";
 }
 
 /**

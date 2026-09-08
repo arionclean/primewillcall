@@ -1596,10 +1596,13 @@ export type Database = {
           can_check_in: boolean
           can_create_bookings: boolean
           can_edit_bookings: boolean
+          can_manage_sales: boolean
+          can_manage_team: boolean
           can_redeem_groupon: boolean
           can_use_caja: boolean
           can_view_attachments: boolean
           can_view_details: boolean
+          can_view_payments: boolean
           can_void_bookings: boolean
           created_at: string
           email: string
@@ -1619,10 +1622,13 @@ export type Database = {
           can_check_in?: boolean
           can_create_bookings?: boolean
           can_edit_bookings?: boolean
+          can_manage_sales?: boolean
+          can_manage_team?: boolean
           can_redeem_groupon?: boolean
           can_use_caja?: boolean
           can_view_attachments?: boolean
           can_view_details?: boolean
+          can_view_payments?: boolean
           can_void_bookings?: boolean
           created_at?: string
           email: string
@@ -1642,10 +1648,13 @@ export type Database = {
           can_check_in?: boolean
           can_create_bookings?: boolean
           can_edit_bookings?: boolean
+          can_manage_sales?: boolean
+          can_manage_team?: boolean
           can_redeem_groupon?: boolean
           can_use_caja?: boolean
           can_view_attachments?: boolean
           can_view_details?: boolean
+          can_view_payments?: boolean
           can_void_bookings?: boolean
           created_at?: string
           email?: string
