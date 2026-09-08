@@ -17,24 +17,19 @@ export function PaymentLinkButton({
   bookingId,
   amountCents,
   status,
-  isGroupon = false,
   disabled,
 }: {
   bookingId: string;
   amountCents: number;
   status: string;
-  /** A Groupon booking: the link charges the per-guest fee for extra guests. */
-  isGroupon?: boolean;
   disabled?: boolean;
 }) {
   const [loading, setLoading] = useState(false);
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [guests, setGuests] = useState(1);
 
-  if (status === "cancelled") return null;
-  if (!isGroupon && amountCents <= 0) return null;
+  if (amountCents <= 0 || status === "cancelled") return null;
 
   async function copy(text: string) {
     try {
@@ -55,7 +50,7 @@ export function PaymentLinkButton({
       // edge function now, addressed by name, so the paths cannot drift again.
       const { data, error: err } = await getSupabaseBrowserClient()
         .functions.invoke<{ url?: string }>("payments", {
-          body: { action: "payment_link", id: bookingId, ...(isGroupon ? { guests } : {}) },
+          body: { action: "payment_link", id: bookingId },
         });
       if (err || !data?.url) {
         const response = (err as { context?: Response } | null)?.context;
@@ -75,21 +70,7 @@ export function PaymentLinkButton({
   }
 
   return (
-    <div className="relative flex items-center gap-2">
-      {isGroupon && (
-        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <input
-            type="number"
-            min={1}
-            max={20}
-            value={guests}
-            onChange={(e) => setGuests(Math.max(1, Math.min(20, Number(e.target.value) || 1)))}
-            aria-label="Extra guests to charge the Groupon fee for"
-            className="h-9 w-14 rounded-md border bg-background px-2 text-center text-sm text-foreground"
-          />
-          more guests
-        </label>
-      )}
+    <div className="relative">
       <Button
         type="button"
         variant="outline"
@@ -97,7 +78,7 @@ export function PaymentLinkButton({
         onClick={() => void generate()}
       >
         <Link2 aria-hidden className="size-4" />
-        {loading ? "Creating…" : isGroupon ? "Fee link" : "Payment link"}
+        {loading ? "Creating…" : "Payment link"}
       </Button>
 
       {(url || error) && (
