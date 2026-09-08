@@ -146,17 +146,16 @@ const voidStampFormatter = new Intl.DateTimeFormat("en-US", {
  * the row reads "Voided" rather than "Cancelled".
  */
 /**
- * "Kiosk cash" / "Kiosk card" for a sale made on the desk's tablet, else null.
- * The channels are the ones the kiosk writes (and Xano mirrors back); the
- * analytics labels fold the same three into "Kiosk - Cash" / "Kiosk - Card".
+ * "Kiosk sale" for a sale made on the desk's tablet, else null. The channels are
+ * the ones the kiosk writes (and Xano mirrors back); cash or card is a detail the
+ * desk did not want on the row, analytics keeps the split.
  */
 function kioskSaleLabel(channel: string | null): string | null {
   switch ((channel ?? "").toLowerCase()) {
     case "kiosk-sale-cash":
-      return "Kiosk cash";
     case "kiosk-sale-card":
     case "kiosk-sale-tap":
-      return "Kiosk card";
+      return "Kiosk sale";
     default:
       return null;
   }
