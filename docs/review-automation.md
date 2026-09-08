@@ -3,9 +3,11 @@
 Texts guests after their tour, asks for a 1-5 rating, and routes them by score.
 Ported from Xano, rebuilt on the queue this app already has.
 
-**Status: built and deployed, switched OFF.** Nothing sends until
-`messaging_settings.review_automation_enabled` is flipped. Read "Why it must
-stay off" first.
+**Status: live.** The owner switched `messaging_settings.review_automation_enabled`
+on 2026-09-02. The sweep runs every 15 minutes and only takes bookings this system
+owns (born here, or /gp), which reach Xano without a phone, so Xano's own funnel
+never texts the same guest. "Why it must stay off" below is the history of that
+decision.
 
 ## The flow
 

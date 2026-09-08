@@ -317,8 +317,8 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   `messaging_conversations` (searchable, keyset paged) and `messaging_thread` RPCs.
   **Not live**: the `WhatsApp booking confirmation` rule is switched off until Meta
   approves the general template. See [`docs/whatsapp.md`](docs/whatsapp.md).
-- **Review automation** (post-tour rating funnel) is built and deployed but
-  **switched OFF**: 3h after a tour ends the customer is texted for a 1-5 rating;
+- **Review automation** (post-tour rating funnel) is built and **live since
+  2026-09-02** (the owner flipped the switch): 3h after a tour ends the customer is texted for a 1-5 rating;
   a 5 gets the Google review link (plus one 24h nudge if never clicked), a 1-4 gets
   a private "what could we have done better" and never reaches Google. A 24h re-ask
   chases anyone who never replied (that follow-up earns a lot of the responses).
@@ -331,10 +331,10 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   only counts as a rating if the last thing we sent was the ask. The sweep is
   `enqueue-review-asks`, the reply branch is `src/lib/reviews/*` off the Twilio
   webhook, and `/r/<token>` is the click-tracked link. It has its **own** kill
-  switch, `messaging_settings.review_automation_enabled` (default false), because
+  switch, `messaging_settings.review_automation_enabled` (default false, now on), because
   `automations_enabled` is already true and Xano still runs the same funnel plus
-  still receives every inbound SMS via the webhook mirror, so turning this on early
-  double-texts customers. Five brakes, go-live checklist and known gaps in
+  still receives every inbound SMS via the webhook mirror. No double text in
+  practice: the sweep only takes bookings born here, which reach Xano without a phone. Five brakes, go-live checklist and known gaps in
   [`docs/review-automation.md`](docs/review-automation.md). The `/reviews`
   management section (the other half of the Xano feature) is deliberately not built.
 - **Groupon `/gp`** (public voucher redemption) is built: upload -> vision match -> details
