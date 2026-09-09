@@ -297,6 +297,21 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   the queue does not send them to Xano a second time. Xano's echo of the same change
   then lands as a no-op. The function finds the booking by Xano row id first, else by
   internal code narrowed by tour date, because Xano reuses PW codes across people.
+  **The tablet's reads** (2026-09-09, build 17+): the product list, the day's bookings
+  and the day's sales come from `kiosk-read`, in the exact shapes the screens have
+  always consumed from Xano's `products`, `querry_all` and `cash_sales` (taken from the
+  Xano definitions: every business's bookings for the New York day except the Key West
+  Day Trip product, cancelled ones included, grouped by departure, guests = adults +
+  children; sales for that kiosk, newest first, net of refunds). Which source a tablet
+  uses is `kiosks.read_source` ('xano' default, 'supabase'), served by `kiosk-config`,
+  flipped per kiosk like `card_flow`. Reading from here does not change writing: a
+  tablet on 'supabase' still writes to both. Identity on the way out stays Xano's (row
+  id, code, product id from `tours.legacy_product_id`) because the writes still need it.
+  **Known before flipping a kiosk:** `bookings.total_cents` is 100x too high on 2,312
+  kiosk bookings synced from Xano (the sync treats Xano's price as dollars; Xano's
+  trigger sends cents below $100), so a tablet reading bookings from here would show
+  those wrong until the sync and the rows are fixed. Login (#1) stays on Xano last of
+  all: it supplies `unique_id`, Xano's kiosk id, which every Xano write still passes.
 - Customers list (scoped by business) not built.
 - Profile / settings not built.
 - **Messaging automations** (`/admin/messaging`) are built: owner rules grouped as

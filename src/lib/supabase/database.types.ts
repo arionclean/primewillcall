@@ -1146,6 +1146,7 @@ export type Database = {
           pin_idle_lock_seconds: number
           pin_on_sale: boolean
           pin_required: boolean
+          read_source: string
           reader_block_battery_pct: number
           reader_low_battery_pct: number
           revoked_at: string | null
@@ -1169,6 +1170,7 @@ export type Database = {
           pin_idle_lock_seconds?: number
           pin_on_sale?: boolean
           pin_required?: boolean
+          read_source?: string
           reader_block_battery_pct?: number
           reader_low_battery_pct?: number
           revoked_at?: string | null
@@ -1192,6 +1194,7 @@ export type Database = {
           pin_idle_lock_seconds?: number
           pin_on_sale?: boolean
           pin_required?: boolean
+          read_source?: string
           reader_block_battery_pct?: number
           reader_low_battery_pct?: number
           revoked_at?: string | null

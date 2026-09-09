@@ -127,6 +127,7 @@ def fetch_xano(days, kiosks):
                 if amt is None:
                     continue
                 ms = r.get("created_at")
+                booking = r.get("booking_single") if isinstance(r.get("booking_single"), dict) else {}
                 rows.append({
                     "xano_id": r.get("id"),
                     "day": str(d),
@@ -136,6 +137,9 @@ def fetch_xano(days, kiosks):
                     "ms": ms,
                     "at": datetime.datetime.fromtimestamp(ms / 1000, tz=NY) if ms else None,
                     "booking_id": r.get("booking_id"),
+                    # The KS code of the booking this sale belongs to. Two Xano sale rows
+                    # under one code are one sale written twice, whatever their row ids say.
+                    "code": (booking.get("internal_id") or "").strip() or None,
                     "product": (r.get("product") or "ticket"),
                 })
         if i % 5 == 0 or i == len(days):
@@ -264,10 +268,27 @@ def compare(xano, ours):
     saw sits minutes or hours from anything, so nearest-in-time pairing names the row a
     person then has to go and look at. That is the whole point of the report."""
     xb, ob = bucket(xano), bucket(ours)
-    xano_only, ours_only = [], []
+    xano_only, ours_only, xano_dupes = [], [], []
     for key in set(xb) | set(ob):
         xs = sorted(xb.get(key, []), key=lambda r: r["at"] or datetime.datetime.min)
         os_ = sorted(ob.get(key, []), key=lambda r: r["at"])
+        # Two Xano rows for one booking are one sale written twice on the Xano side
+        # (on 2026-09-09 the v2 completion and the sweep both mirrored KS-JFA37V4O,
+        # 227 ms apart). They are not a sale we are missing, and importing the second
+        # would double it here. Keep the first, report the rest.
+        seen: set = set()
+        kept = []
+        for x in xs:
+            # The booking's KS code, not Xano's row id: when the booking was written
+            # twice as well, the two sale rows point at two different row ids.
+            k = str(x.get("code") or x.get("booking_id") or "")
+            if k and k in seen:
+                xano_dupes.append(x)
+                continue
+            if k:
+                seen.add(k)
+            kept.append(x)
+        xs = kept
         # Greedy over the closest pairs first, so one outlier cannot drag the whole
         # bucket out of step behind it.
         pairs = sorted(
@@ -284,7 +305,8 @@ def compare(xano, ours):
         ours_only.extend(o for j, o in enumerate(os_) if j not in used_o)
     xano_only.sort(key=lambda r: (r["day"], r["kiosk"]))
     ours_only.sort(key=lambda r: r["at"])
-    return xano_only, ours_only
+    xano_dupes.sort(key=lambda r: (r["day"], r["kiosk"]))
+    return xano_only, ours_only, xano_dupes
 
 
 def resolve_refs(url, key, rows):
@@ -424,8 +446,16 @@ def main():
             print(f"    {k}: {by[k]:,} Xano sales before {start.get(k, '?')}")
         print("    (that is history, not loss. Use scripts/xano_backfill_cash.py for it.)")
 
-    xano_only, ours_only = compare(xano, ours)
+    xano_only, ours_only, xano_dupes = compare(xano, ours)
     print(f"\nXano {len(xano):,} sales   here {len(ours):,} sales   (comparable window)")
+
+    if xano_dupes:
+        print(f"\nXANO DUPLICATES: {len(xano_dupes)} sales Xano holds twice, {money(sum(r['cents'] for r in xano_dupes))}")
+        print("  (one sale written to Xano twice. Not missing here, and never imported.)")
+        print(f"  {'day':11} {'kiosk':7} {'tender':6} {'amount':>10}  code          xano id")
+        for r in xano_dupes:
+            print(f"  {r['day']:11} {r['kiosk']:7} {r['type']:6} {money(r['cents']):>10}  "
+                  f"{(r.get('code') or '-'):13} {r['xano_id']}")
 
     if not xano_only and not ours_only:
         print("\nEvery sale matches on both sides.")

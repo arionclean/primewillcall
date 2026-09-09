@@ -75,6 +75,9 @@ Deno.serve(withSentry("kiosk-config", async (req) => {
       reader_block_battery_pct: kiosk.reader_block_battery_pct,
       pin_required: kiosk.pin_required,
       pin_on_sale: kiosk.pin_on_sale,
+      // Where this tablet reads products, bookings and sales from. 'xano' until the
+      // owner flips it; an older build never reads the field and keeps reading Xano.
+      read_source: kiosk.read_source === "supabase" ? "supabase" : "xano",
       business_id: kiosk.business_id,
       employees,
       xano_mirror: xanoMirrorEnabled(),
