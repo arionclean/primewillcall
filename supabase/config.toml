@@ -85,5 +85,8 @@ verify_jwt = false
 [functions.kiosk-cash-sale]
 verify_jwt = false
 
+[functions.kiosk-booking-update]
+verify_jwt = false
+
 [functions.kiosk-booking]
 verify_jwt = false

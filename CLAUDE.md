@@ -290,6 +290,13 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   every ownership rule reads it. Switch: `xano_mirror_settings.enabled`. Nothing in
   the app shows the queue (the owner's choice); read it by SQL. See
   [`docs/xano-mirror.md`](docs/xano-mirror.md).
+  **The tablet's own edits** (2026-09-09): a check-in, its undo, and "balance paid at
+  the desk" used to reach this platform only as that echo, which stops the day a tablet
+  stops writing to Xano. Build 16+ also sends them straight here through
+  `kiosk-booking-update`, right after the Xano PATCH, under `x-sync-origin: mirror` so
+  the queue does not send them to Xano a second time. Xano's echo of the same change
+  then lands as a no-op. The function finds the booking by Xano row id first, else by
+  internal code narrowed by tour date, because Xano reuses PW codes across people.
 - Customers list (scoped by business) not built.
 - Profile / settings not built.
 - **Messaging automations** (`/admin/messaging`) are built: owner rules grouped as
