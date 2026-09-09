@@ -34,7 +34,12 @@ export function formatUsPhoneDisplay(value: string): string {
 
 /** Progressive input mask for US phones: "(305) 12", "(305) 123-4567", ... */
 export function maskUsPhoneInput(raw: string): string {
-  const digits = raw.replace(/\D/g, "").slice(0, 10);
+  const all = raw.replace(/\D/g, "").slice(0, 11);
+  // "+13055551234" loses its plus here, so drop the country code before the
+  // cut to 10. Otherwise the 1 is masked as part of the area code and the
+  // last digit is thrown away.
+  const digits =
+    all.length === 11 && all.startsWith("1") ? all.slice(1) : all.slice(0, 10);
   if (digits.length === 0) {
     return "";
   }

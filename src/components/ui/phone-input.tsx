@@ -21,13 +21,28 @@ type PhoneInputProps = {
   autoComplete?: string;
 };
 
+/** E.164 allows at most 15 digits, country code included. */
+const MAX_DIGITS = 15;
+
+/**
+ * Digits of a phone number, with the US country code removed.
+ *
+ * A stored number usually arrives as "+13055551234". Dropping the "+" leaves
+ * 11 digits, so a blind cut to 10 would keep the country code as part of the
+ * area code and throw away the real last digit. Strip the leading "1" first:
+ * no US area code starts with 1, so this is never ambiguous.
+ */
 function digitsOnly(raw: string): string {
-  return (raw ?? "").replace(/\D+/g, "").slice(0, 10);
+  const d = (raw ?? "").replace(/\D+/g, "").slice(0, MAX_DIGITS);
+  return d.length === 11 && d.startsWith("1") ? d.slice(1) : d;
 }
 
 function formatUsPhone(digits: string): string {
-  const d = digits.slice(0, 10);
+  const d = digits;
   if (d.length === 0) return "";
+  // Longer than a US number: an international one. Show it whole rather than
+  // masking it, so editing a guest's foreign number cannot truncate it.
+  if (d.length > 10) return `+${d}`;
   if (d.length <= 3) return `(${d}`;
   if (d.length <= 6) return `(${d.slice(0, 3)}) ${d.slice(3)}`;
   return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;

@@ -50,6 +50,16 @@ async function invokeGp<T>(
   return ((await response?.json?.().catch(() => null)) as T) ?? null;
 }
 
+/**
+ * Digits a guest typed, with the US country code removed. Guests often type
+ * "+1" first, so cutting to 10 blindly would keep the 1 and drop the last
+ * digit. No US area code starts with 1, so stripping it is unambiguous.
+ */
+function phoneDigits(raw: string): string {
+  const d = raw.replace(/\D/g, "").slice(0, 11);
+  return d.length === 11 && d.startsWith("1") ? d.slice(1) : d.slice(0, 10);
+}
+
 function maskPhone(digits: string): string {
   const d = digits.slice(0, 10);
   if (d.length <= 3) return d;
@@ -482,7 +492,7 @@ export function GrouponFlow() {
                     inputMode="numeric"
                     placeholder="(201) 555-0123"
                     value={maskPhone(phone)}
-                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                    onChange={(e) => setPhone(phoneDigits(e.target.value))}
                   />
                 </div>
               </div>
