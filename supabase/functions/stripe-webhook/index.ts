@@ -18,6 +18,7 @@ import Stripe from "npm:stripe@22.3.0";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 import { mirrorGrouponBooking } from "../_shared/gp-xano-mirror.ts";
+import { syncCardRefundToLedger } from "../_shared/sale-refund.ts";
 import { withSentry } from "../_shared/sentry.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -336,6 +337,13 @@ async function upsertChargeToLedger(event: Stripe.Event, charge: Stripe.Charge):
   };
 
   await sb.from("stripe_transactions").upsert(row, { onConflict: "stripe_id" });
+
+  // A refund also has to reach the sales ledger, which is a separate table and
+  // used to keep showing the full sale. This runs for refunds issued anywhere,
+  // including straight from Stripe's dashboard, where our own code never sees them.
+  if ((charge.amount_refunded ?? 0) > 0) {
+    await syncCardRefundToLedger(sb, bookingRef, charge.amount_refunded ?? 0);
+  }
 }
 
 /**

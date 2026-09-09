@@ -22,6 +22,7 @@ import {
   stripeErrorMessage,
 } from "../_shared/stripe.ts";
 import { employeeFromRequest, logStaffAction } from "../_shared/audit.ts";
+import { syncCardRefundToLedger } from "../_shared/sale-refund.ts";
 import { corsHeaders, db, json, SUPABASE_URL } from "../_shared/sms.ts";
 import { requireStaff, type Staff } from "../_shared/staff-auth.ts";
 import { withSentry } from "../_shared/sentry.ts";
@@ -147,7 +148,7 @@ Deno.serve(withSentry("payments", async (req) => {
       const { data: txn } = await db
         .from("stripe_transactions")
         .select(
-          "id, stripe_id, object_type, connected_account_id, business_id, amount, amount_refunded, currency, booking_id, status",
+          "id, stripe_id, object_type, connected_account_id, business_id, amount, amount_refunded, currency, booking_id, booking_ref, status",
         )
         .eq("id", id)
         .maybeSingle();
@@ -195,6 +196,11 @@ Deno.serve(withSentry("payments", async (req) => {
             status: newRefunded >= (txn.amount ?? 0) ? "refunded" : txn.status,
           })
           .eq("id", txn.id);
+
+        // The sales ledger is a second table and used to be left showing the full
+        // sale, so a refunded card sale inflated the kiosk's day. The webhook does
+        // this too; both send the total, so whichever lands second is a no-op.
+        await syncCardRefundToLedger(db, txn.booking_ref, newRefunded);
 
         await logStaffAction(db, {
           staffId: staff.id,
