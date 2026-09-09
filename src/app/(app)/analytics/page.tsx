@@ -63,7 +63,10 @@ export default async function AnalyticsPage({
     getAnalyticsSourceTour(supabase, startUtc, endUtc),
     supabase
       .from("business_tours")
-      .select("id, name, tour:tours(name, color)")
+      // analytics_label is the database computed column: the tour's /analytics
+      // display name (tour_analytics_labels, else its own name), so a chip reads
+      // the same words the RPCs return.
+      .select("id, name, tour:tours(name, color, analytics_label)")
       .order("name"),
     getAnalyticsDailyByTour(supabase, curStart, nextStart, BUSINESS_TZ),
     getAnalyticsDailyByTour(supabase, prevStart, curStart, BUSINESS_TZ),
@@ -72,12 +75,16 @@ export default async function AnalyticsPage({
   type ChipRow = {
     id: string;
     name: string | null;
-    tour: { name: string | null; color: string | null } | null;
+    tour: {
+      name: string | null;
+      color: string | null;
+      analytics_label: string | null;
+    } | null;
   };
   const chips: TourChip[] = ((chipRows.data ?? []) as ChipRow[])
     .map((r) => ({
       id: r.id,
-      label: r.tour?.name ?? r.name ?? "Untitled tour",
+      label: r.tour?.analytics_label ?? r.tour?.name ?? r.name ?? "Untitled tour",
       color: r.tour?.color ?? null,
     }))
     .sort((a, b) => a.label.localeCompare(b.label));

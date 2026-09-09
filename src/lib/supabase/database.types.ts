@@ -1137,6 +1137,7 @@ export type Database = {
           business_id: string | null
           can_create_bookings: boolean
           card_flow: string
+          closing_report_email: string | null
           created_at: string
           id: string
           last_seen_at: string | null
@@ -1158,6 +1159,7 @@ export type Database = {
           business_id?: string | null
           can_create_bookings?: boolean
           card_flow?: string
+          closing_report_email?: string | null
           created_at?: string
           id?: string
           last_seen_at?: string | null
@@ -1179,6 +1181,7 @@ export type Database = {
           business_id?: string | null
           can_create_bookings?: boolean
           card_flow?: string
+          closing_report_email?: string | null
           created_at?: string
           id?: string
           last_seen_at?: string | null
@@ -1954,6 +1957,32 @@ export type Database = {
           },
         ]
       }
+      tour_analytics_labels: {
+        Row: {
+          label: string
+          tour_id: string
+          updated_at: string
+        }
+        Insert: {
+          label: string
+          tour_id: string
+          updated_at?: string
+        }
+        Update: {
+          label?: string
+          tour_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tour_analytics_labels_tour_id_fkey"
+            columns: ["tour_id"]
+            isOneToOne: true
+            referencedRelation: "tours"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tour_name_aliases: {
         Row: {
           created_at: string
@@ -2136,6 +2165,7 @@ export type Database = {
           name: string
           notes: string | null
           updated_at: string
+          analytics_label: string | null
         }
         Insert: {
           capacity: number
@@ -2385,6 +2415,12 @@ export type Database = {
           pax: number
           tour: string
         }[]
+      }
+      analytics_label: {
+        Args: { "": Database["public"]["Tables"]["tours"]["Row"] }
+        Returns: {
+          error: true
+        } & "the function public.analytics_label with parameter or with a single unnamed json/jsonb parameter, but no matches were found in the schema cache"
       }
       analytics_source_tour: {
         Args: { p_end: string; p_start: string }
