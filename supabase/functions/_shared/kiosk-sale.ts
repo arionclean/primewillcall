@@ -209,6 +209,138 @@ export function stripeCreatePaymentIntent(opts: {
   });
 }
 
+/**
+ * A hosted Checkout page for a sale the guest pays on their own phone (the QR
+ * backup for a dead reader). Card-not-present, so it is a plain 'card' intent, not
+ * card_present, and Stripe hosts the page. Idempotent on the sale ref, so scanning
+ * twice or a retried request never opens a second checkout.
+ */
+export async function stripeCreateCheckoutSession(opts: {
+  account: string;
+  amountCents: number;
+  feeCents: number;
+  productName: string;
+  metadata: Record<string, string>;
+  idempotencyKey: string;
+  successUrl: string;
+  cancelUrl: string;
+}): Promise<
+  { ok: true; url: string; sessionId: string; paymentIntentId: string | null } | {
+    ok: false;
+    error: string;
+    status: number;
+  }
+> {
+  const form: Record<string, string> = {
+    mode: "payment",
+    "line_items[0][price_data][currency]": "usd",
+    "line_items[0][price_data][product_data][name]": opts.productName,
+    "line_items[0][price_data][unit_amount]": String(opts.amountCents),
+    "line_items[0][quantity]": "1",
+    success_url: opts.successUrl,
+    cancel_url: opts.cancelUrl,
+  };
+  if (opts.feeCents > 0) {
+    form["payment_intent_data[application_fee_amount]"] = String(opts.feeCents);
+  }
+  for (const [k, v] of Object.entries(opts.metadata)) {
+    form[`metadata[${k}]`] = v;
+    form[`payment_intent_data[metadata][${k}]`] = v;
+  }
+
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${STRIPE_SECRET_KEY}`,
+    "Stripe-Account": opts.account,
+    "Content-Type": "application/x-www-form-urlencoded",
+    "Idempotency-Key": opts.idempotencyKey,
+  };
+  try {
+    const res = await fetch("https://api.stripe.com/v1/checkout/sessions", {
+      method: "POST",
+      headers,
+      body: new URLSearchParams(form).toString(),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data?.id || !data?.url) {
+      return { ok: false, error: data?.error?.message ?? `stripe ${res.status}`, status: res.status };
+    }
+    return {
+      ok: true,
+      url: String(data.url),
+      sessionId: String(data.id),
+      // Checkout makes the intent up front in payment mode, so the sale can carry it
+      // and every existing path (the poll, the sweep) works unchanged.
+      paymentIntentId: data.payment_intent ? String(data.payment_intent) : null,
+    };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err), status: 0 };
+  }
+}
+
+export interface StripeCheckoutSession {
+  id: string;
+  url: string | null;
+  payment_status: string;
+  status: string;
+  payment_intent: string | null;
+}
+
+/**
+ * Read a Checkout session back. This is what says whether the guest paid: in payment
+ * mode Stripe does NOT hand back a PaymentIntent when the session is created, only
+ * once the guest starts paying, so a sale opened this way has nothing to poll until
+ * the session itself reports `payment_status: 'paid'` and names its intent.
+ */
+export async function stripeRetrieveCheckoutSession(
+  id: string,
+  account: string,
+): Promise<{ ok: true; session: StripeCheckoutSession } | { ok: false; error: string; status: number }> {
+  try {
+    const res = await fetch(`https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(id)}`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${STRIPE_SECRET_KEY}`, "Stripe-Account": account },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data?.id) {
+      return { ok: false, error: data?.error?.message ?? `stripe ${res.status}`, status: res.status };
+    }
+    return {
+      ok: true,
+      session: {
+        id: String(data.id),
+        url: data.url ? String(data.url) : null,
+        payment_status: String(data.payment_status ?? ""),
+        status: String(data.status ?? ""),
+        payment_intent: data.payment_intent ? String(data.payment_intent) : null,
+      },
+    };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err), status: 0 };
+  }
+}
+
+/**
+ * Close a Checkout page for good. This is the QR flow's equivalent of cancelling a
+ * PaymentIntent: a session left open stays payable for 24 hours, so giving up on a
+ * sale without expiring its page would let a guest pay minutes after we wrote the
+ * sale off, and nothing would exist to complete. Returns false when Stripe refuses
+ * (already paid or already expired), which the caller must treat as "do not abandon".
+ */
+export async function stripeExpireCheckoutSession(id: string, account: string): Promise<boolean> {
+  try {
+    const res = await fetch(
+      `https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(id)}/expire`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${STRIPE_SECRET_KEY}`, "Stripe-Account": account },
+      },
+    );
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export function stripeRetrievePaymentIntent(id: string, account: string): Promise<StripeResult> {
   return stripeCall(`/v1/payment_intents/${encodeURIComponent(id)}`, account, { method: "GET" });
 }
