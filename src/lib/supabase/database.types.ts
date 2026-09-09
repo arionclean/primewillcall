@@ -1144,6 +1144,7 @@ export type Database = {
           name: string
           pairing_code: string
           pin_idle_lock_seconds: number
+          pin_on_sale: boolean
           pin_required: boolean
           reader_block_battery_pct: number
           reader_low_battery_pct: number
@@ -1166,6 +1167,7 @@ export type Database = {
           name: string
           pairing_code: string
           pin_idle_lock_seconds?: number
+          pin_on_sale?: boolean
           pin_required?: boolean
           reader_block_battery_pct?: number
           reader_low_battery_pct?: number
@@ -1188,6 +1190,7 @@ export type Database = {
           name?: string
           pairing_code?: string
           pin_idle_lock_seconds?: number
+          pin_on_sale?: boolean
           pin_required?: boolean
           reader_block_battery_pct?: number
           reader_low_battery_pct?: number

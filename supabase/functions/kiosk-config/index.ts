@@ -45,7 +45,7 @@ Deno.serve(withSentry("kiosk-config", async (req) => {
   // Employees are one pool shared by every business, so every active one rides along.
   type EmployeeRow = { id: string; name: string; pin_hash: string; pin_salt: string };
   let employees: EmployeeRow[] = [];
-  if (kiosk.pin_required) {
+  if (kiosk.pin_required || kiosk.pin_on_sale) {
     const { data } = await sb
       .from("kiosk_employees")
       .select("id, name, pin_hash, pin_salt")
@@ -74,6 +74,7 @@ Deno.serve(withSentry("kiosk-config", async (req) => {
       reader_low_battery_pct: kiosk.reader_low_battery_pct,
       reader_block_battery_pct: kiosk.reader_block_battery_pct,
       pin_required: kiosk.pin_required,
+      pin_on_sale: kiosk.pin_on_sale,
       business_id: kiosk.business_id,
       employees,
       xano_mirror: xanoMirrorEnabled(),

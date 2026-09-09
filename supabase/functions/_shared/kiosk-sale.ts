@@ -87,6 +87,7 @@ export interface KioskRow {
   reader_low_battery_pct: number;
   reader_block_battery_pct: number;
   pin_required: boolean;
+  pin_on_sale: boolean;
   pin_idle_lock_seconds: number;
   simulated: boolean | null;
 }
@@ -100,7 +101,7 @@ export interface ResolvedKiosk {
 export async function resolveKiosk(sb: SupabaseClient, slug: string): Promise<ResolvedKiosk | null> {
   const { data: kiosk } = await sb
     .from("kiosks")
-    .select("id, slug, business_id, stripe_account_id, card_flow, reader_low_battery_pct, reader_block_battery_pct, pin_required, pin_idle_lock_seconds, simulated")
+    .select("id, slug, business_id, stripe_account_id, card_flow, reader_low_battery_pct, reader_block_battery_pct, pin_required, pin_on_sale, pin_idle_lock_seconds, simulated")
     .eq("slug", slug)
     .maybeSingle<KioskRow>();
   if (!kiosk) return null;
