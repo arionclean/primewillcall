@@ -27,6 +27,16 @@ which iPad; the employee PIN says who.
   the app goes to the background: the owner tried both on a tablet and does not want a
   keypad appearing mid-sale (`kiosks.pin_idle_lock_seconds` is kept but unused). A small
   pill with the first name is the only thing added to the screens.
+- **A PIN per sale.** `kiosks.pin_required` records who OPENED the tablet, which after an
+  hour of a shift is rarely who took the money. `kiosks.pin_on_sale` (build 15+) asks
+  instead at the moment a sale begins, so the name on a sale is the person who rang it up.
+  The two are independent: neither (sales unattributed), `pin_required` (one PIN per
+  shift), `pin_on_sale` (the tablet is open to look at, no sale without a PIN), or both.
+  The keypad is the same one, cancellable, and the PIN it takes also stamps the session,
+  so the booking, the ledger row and every event of that sale carry one person with no
+  extra plumbing. `kiosk-config` ships the employee list when either switch is on. The
+  gate sits at the start of each sale path: card and cash on the booking screen, the
+  quick-sale cash path, and pay-by-QR.
 - **Attribution.** Every event the tablet logs (`kiosk_events.employee_id / employee_name`)
   and every write it makes carries the employee: `cash_sales.employee_id`,
   `kiosk_sales.employee_id`, `bookings.kiosk_employee_id`. Check-ins are recorded as
@@ -34,7 +44,8 @@ which iPad; the employee PIN says who.
 - **Wrong PINs** never lock anyone out (owner's choice); each attempt is an event
   (`pin_failed`), so a run of them is visible on the Employees page.
 - **Old builds** never call `kiosk-pin-verify` or read `pin_required`; nothing changes for
-  them. Builds 9+ support it.
+  them. Builds 9+ support the shift lock, builds 15+ the per-sale PIN. Turning either
+  switch on early is safe: a tablet that does not know the field ignores it.
 
 ## The admin page: Team
 
@@ -134,6 +145,10 @@ The same log covers the web app, without a log call in any screen:
 ```sql
 update kiosks set pin_required = true  where slug = 'kiosk1';   -- on
 update kiosks set pin_required = false where slug = 'kiosk1';   -- off
+
+-- a PIN at the start of every sale instead (or as well); build 15+
+update kiosks set pin_on_sale = true  where slug = 'kiosk2';    -- on
+update kiosks set pin_on_sale = false where slug = 'kiosk2';    -- off
 ```
 
 The tablet re-reads it at launch and on every return to the foreground (and the lock
