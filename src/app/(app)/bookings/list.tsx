@@ -263,6 +263,8 @@ export type BookingCaps = {
 type BookingsListProps = {
   initial: BookingRow[];
   tours: TourOption[];
+  /** Where a booking can come from (booking_source_options), in display order. */
+  sources: string[];
   date: string; // YYYY-MM-DD
   role: "owner" | "business_manager" | "check_in";
   caps: BookingCaps;
@@ -679,6 +681,7 @@ type NotePopoverLayout = {
 export function BookingsList({
   initial,
   tours,
+  sources,
   date,
   role,
   caps,
@@ -1498,6 +1501,7 @@ export function BookingsList({
           key={editBooking.id}
           booking={editBooking}
           tours={tours}
+          sources={sources}
           role={role}
           caps={caps}
           onClose={() => setEditBooking(null)}
@@ -2164,6 +2168,7 @@ type PaxLine = {
 function EditBookingModal({
   booking,
   tours,
+  sources,
   role,
   caps,
   onClose,
@@ -2171,6 +2176,7 @@ function EditBookingModal({
 }: {
   booking: BookingRow;
   tours: TourOption[];
+  sources: string[];
   role: "owner" | "business_manager" | "check_in";
   caps: BookingCaps;
   onClose: () => void;
@@ -2183,6 +2189,13 @@ function EditBookingModal({
   const [date, setDate] = useState(toNyDateInput(booking.starts_at));
   const [time, setTime] = useState(toNyTimeInput(booking.starts_at));
   const [businessTourId, setBusinessTourId] = useState(booking.business_tour_id);
+  // Where the booking came from. Most bookings arrive with a channel the booking
+  // system stamped ("Viator.com", "Default Channel"), which is not in the owner's
+  // pick list, so the current value is always offered alongside it. Otherwise
+  // opening a Viator booking and saving would silently retag it.
+  const [sourceChannel, setSourceChannel] = useState(
+    booking.source_channel ?? "",
+  );
   const [notes, setNotes] = useState(booking.notes ?? "");
   const [fullName, setFullName] = useState(booking.customer?.full_name ?? "");
   const [email, setEmail] = useState(booking.customer?.email ?? "");
@@ -2211,6 +2224,17 @@ function EditBookingModal({
   const formRef = useRef<HTMLFormElement | null>(null);
 
   // Tours pickable for this booking: same business only.
+  /**
+   * The owner's list, plus whatever this booking already carries. An OTA channel
+   * ("Viator.com") is never in the pick list, so without this the select would
+   * open on a different value and a plain Save would retag the booking.
+   */
+  const sourceOptions = useMemo(() => {
+    const current = (booking.source_channel ?? "").trim();
+    if (!current || sources.includes(current)) return sources;
+    return [current, ...sources];
+  }, [sources, booking.source_channel]);
+
   const businessTours = useMemo(
     () => tours.filter((t) => t.businessId === booking.business_id),
     [tours, booking.business_id],
@@ -2369,6 +2393,7 @@ function EditBookingModal({
         starts_at: newStarts,
         ends_at: newEnds,
         status,
+        source_channel: sourceChannel.trim() ? sourceChannel.trim() : null,
         notes: notes.trim() ? notes.trim() : null,
         total_cents: totalCents,
         due_cents: dueCents,
@@ -2449,6 +2474,11 @@ function EditBookingModal({
       starts_at: newStarts,
       ends_at: newEnds,
       status,
+      source_channel: sourceChannel.trim() ? sourceChannel.trim() : null,
+      // The display name is computed in the database, so show the raw channel
+      // until the realtime refetch (which a source change always triggers)
+      // brings the labelled one back.
+      source_label: sourceChannel.trim() ? sourceChannel.trim() : null,
       notes: notes.trim() ? notes.trim() : null,
       total_cents: totalCents,
       due_cents: dueCents,
@@ -2767,6 +2797,23 @@ function EditBookingModal({
                       </option>
                     ))
                   )}
+                </select>
+              </label>
+
+              <label className={cn(editFieldClass, "max-w-xs")}>
+                Source
+                <select
+                  value={sourceChannel}
+                  disabled={busy}
+                  onChange={(e) => setSourceChannel(e.target.value)}
+                  className={editInputClass}
+                >
+                  <option value="">Not set</option>
+                  {sourceOptions.map((sourceName) => (
+                    <option key={sourceName} value={sourceName}>
+                      {sourceName}
+                    </option>
+                  ))}
                 </select>
               </label>
 

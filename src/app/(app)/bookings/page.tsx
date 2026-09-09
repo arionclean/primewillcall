@@ -144,10 +144,26 @@ async function BookingsPanel({
     );
   }
 
-  const { data: tourRows, error: tourError } = await tourQuery;
+  // Where a booking can come from: the same owner-edited list the /schedule form
+  // offers, so the edit modal can correct a source that came in wrong.
+  const [
+    { data: tourRows, error: tourError },
+    { data: sourceRows, error: sourceError },
+  ] = await Promise.all([
+    tourQuery,
+    supabase
+      .from("booking_source_options")
+      .select("channel")
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true }),
+  ]);
   if (tourError) {
     console.error("[bookings] tour options fetch error:", tourError);
   }
+  if (sourceError) {
+    console.error("[bookings] source options fetch error:", sourceError);
+  }
+  const sources = (sourceRows ?? []).map((r) => r.channel);
 
   type TourQueryRow = {
     id: string;
@@ -202,6 +218,7 @@ async function BookingsPanel({
     <BookingsList
       initial={bookings}
       tours={tourOptions}
+      sources={sources}
       date={dateIso}
       role={role}
       caps={caps}
