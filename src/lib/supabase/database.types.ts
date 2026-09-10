@@ -1156,6 +1156,8 @@ export type Database = {
           stripe_account_id: string | null
           terminal_location_id: string | null
           updated_at: string
+          xano_company_id: string | null
+          xano_kiosk_id: string | null
         }
         Insert: {
           business_id?: string | null
@@ -1180,6 +1182,8 @@ export type Database = {
           stripe_account_id?: string | null
           terminal_location_id?: string | null
           updated_at?: string
+          xano_company_id?: string | null
+          xano_kiosk_id?: string | null
         }
         Update: {
           business_id?: string | null
@@ -1204,6 +1208,8 @@ export type Database = {
           stripe_account_id?: string | null
           terminal_location_id?: string | null
           updated_at?: string
+          xano_company_id?: string | null
+          xano_kiosk_id?: string | null
         }
         Relationships: [
           {
@@ -2422,24 +2428,72 @@ export type Database = {
           tour: string
         }[]
       }
-      analytics_label: {
-        Args: { "": Database["public"]["Tables"]["tours"]["Row"] }
+      analytics_kiosk_bookings: {
+        Args: {
+          p_business_id?: string
+          p_end: string
+          p_kiosk_slug?: string
+          p_pay_type?: string
+          p_start: string
+          p_tour?: string
+        }
         Returns: {
-          error: true
-        } & "the function public.analytics_label with parameter or with a single unnamed json/jsonb parameter, but no matches were found in the schema cache"
+          business: string
+          created_at: string
+          customer: string
+          id: string
+          pax: number
+          source: string
+          starts_at: string
+          status: string
+          tour: string
+        }[]
       }
-      analytics_source_tour: {
+      analytics_kiosk_source_tour: {
         Args: { p_end: string; p_start: string }
         Returns: {
           bookings: number
           business: string
           business_id: string
           color: string
+          kiosk: string
+          kiosk_slug: string
           pax: number
-          source: string
+          pay_type: string
           tour: string
         }[]
       }
+      analytics_label: {
+        Args: { "": Database["public"]["Tables"]["tours"]["Row"] }
+        Returns: {
+          error: true
+        } & "the function public.analytics_label with parameter or with a single unnamed json/jsonb parameter, but no matches were found in the schema cache"
+      }
+      analytics_source_tour:
+        | {
+            Args: { p_end: string; p_start: string }
+            Returns: {
+              bookings: number
+              business: string
+              business_id: string
+              color: string
+              pax: number
+              source: string
+              tour: string
+            }[]
+          }
+        | {
+            Args: { p_end: string; p_exclude_kiosk: boolean; p_start: string }
+            Returns: {
+              bookings: number
+              business: string
+              business_id: string
+              color: string
+              pax: number
+              source: string
+              tour: string
+            }[]
+          }
       app_norm: { Args: { s: string }; Returns: string }
       booking_source_label: { Args: { p_channel: string }; Returns: string }
       bookings_checkin_manifest: {

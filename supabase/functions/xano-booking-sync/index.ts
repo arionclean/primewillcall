@@ -88,6 +88,10 @@ type Maps = {
   byProduct: Record<string, Rec>;
   byName: Record<string, Rec>;
   byId: Record<string, Rec>;
+  // Which kiosk sold it. Xano's booking carries both: `kiosk` is the Bubble id
+  // (kiosks.xano_kiosk_id) and `supplier`, on a kiosk booking only, is the slug.
+  kioskByXanoId: Record<string, string>;
+  kioskBySlug: Record<string, string>;
 };
 
 let cache: (Maps & { at: number }) | null = null;
@@ -107,7 +111,17 @@ async function tourMap(): Promise<Maps> {
     if (r.legacy_product_id) byProduct[String(r.legacy_product_id)] = rec;
     byName[norm(r.name)] = rec;
   }
-  cache = { byProduct, byName, byId, at: Date.now() };
+  const { data: kiosks, error: kioskErr } = await sb
+    .from("kiosks")
+    .select("id,slug,xano_kiosk_id");
+  if (kioskErr) throw new Error(`kiosks: ${kioskErr.message}`);
+  const kioskByXanoId: Record<string, string> = {};
+  const kioskBySlug: Record<string, string> = {};
+  for (const k of kiosks ?? []) {
+    if (k.xano_kiosk_id) kioskByXanoId[String(k.xano_kiosk_id)] = k.id as string;
+    if (k.slug) kioskBySlug[String(k.slug).toLowerCase()] = k.id as string;
+  }
+  cache = { byProduct, byName, byId, kioskByXanoId, kioskBySlug, at: Date.now() };
   return cache;
 }
 
@@ -134,6 +148,23 @@ function resolveTour(row: Record<string, unknown>, m: Maps): Rec | null {
   const comp = clean(row.company);
   const tgt = COMPANY_DEFAULT[comp ?? ""] ?? DEFAULT_TOUR_NAME;
   return m.byName[tgt] ?? null;
+}
+
+/**
+ * The kiosk that sold this booking, or null. Xano's own id first (`kiosk`), the
+ * slug second (`supplier`, which on a kiosk booking holds "kiosk2" rather than a
+ * business name). A kiosk we do not hold resolves to null: better an unnamed
+ * booking than one credited to the wrong tablet.
+ */
+function resolveKiosk(row: Record<string, unknown>, m: Maps): string | null {
+  // Only a kiosk sale has a kiosk. Xano stamps `kiosk` on OTA bookings too, with
+  // an id that means something else there, so the channel is the gate.
+  if (!(clean(row.booking_channel) ?? "").toLowerCase().startsWith("kiosk-sale")) return null;
+  const xanoId = clean(row.kiosk);
+  if (xanoId && m.kioskByXanoId[xanoId]) return m.kioskByXanoId[xanoId];
+  const slug = clean(row.supplier)?.toLowerCase();
+  if (slug && m.kioskBySlug[slug]) return m.kioskBySlug[slug];
+  return null;
 }
 
 function parseName(row: Record<string, unknown>): string {
@@ -375,21 +406,36 @@ async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
   const confirmationToken = clean(row.bookingConfirmation_id);
 
   if (existing) {
-    // A booking we already hold. Xano owns its status, time, pax, check-in, reference
-    // and channel, and those are taken. It does NOT own which business's copy of the
-    // tour the booking sits on, the guest row, the price or the pax breakdown: the
-    // old blanket upsert rewrote all of those on every echo, which moved bookings
-    // between businesses (they vanished from that desk's screen), minted guest
-    // twins and zeroed totals. A field with a change of ours still queued for Xano
-    // is left alone too, so a slow send never loses an edit (docs/xano-mirror.md).
+    // A booking we already hold. Xano owns its status, time, pax, check-in and
+    // reference, and those are taken. It does NOT own the source channel (see below),
+    // which business's copy of the tour the booking sits on, the guest row, the price
+    // or the pax breakdown: the old blanket upsert rewrote all of those on every echo,
+    // which moved bookings between businesses (they vanished from that desk's screen),
+    // minted guest twins and zeroed totals. A field with a change of ours still queued
+    // for Xano is left alone too, so a slow send never loses an edit
+    // (docs/xano-mirror.md).
     const guarded = await queuedFields(existing.id);
     const patch: Record<string, unknown> = {
       ...xanoIds,
       legacy_id: legacyId,
       legacy_reference: clean(row.booking_reference) ?? existing.legacy_reference,
     };
+    // The source is taken once, when the booking first arrives, and never again.
+    // After that this platform owns it: staff correct a channel here (a partner's
+    // name instead of "Manual", one spelling instead of five) and the mirror does
+    // NOT send the channel back, so Xano still holds whatever it was given first.
+    // Taking it on every echo therefore reverted every correction the moment
+    // anything else about the booking changed in Xano, silently. A booking that
+    // somehow has no channel here still gets Xano's.
     const channel = clean(row.booking_channel);
-    if (channel) patch.source_channel = channel;
+    if (channel && !clean(existing.source_channel)) patch.source_channel = channel;
+    // The kiosk is filled in the first time we learn it and never changed after:
+    // a booking does not move between tablets, and the backfill may already have
+    // set it from Xano.
+    if (!existing.kiosk_id) {
+      const kioskId = resolveKiosk(row, m);
+      if (kioskId) patch.kiosk_id = kioskId;
+    }
     if (!guarded.has("status")) patch.status = status;
     if (!guarded.has("starts_at") && startMs !== new Date(existing.starts_at).getTime()) {
       // Keep the booking's own duration: the tour's, not a fixed 90 minutes.
@@ -465,6 +511,7 @@ async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
     legacy_id: legacyId,
     legacy_reference: clean(row.booking_reference),
     source_channel: clean(row.booking_channel),
+    kiosk_id: resolveKiosk(row, m),
     ...xanoIds,
     ...(confirmationToken ? { public_token: confirmationToken } : {}),
     ...(typeof row.peek === "boolean" ? { peek: row.peek } : {}),
@@ -484,13 +531,16 @@ async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
 
 /** What we hold for a booking Xano is telling us about. */
 const EXISTING_SELECT =
-  "id, legacy_id, legacy_reference, business_id, business_tour_id, customer_id, starts_at, ends_at, " +
-  "due_cents, business_tour:business_tours(tour_id), customer:customers(phone)";
+  "id, legacy_id, legacy_reference, source_channel, kiosk_id, business_id, business_tour_id, " +
+  "customer_id, starts_at, ends_at, due_cents, business_tour:business_tours(tour_id), " +
+  "customer:customers(phone)";
 
 interface Existing {
   id: string;
   legacy_id: string | null;
   legacy_reference: string | null;
+  source_channel: string | null;
+  kiosk_id: string | null;
   business_id: string;
   business_tour_id: string;
   customer_id: string;
