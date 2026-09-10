@@ -165,6 +165,7 @@ export type Database = {
       bookings: {
         Row: {
           awaiting_payment: boolean
+          booked_at: string | null
           business_id: string
           business_tour_id: string
           checked_in_at: string | null
@@ -180,6 +181,7 @@ export type Database = {
           groupon_voucher_urls: string[]
           id: string
           kiosk_employee_id: string | null
+          kiosk_id: string | null
           legacy_id: string | null
           legacy_reference: string | null
           notes: string | null
@@ -207,6 +209,7 @@ export type Database = {
         }
         Insert: {
           awaiting_payment?: boolean
+          booked_at?: string | null
           business_id: string
           business_tour_id: string
           checked_in_at?: string | null
@@ -222,6 +225,7 @@ export type Database = {
           groupon_voucher_urls?: string[]
           id?: string
           kiosk_employee_id?: string | null
+          kiosk_id?: string | null
           legacy_id?: string | null
           legacy_reference?: string | null
           notes?: string | null
@@ -249,6 +253,7 @@ export type Database = {
         }
         Update: {
           awaiting_payment?: boolean
+          booked_at?: string | null
           business_id?: string
           business_tour_id?: string
           checked_in_at?: string | null
@@ -264,6 +269,7 @@ export type Database = {
           groupon_voucher_urls?: string[]
           id?: string
           kiosk_employee_id?: string | null
+          kiosk_id?: string | null
           legacy_id?: string | null
           legacy_reference?: string | null
           notes?: string | null
@@ -330,6 +336,13 @@ export type Database = {
             columns: ["kiosk_employee_id"]
             isOneToOne: false
             referencedRelation: "kiosk_employees"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bookings_kiosk_id_fkey"
+            columns: ["kiosk_id"]
+            isOneToOne: false
+            referencedRelation: "kiosks"
             referencedColumns: ["id"]
           },
           {
@@ -2399,6 +2412,7 @@ export type Database = {
       }
       analytics_bookings: {
         Args: {
+          p_basis?: string
           p_business_id?: string
           p_end: string
           p_source?: string
@@ -2430,6 +2444,7 @@ export type Database = {
       }
       analytics_kiosk_bookings: {
         Args: {
+          p_basis?: string
           p_business_id?: string
           p_end: string
           p_kiosk_slug?: string
@@ -2450,7 +2465,7 @@ export type Database = {
         }[]
       }
       analytics_kiosk_source_tour: {
-        Args: { p_end: string; p_start: string }
+        Args: { p_basis?: string; p_end: string; p_start: string }
         Returns: {
           bookings: number
           business: string
@@ -2469,31 +2484,23 @@ export type Database = {
           error: true
         } & "the function public.analytics_label with parameter or with a single unnamed json/jsonb parameter, but no matches were found in the schema cache"
       }
-      analytics_source_tour:
-        | {
-            Args: { p_end: string; p_start: string }
-            Returns: {
-              bookings: number
-              business: string
-              business_id: string
-              color: string
-              pax: number
-              source: string
-              tour: string
-            }[]
-          }
-        | {
-            Args: { p_end: string; p_exclude_kiosk: boolean; p_start: string }
-            Returns: {
-              bookings: number
-              business: string
-              business_id: string
-              color: string
-              pax: number
-              source: string
-              tour: string
-            }[]
-          }
+      analytics_source_tour: {
+        Args: {
+          p_basis?: string
+          p_end: string
+          p_exclude_kiosk: boolean
+          p_start: string
+        }
+        Returns: {
+          bookings: number
+          business: string
+          business_id: string
+          color: string
+          pax: number
+          source: string
+          tour: string
+        }[]
+      }
       app_norm: { Args: { s: string }; Returns: string }
       booking_source_label: { Args: { p_channel: string }; Returns: string }
       bookings_checkin_manifest: {
@@ -2502,6 +2509,13 @@ export type Database = {
           remaining_pax: number
           slot_start: string
           total_pax: number
+        }[]
+      }
+      bookings_sales_ytd: {
+        Args: never
+        Returns: {
+          bookings: number
+          guests: number
         }[]
       }
       claim_due_scheduled_messages: {
@@ -2858,6 +2872,7 @@ export type Database = {
           status: Database["public"]["Enums"]["booking_status"]
         }[]
       }
+      set_booked_at_bulk: { Args: { p_rows: Json }; Returns: number }
       sms_conversations: {
         Args: never
         Returns: {

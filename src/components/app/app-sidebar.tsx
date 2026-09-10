@@ -25,6 +25,7 @@ import {
 import { cn } from "@/lib/utils";
 
 import { UnmatchedBadge } from "./unmatched-badge";
+import { YtdSales } from "./ytd-sales";
 import { buttonVariants } from "@/components/ui/button";
 import type { Database } from "@/lib/supabase/database.types";
 
@@ -271,6 +272,10 @@ export function AppSidebar({
           </div>
         );
       })}
+
+      {/* The owner's running total. Last, so it reads as a summary of the
+          screens above rather than another link. */}
+      {role === "owner" && <YtdSales />}
     </nav>
   );
 }
