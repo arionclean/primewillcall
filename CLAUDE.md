@@ -310,8 +310,19 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   **Known before flipping a kiosk:** `bookings.total_cents` is 100x too high on 2,312
   kiosk bookings synced from Xano (the sync treats Xano's price as dollars; Xano's
   trigger sends cents below $100), so a tablet reading bookings from here would show
-  those wrong until the sync and the rows are fixed. Login (#1) stays on Xano last of
-  all: it supplies `unique_id`, Xano's kiosk id, which every Xano write still passes.
+  those wrong until the sync and the rows are fixed.
+  **The tablet's login** (2026-09-10, build 17+): `kiosk-login` signs the tablet in
+  here (Supabase Auth password grant against the check-in login, which must be active
+  and carry `staff.kiosk_slug`) and answers in Xano's exact login shape: `username` =
+  the kiosk slug, `unique_id` / `company` = the Xano ids the tablet still stamps on
+  every Xano write, now stored per kiosk in `kiosks.xano_kiosk_id` /
+  `xano_company_id` (seeded from Xano's own user table; kiosk4 books under Miami
+  Skyline's Xano company, so the id is per kiosk, not per business), `company_name` =
+  the business name, and a seven-day `token_expiration` (Xano's; the tablet signs
+  itself out when it passes and never sends the token). The tablet tries here first
+  and falls back to Xano's login only when this says no, so a tablet whose password
+  was never set here keeps signing in as before, and once it is set the new platform
+  wins with no build. Wrong password answers Xano's "Invalid Credentials." verbatim.
 - Customers list (scoped by business) not built.
 - Profile / settings not built.
 - **Messaging automations** (`/admin/messaging`) are built: owner rules grouped as

@@ -91,5 +91,8 @@ verify_jwt = false
 [functions.kiosk-read]
 verify_jwt = false
 
+[functions.kiosk-login]
+verify_jwt = false
+
 [functions.kiosk-booking]
 verify_jwt = false
