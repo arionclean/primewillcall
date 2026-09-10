@@ -11,6 +11,7 @@ import {
 } from "@/lib/dates";
 import {
   getAnalyticsDailyByTour,
+  getAnalyticsKioskSourceTour,
   getAnalyticsSourceTour,
 } from "@/lib/dashboard/queries";
 
@@ -59,8 +60,22 @@ export default async function AnalyticsPage({
     cmpMonth === 1 ? 12 : cmpMonth - 1,
   );
 
-  const [rows, chipRows, cmpCurrent, cmpPrevious] = await Promise.all([
-    getAnalyticsSourceTour(supabase, startUtc, endUtc),
+  // Both tabs are fetched together and both stay mounted, the way the existing
+  // tabs already work, so switching between Departures and Sales is instant and
+  // each keeps its own selections. Four small aggregated reads, all in parallel.
+  const [
+    rows,
+    kioskRows,
+    saleRows,
+    saleKioskRows,
+    chipRows,
+    cmpCurrent,
+    cmpPrevious,
+  ] = await Promise.all([
+    getAnalyticsSourceTour(supabase, startUtc, endUtc, "departure"),
+    getAnalyticsKioskSourceTour(supabase, startUtc, endUtc, "departure"),
+    getAnalyticsSourceTour(supabase, startUtc, endUtc, "sale"),
+    getAnalyticsKioskSourceTour(supabase, startUtc, endUtc, "sale"),
     supabase
       .from("business_tours")
       // analytics_label is the database computed column: the tour's /analytics
@@ -81,26 +96,56 @@ export default async function AnalyticsPage({
       analytics_label: string | null;
     } | null;
   };
-  const chips: TourChip[] = ((chipRows.data ?? []) as ChipRow[])
-    .map((r) => ({
-      id: r.id,
-      label: r.tour?.analytics_label ?? r.tour?.name ?? r.name ?? "Untitled tour",
-      color: r.tour?.color ?? null,
-    }))
-    .sort((a, b) => a.label.localeCompare(b.label));
+  // One chip per product NAME, not per business_tours row. Each business keeps
+  // its own copy of a tour, so "Everglades Tour" was three rows and the chip
+  // list repeated it three times. The chip carries every id behind the name.
+  const byLabel = new Map<string, TourChip>();
+  for (const r of (chipRows.data ?? []) as ChipRow[]) {
+    const label =
+      r.tour?.analytics_label ?? r.tour?.name ?? r.name ?? "Untitled tour";
+    const existing = byLabel.get(label);
+    if (existing) {
+      existing.ids.push(r.id);
+      existing.color ??= r.tour?.color ?? null;
+    } else {
+      byLabel.set(label, {
+        id: label,
+        label,
+        color: r.tour?.color ?? null,
+        ids: [r.id],
+      });
+    }
+  }
+  const chips: TourChip[] = Array.from(byLabel.values()).sort((a, b) =>
+    a.label.localeCompare(b.label),
+  );
 
   return (
     <div className="space-y-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Analytics</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Where your bookings come from, and how volume trends month to month.
-        </p>
       </header>
 
       <AnalyticsTabs
-        sources={
-          <AnalyticsView rows={rows} from={from} to={to} today={today} />
+        departures={
+          <AnalyticsView
+            rows={rows}
+            kioskRows={kioskRows}
+            from={from}
+            to={to}
+            today={today}
+            basis="departure"
+          />
+        }
+        sales={
+          <AnalyticsView
+            rows={saleRows}
+            kioskRows={saleKioskRows}
+            from={from}
+            to={to}
+            today={today}
+            basis="sale"
+          />
         }
         trends={
           <MonthlyComparison

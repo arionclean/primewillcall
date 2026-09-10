@@ -4,24 +4,35 @@ import { useState, type ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
-type TabKey = "sources" | "trends";
+type TabKey = "sales" | "departures" | "trends";
 
 /**
- * In-page tabs for the Analytics charts. Both panels are server-rendered and
+ * In-page tabs for the Analytics charts. Every panel is server-rendered and
  * passed in; we keep them mounted and toggle visibility so each panel's local
  * state (filters, selections) survives switching tabs.
+ *
+ * Departures and Sales are the same panel counted on a different date. A
+ * booking has both, often months apart: Departures answers "how full is the
+ * boat on the day", Sales answers "what did we sell, and who sent it". They are
+ * separate tabs rather than a filter because they are separate questions, and
+ * an owner comparing months should never have to remember which one is on.
+ * Sales opens first: the owner's question is what is selling and who is sending
+ * it. The desk's question, how full the day is, lives on /bookings anyway.
  */
 export function AnalyticsTabs({
-  sources,
+  departures,
+  sales,
   trends,
 }: {
-  sources: ReactNode;
+  departures: ReactNode;
+  sales: ReactNode;
   trends: ReactNode;
 }) {
-  const [tab, setTab] = useState<TabKey>("sources");
+  const [tab, setTab] = useState<TabKey>("sales");
 
   const tabs: { key: TabKey; label: string }[] = [
-    { key: "sources", label: "Sources & products" },
+    { key: "sales", label: "Sales" },
+    { key: "departures", label: "Departures" },
     { key: "trends", label: "Monthly comparison" },
   ];
 
@@ -54,7 +65,8 @@ export function AnalyticsTabs({
         })}
       </div>
 
-      <div hidden={tab !== "sources"}>{sources}</div>
+      <div hidden={tab !== "sales"}>{sales}</div>
+      <div hidden={tab !== "departures"}>{departures}</div>
       <div hidden={tab !== "trends"}>{trends}</div>
     </div>
   );

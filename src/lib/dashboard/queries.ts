@@ -352,15 +352,28 @@ function describeError(error: unknown): string {
 }
 
 /** Bookings aggregated by sales source x tour for a window (database-side). */
+/**
+ * Which date a report counts a booking on. "departure" is the operational
+ * question (how full is the boat), "sale" is the commercial one (what did we
+ * sell this week, which source is growing). A booking has both dates and they
+ * are often months apart, so every analytics read says which it means.
+ */
+export type DateBasis = "departure" | "sale";
+
 export async function getAnalyticsSourceTour(
   supabase: Supabase,
   startUtc: string,
   endUtcExclusive: string,
+  basis: DateBasis = "departure",
 ): Promise<SourceTourRow[]> {
   const { data, error } = await rpcWithRetry(() =>
     supabase.rpc("analytics_source_tour", {
       p_start: startUtc,
       p_end: endUtcExclusive,
+      // The tablets come back split by kiosk from getAnalyticsKioskSourceTour,
+      // so they must not also arrive here as "Kiosk - Cash" / "Kiosk - Card".
+      p_exclude_kiosk: true,
+      p_basis: basis,
     }),
   );
   if (error) {
@@ -369,6 +382,53 @@ export async function getAnalyticsSourceTour(
   }
   return (data ?? []).map((r) => ({
     source: r.source,
+    tour: r.tour,
+    color: r.color,
+    businessId: r.business_id,
+    business: r.business,
+    pax: Number(r.pax),
+    bookings: Number(r.bookings),
+  }));
+}
+
+export type KioskSourceTourRow = {
+  kioskSlug: string;
+  kiosk: string;
+  payType: "cash" | "card";
+  tour: string;
+  color: string | null;
+  businessId: string;
+  business: string;
+  pax: number;
+  bookings: number;
+};
+
+/**
+ * The same window as getAnalyticsSourceTour, but only the tablet sales, split
+ * by kiosk and by cash / card. The Sources list uses it to name the kiosk
+ * instead of piling four tablets into "Kiosk - Cash" and "Kiosk - Card".
+ */
+export async function getAnalyticsKioskSourceTour(
+  supabase: Supabase,
+  startUtc: string,
+  endUtcExclusive: string,
+  basis: DateBasis = "departure",
+): Promise<KioskSourceTourRow[]> {
+  const { data, error } = await rpcWithRetry(() =>
+    supabase.rpc("analytics_kiosk_source_tour", {
+      p_start: startUtc,
+      p_end: endUtcExclusive,
+      p_basis: basis,
+    }),
+  );
+  if (error) {
+    console.error("[analytics] kiosk_source_tour rpc error:", describeError(error));
+    return [];
+  }
+  return (data ?? []).map((r) => ({
+    kioskSlug: r.kiosk_slug,
+    kiosk: r.kiosk,
+    payType: r.pay_type === "cash" ? ("cash" as const) : ("card" as const),
     tour: r.tour,
     color: r.color,
     businessId: r.business_id,
