@@ -5,30 +5,16 @@
  *
  * Staff redeem a voucher on Groupon by its Redemption Code, so a /gp booking carries
  * its codes in `bookings.groupon_voucher_codes` and the list shows them under the
- * guest's name with a one-click copy. `CopiedBubble` is the small "Copied" callout the
- * list's ID and phone copy buttons use too.
+ * guest's name with a one-click copy. The "Copied" callout is shared with the row's
+ * other copy buttons (`components/ui/copy-button`).
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, Copy, Ticket } from "lucide-react";
 
+import { CopiedBubble } from "@/components/ui/copy-button";
 import { cn } from "@/lib/utils";
-
-/** The "Copied" callout shown above a copy button for a moment after a copy. */
-export function CopiedBubble() {
-  return (
-    <div className="pointer-events-none absolute bottom-full left-1/2 z-30 -translate-x-1/2 pb-3">
-      <span className="relative block rounded-2xl bg-foreground px-3 py-1.5 text-[10px] font-semibold text-background shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-        Copied
-        <span
-          aria-hidden="true"
-          className="absolute left-1/2 top-full size-2.5 -translate-x-1/2 -translate-y-1/2 rotate-45 bg-foreground"
-        />
-      </span>
-    </div>
-  );
-}
 
 /** "21863636" -> "•••• 8636". A code redeems the voucher, so privacy mode hides it. */
 function maskCode(code: string): string {
