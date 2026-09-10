@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { LiveNumber } from "./live-number";
 import { liveChannelName } from "@/lib/realtime/channel-name";
 
 type Ytd = { bookings: number; guests: number };
@@ -88,11 +89,11 @@ export function YtdSales() {
       <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
         Sold this year
       </p>
-      <p className="mt-0.5 text-lg font-semibold tabular-nums">
-        {data.bookings.toLocaleString()}
+      <p className="mt-0.5 text-lg font-semibold">
+        <LiveNumber value={data.bookings} />
       </p>
       <p className="text-xs text-muted-foreground">
-        {data.guests.toLocaleString()} guests
+        <LiveNumber value={data.guests} /> guests
       </p>
     </Link>
   );

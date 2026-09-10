@@ -1,4 +1,5 @@
 import { Card } from "@/components/ui/card";
+import { LiveNumber } from "@/components/app/live-number";
 import type { TourTally } from "@/lib/dashboard/queries";
 
 /**
@@ -22,7 +23,7 @@ export function TourTallyStrip({ tallies }: { tallies: TourTally[] }) {
             </p>
           </div>
           <p className="mt-1 text-2xl font-semibold tracking-tight">
-            {t.guests}
+            <LiveNumber value={t.guests} />
           </p>
           <p className="text-xs text-muted-foreground">
             {t.count} booking{t.count === 1 ? "" : "s"}
