@@ -17,7 +17,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Check,
   ChevronDown,
-  Copy,
   Eye,
   EyeOff,
   Filter,
@@ -33,6 +32,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { CopyIconButton } from "@/components/ui/copy-button";
 import { DateField } from "@/components/ui/date-field";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { Textarea } from "@/components/ui/textarea";
@@ -53,7 +53,7 @@ import {
   type BookingViewCaps,
 } from "./booking-select";
 import { PaymentLinkButton } from "./payment-link-button";
-import { CopiedBubble, VoucherCodes } from "./voucher-codes";
+import { VoucherCodes } from "./voucher-codes";
 import { liveChannelName } from "@/lib/realtime/channel-name";
 
 const PRIVACY_KEY = "pwc.bookings.privacy";
@@ -1582,6 +1582,23 @@ function BookingRowItem({
       ? maskPhone(phoneRaw)
       : formatPhone(phoneRaw)
     : "";
+  // The desk copies the guest's name off the row all day (into Groupon, an OTA,
+  // a message), so the name copies like the phone and the ID do. A masked name
+  // has no copy button: privacy mode hides the value, it does not hand it over.
+  const nameCopy =
+    name && !privacyOn ? (
+      <CopyIconButton
+        label="Copy guest name"
+        copied={copiedKey === `${booking.id}:name`}
+        onClick={() =>
+          onCopyField(
+            `${booking.id}:name`,
+            name,
+            "Unable to copy the guest name.",
+          )
+        }
+      />
+    ) : null;
 
   const tourName =
     booking.business_tour?.name ??
@@ -1635,9 +1652,12 @@ function BookingRowItem({
       <div className="flex items-start gap-3 px-3 py-3 lg:hidden">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <HoverTooltip label={name}>
-              <p className="truncate font-semibold">{displayName}</p>
-            </HoverTooltip>
+            <div className="flex min-w-0 items-center gap-1">
+              <HoverTooltip label={name}>
+                <p className="truncate font-semibold">{displayName}</p>
+              </HoverTooltip>
+              {nameCopy}
+            </div>
             {badge ? (
               <Badge
                 tone={badge.tone}
@@ -1761,8 +1781,10 @@ function BookingRowItem({
           </span>
         )}
         {!privacyOn ? (
-          <button
-            type="button"
+          <CopyIconButton
+            label="Copy booking ID"
+            title={shortRef}
+            copied={copiedKey === `${booking.id}:id`}
             onClick={() =>
               onCopyField(
                 `${booking.id}:id`,
@@ -1770,19 +1792,7 @@ function BookingRowItem({
                 "Unable to copy booking ID.",
               )
             }
-            title={shortRef}
-            className="relative inline-flex size-5 shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-          >
-            <span className="sr-only">Copy booking ID</span>
-            {copiedKey === `${booking.id}:id` ? (
-              <>
-                <Check className="size-3.5 animate-in zoom-in-75 text-emerald-600" />
-                <CopiedBubble />
-              </>
-            ) : (
-              <Copy className="size-3.5" />
-            )}
-          </button>
+          />
         ) : null}
         {showSource ? (
           <HoverTooltip label={sourceLabel} className="min-w-0 flex-1">
@@ -1795,11 +1805,14 @@ function BookingRowItem({
         )}
       </div>
 
-      {/* Customer name + status badge */}
+      {/* Customer name + copy + status badge */}
       <div className="min-w-0">
-        <HoverTooltip label={name}>
-          <p className="truncate font-semibold">{displayName}</p>
-        </HoverTooltip>
+        <div className="flex min-w-0 items-center gap-1">
+          <HoverTooltip label={name}>
+            <p className="truncate font-semibold">{displayName}</p>
+          </HoverTooltip>
+          {nameCopy}
+        </div>
         {badge || owes || kioskTag ? (
           <div className="mt-0.5 flex flex-wrap gap-1">
             {badge ? (
@@ -1833,8 +1846,9 @@ function BookingRowItem({
           <p className="truncate text-muted-foreground">{displayPhone}</p>
         </HoverTooltip>
         {phoneRaw && !privacyOn ? (
-          <button
-            type="button"
+          <CopyIconButton
+            label="Copy phone number"
+            copied={copiedKey === `${booking.id}:phone`}
             onClick={() =>
               onCopyField(
                 `${booking.id}:phone`,
@@ -1842,18 +1856,7 @@ function BookingRowItem({
                 "Unable to copy phone number.",
               )
             }
-            className="relative inline-flex size-5 shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-          >
-            <span className="sr-only">Copy phone number</span>
-            {copiedKey === `${booking.id}:phone` ? (
-              <>
-                <Check className="size-3.5 animate-in zoom-in-75 text-emerald-600" />
-                <CopiedBubble />
-              </>
-            ) : (
-              <Copy className="size-3.5" />
-            )}
-          </button>
+          />
         ) : null}
       </div>
 
