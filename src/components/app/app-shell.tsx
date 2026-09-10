@@ -46,7 +46,7 @@ export function AppShell({
         {/* Sticky, and capped to the viewport so a long list (the check-in
             Manifest on a busy day) scrolls inside the sidebar instead of being
             cut off below the fold. */}
-        <aside className="hidden space-y-4 md:sticky md:top-6 md:block md:max-h-[calc(100vh-3rem)] md:self-start md:overflow-y-auto md:overscroll-contain md:pb-8">
+        <aside className="hidden space-y-4 md:sticky md:top-6 md:block md:max-h-[calc(100vh-3rem)] md:self-start md:overflow-y-auto md:overscroll-contain md:pb-12">
           <GlobalSearch />
           <AppSidebar
             role={role}
