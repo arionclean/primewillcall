@@ -319,10 +319,11 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   `xano_company_id` (seeded from Xano's own user table; kiosk4 books under Miami
   Skyline's Xano company, so the id is per kiosk, not per business), `company_name` =
   the business name, and a seven-day `token_expiration` (Xano's; the tablet signs
-  itself out when it passes and never sends the token). The tablet tries here first
-  and falls back to Xano's login only when this says no, so a tablet whose password
-  was never set here keeps signing in as before, and once it is set the new platform
-  wins with no build. Wrong password answers Xano's "Invalid Credentials." verbatim.
+  itself out when it passes and never sends the token). This is the only login: the
+  tablet never asks Xano (the owner's call, 2026-09-10; a fallback would have retried
+  a mistyped password against Xano). So every tablet's password must exist here before
+  build 17 goes out; the five check-in accounts already do. Wrong password answers
+  Xano's "Invalid Credentials." verbatim.
 - Customers list (scoped by business) not built.
 - Profile / settings not built.
 - **Messaging automations** (`/admin/messaging`) are built: owner rules grouped as
