@@ -10,7 +10,19 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { BUSINESS_TZ, monthStartUtc } from "@/lib/dates";
 import type { DailyTourRow } from "@/lib/dashboard/queries";
 
-export type TourChip = { id: string; label: string; color: string | null };
+/**
+ * One chip is one product as staff name it, not one row of business_tours.
+ * Every business keeps its own copy of a tour, so "Everglades Tour" existed as
+ * two or three rows and the chip list showed the same product two or three
+ * times over. `ids` holds every business_tour behind the name, so a chip still
+ * selects all of them.
+ */
+export type TourChip = {
+  id: string;
+  label: string;
+  color: string | null;
+  ids: string[];
+};
 
 type MonthlyComparisonProps = {
   chips: TourChip[];
@@ -272,13 +284,20 @@ export function MonthlyComparison({
   const cmpMonthShort =
     compareTo === "prev_year" ? MONTHS_SHORT[month - 1] : MONTHS_SHORT[prevMonth - 1];
 
+  // Chip ids -> every business_tour they cover, for the row filter below.
+  const selectedTourIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of chips) if (selectedIds.has(c.id)) for (const i of c.ids) set.add(i);
+    return set;
+  }, [chips, selectedIds]);
+
   // Sum the selected tours into a per-day array for each series, in the metric.
   const daily = useMemo(() => {
     const value = (r: DailyTourRow) => (metric === "pax" ? r.pax : r.bookings);
     const sum = (rows: DailyTourRow[]) => {
       const byDay = new Array(lastDay + 1).fill(0);
       for (const r of rows) {
-        if (!selectedIds.has(r.businessTourId)) continue;
+        if (!selectedTourIds.has(r.businessTourId)) continue;
         if (r.day >= 1 && r.day <= lastDay) byDay[r.day] += value(r);
       }
       return byDay;
@@ -290,7 +309,7 @@ export function MonthlyComparison({
       cur: cur[i + 1],
       prev: prev[i + 1],
     }));
-  }, [current, previous, selectedIds, lastDay, metric]);
+  }, [current, previous, selectedTourIds, lastDay, metric]);
 
   // The chart can show daily values or a running cumulative total.
   const chart = useMemo(() => {

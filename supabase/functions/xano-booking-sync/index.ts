@@ -436,6 +436,11 @@ async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
       const kioskId = resolveKiosk(row, m);
       if (kioskId) patch.kiosk_id = kioskId;
     }
+    // Same rule for the sale date: learned once, never rewritten.
+    if (!existing.booked_at) {
+      const bookedAt = epochToIso(row.created_at);
+      if (bookedAt) patch.booked_at = bookedAt;
+    }
     if (!guarded.has("status")) patch.status = status;
     if (!guarded.has("starts_at") && startMs !== new Date(existing.starts_at).getTime()) {
       // Keep the booking's own duration: the tour's, not a fixed 90 minutes.
@@ -512,6 +517,11 @@ async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
     legacy_reference: clean(row.booking_reference),
     source_channel: clean(row.booking_channel),
     kiosk_id: resolveKiosk(row, m),
+    // When it was SOLD. Our own created_at is the row's birthday here, which for
+    // an imported booking is the afternoon of the import, so sales reporting has
+    // to read Xano's. Null when Xano sends none: readers fall back to created_at,
+    // which is right for a booking born on this platform.
+    booked_at: epochToIso(row.created_at),
     ...xanoIds,
     ...(confirmationToken ? { public_token: confirmationToken } : {}),
     ...(typeof row.peek === "boolean" ? { peek: row.peek } : {}),
@@ -531,9 +541,9 @@ async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
 
 /** What we hold for a booking Xano is telling us about. */
 const EXISTING_SELECT =
-  "id, legacy_id, legacy_reference, source_channel, kiosk_id, business_id, business_tour_id, " +
-  "customer_id, starts_at, ends_at, due_cents, business_tour:business_tours(tour_id), " +
-  "customer:customers(phone)";
+  "id, legacy_id, legacy_reference, source_channel, kiosk_id, booked_at, business_id, " +
+  "business_tour_id, customer_id, starts_at, ends_at, due_cents, " +
+  "business_tour:business_tours(tour_id), customer:customers(phone)";
 
 interface Existing {
   id: string;
@@ -541,6 +551,7 @@ interface Existing {
   legacy_reference: string | null;
   source_channel: string | null;
   kiosk_id: string | null;
+  booked_at: string | null;
   business_id: string;
   business_tour_id: string;
   customer_id: string;
