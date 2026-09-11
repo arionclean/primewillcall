@@ -240,10 +240,6 @@ function AlertForm({
 
         <fieldset className="space-y-2">
           <legend className="mb-2 text-sm font-medium">Products to watch</legend>
-          <p className="mb-2 text-xs text-muted-foreground">
-            Pick more than one when they share the same vehicle. Their guests are
-            added together.
-          </p>
           <div className="space-y-1.5">
             {products.map((product) => {
               const mine = alert?.tourIds.includes(product.id) ?? false;
@@ -293,9 +289,6 @@ function AlertForm({
               guests booked on one departure
             </span>
           </div>
-          <p className="text-xs text-muted-foreground">
-            Adults and children. Infants ride on a lap, so they do not count.
-          </p>
         </div>
 
         <RecipientList
