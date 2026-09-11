@@ -26,6 +26,8 @@ import {
   serviceClient,
   stripeCancelPaymentIntent,
   stripeConfigured,
+  stripeExpireCheckoutSession,
+  stripeRetrieveCheckoutSession,
   stripeRetrievePaymentIntent,
   xanoMirrorEnabled,
   type SaleRow,
@@ -58,6 +60,45 @@ Deno.serve(withSentry("kiosk-sale-sweep", async (req) => {
   for (const sale of pending ?? []) {
     counts.scanned++;
     const age = now - new Date(sale.created_at).getTime();
+
+    // A QR sale (the guest pays on their own phone) has no PaymentIntent until the
+    // guest starts paying, so the Checkout session is what we ask. Two things must
+    // happen here that a missing intent alone cannot express: a session that was
+    // paid while no tablet was watching still completes, and a session we give up
+    // on is EXPIRED on Stripe first, so a late scan cannot charge a card against a
+    // sale we already wrote off.
+    const stored = (sale.xano_payload as Record<string, unknown> | null) ?? {};
+    const sessionId = typeof stored.__checkout_session === "string" ? stored.__checkout_session : null;
+    if (sessionId && sale.stripe_account_id) {
+      const r = await stripeRetrieveCheckoutSession(sessionId, sale.stripe_account_id);
+      if (!r.ok) {
+        counts.errors++;
+        continue;
+      }
+      if (r.session.payment_status === "paid" && r.session.payment_intent) {
+        const pi = await stripeRetrievePaymentIntent(r.session.payment_intent, sale.stripe_account_id);
+        if (pi.ok) {
+          const { already } = await completeSale(sb, sale, "sweep", pi.pi);
+          if (!already) counts.completed++;
+        } else {
+          counts.errors++;
+        }
+        continue;
+      }
+      if (age > ABANDON_AFTER_MS) {
+        const expired = await stripeExpireCheckoutSession(sessionId, sale.stripe_account_id);
+        if (!expired && r.session.status !== "expired") {
+          // Stripe would not close it, which usually means a payment is in flight.
+          // Leave the sale pending; the next sweep asks again.
+          counts.errors++;
+          continue;
+        }
+        await abandonSale(sb, sale, "checkout_expired");
+        counts.abandoned++;
+      }
+      continue;
+    }
+
     if (!sale.payment_intent_id || !sale.stripe_account_id) {
       if (age > ABANDON_AFTER_MS) {
         await abandonSale(sb, sale, "no_intent");

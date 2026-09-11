@@ -35,6 +35,15 @@ verify_jwt = false
 # The Xano mirror worker (docs/xano-mirror.md): pg_cron with x-cron-secret.
 [functions.xano-mirror-dispatch]
 verify_jwt = false
+
+# The tablets send only x-kiosk-secret, never a Supabase token, same as the other
+# kiosk functions.
+[functions.kiosk-closing-report]
+verify_jwt = false
+
+# The QR backup (guest pays on their own phone). Same tablet caller as the rest.
+[functions.kiosk-sale-link]
+verify_jwt = false
 [functions.whatsapp-send]
 verify_jwt = true
 
@@ -99,4 +108,8 @@ verify_jwt = false
 
 # Called by the bookings capacity triggers with x-cron-secret, not a user token.
 [functions.slot-capacity-alert]
+verify_jwt = false
+
+# Throwaway diagnostic, delete when the edge drop-out is understood.
+[functions.zz-probe]
 verify_jwt = false

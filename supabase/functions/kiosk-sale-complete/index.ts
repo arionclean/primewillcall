@@ -83,13 +83,17 @@ Deno.serve(withSentry("kiosk-sale-complete", async (req) => {
   };
   const err =
     typeof body.error === "string" ? { message: body.error } : body.error ?? null;
-  await logEvent(sb, {
-    ...meta,
-    ref,
-    event: "card_result",
-    level: outcome === "succeeded" ? "info" : "warn",
-    payload: { outcome, sdk_status: body.sdk_status ?? null, error: err },
-  });
+  // A poll while the guest is at the QR page is not an event: it happens every few
+  // seconds and would bury the reader outcomes that matter in kiosk_events.
+  if (outcome !== "poll") {
+    await logEvent(sb, {
+      ...meta,
+      ref,
+      event: "card_result",
+      level: outcome === "succeeded" ? "info" : "warn",
+      payload: { outcome, sdk_status: body.sdk_status ?? null, error: err },
+    });
+  }
 
   if (sale.status === "paid") {
     const acked = await ackSale(sb, sale);
