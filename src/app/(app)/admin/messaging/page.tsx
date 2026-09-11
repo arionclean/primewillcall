@@ -6,6 +6,11 @@ import { listWhatsappTemplates, type WhatsappTemplate } from "@/lib/sms/twilio-c
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 import {
+  CapacityAlertsCard,
+  type CapacityAlert,
+  type CapacityProduct,
+} from "./capacity-alerts-card";
+import {
   AddWhatsappTemplateForm,
   MessagingRules,
   WhatsappTemplateList,
@@ -26,7 +31,14 @@ export default async function MessagingConfigPage() {
 
   const supabase = (await getSupabaseServerClient()) as unknown as SupabaseClient;
 
-  const [rulesResult, productsResult, reviewSettings, linkedBusinesses] = await Promise.all([
+  const [
+    rulesResult,
+    productsResult,
+    settingsResult,
+    linkedBusinesses,
+    toursResult,
+    capacityAlertsResult,
+  ] = await Promise.all([
     supabase
       .from("messaging_rules")
       .select(
@@ -40,13 +52,23 @@ export default async function MessagingConfigPage() {
       .order("name"),
     supabase
       .from("messaging_settings")
-      .select("review_automation_enabled")
+      .select("review_automation_enabled, slot_alerts_enabled")
       .eq("id", true)
       .maybeSingle(),
     supabase
       .from("businesses")
       .select("id", { count: "exact", head: true })
       .not("google_review_url", "is", null),
+    supabase
+      .from("tours")
+      .select("id, name")
+      .eq("is_active", true)
+      .order("name"),
+    supabase
+      .from("capacity_alerts")
+      .select("id, name, threshold_pax, phones, emails, capacity_alert_tours(tour_id)")
+      .eq("is_active", true)
+      .order("name"),
   ]);
 
   if (rulesResult.error) {
@@ -54,6 +76,7 @@ export default async function MessagingConfigPage() {
   }
 
   const rules = (rulesResult.data ?? []) as RuleRow[];
+
   type ProductJoined = { id: string; name: string; business: { name: string } | null };
   const products = ((productsResult.data ?? []) as unknown as ProductJoined[]).map<ProductOption>(
     (row) => ({
@@ -62,6 +85,30 @@ export default async function MessagingConfigPage() {
       businessName: row.business?.name ?? "Unknown business",
     }),
   );
+
+  // A capacity alert watches one or more master tours: two products can share a
+  // vehicle, and Xano's city tour alert counted exactly such a pair together.
+  type AlertJoined = {
+    id: string;
+    name: string;
+    threshold_pax: number;
+    phones: string[] | null;
+    emails: string[] | null;
+    capacity_alert_tours: { tour_id: string }[] | null;
+  };
+  const capacityAlerts = ((capacityAlertsResult.data ?? []) as AlertJoined[]).map<CapacityAlert>(
+    (row) => ({
+      id: row.id,
+      name: row.name,
+      thresholdPax: row.threshold_pax,
+      tourIds: (row.capacity_alert_tours ?? []).map((link) => link.tour_id),
+      phones: row.phones ?? [],
+      emails: row.emails ?? [],
+    }),
+  );
+  const capacityProducts = (
+    (toursResult.data ?? []) as { id: string; name: string }[]
+  ).map<CapacityProduct>((tour) => ({ id: tour.id, name: tour.name }));
 
   let whatsappTemplates: WhatsappTemplate[] = [];
   let whatsappError: string | null = null;
@@ -96,8 +143,13 @@ export default async function MessagingConfigPage() {
             <>
               <MessagingRules rules={rules} products={products} waTemplates={waOptions} />
               <ReviewFunnelCard
-                enabled={reviewSettings.data?.review_automation_enabled ?? false}
+                enabled={settingsResult.data?.review_automation_enabled ?? false}
                 businessesWithLink={linkedBusinesses.count ?? 0}
+              />
+              <CapacityAlertsCard
+                enabled={settingsResult.data?.slot_alerts_enabled ?? false}
+                alerts={capacityAlerts}
+                products={capacityProducts}
               />
             </>
           )

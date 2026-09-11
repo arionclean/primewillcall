@@ -339,6 +339,23 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   (pg_cron) is the single thing that calls Twilio and it enforces the global hourly cap.
   `messaging_settings.automations_enabled` is ON. Full model + go-live checklist in
   [`docs/messaging-automations.md`](docs/messaging-automations.md).
+- **Capacity alerts** (built and configured 2026-09-11, switch still OFF): when one
+  departure reaches a fixed number of guests, the people who run that tour get a
+  text and an email. Port of Xano's two "tour full notification" bookings triggers
+  (workspace 6, triggers 116 and 118), generalised. An alert (`capacity_alerts`)
+  holds one or more products (`capacity_alert_tours`, a product belongs to at most
+  one alert), carries the seat threshold and its own recipients, and is owner-edited
+  on `/admin/messaging`. That grouping is not decoration: Xano's city tour alert
+  sums two products that share a bus. Seats are summed in the database
+  (`capacity_alert_seats`, adults plus children, every business, cancelled and
+  unpaid-checkout rows skipped). Two `bookings` triggers cover insert plus the edits
+  that can add seats, and call the `slot-capacity-alert` edge function (deployed).
+  The dedupe is `capacity_alert_log`, unique on (alert, departure), claimed before
+  anything sends; seeding a row silences a departure, which is how the already-full
+  ones were kept quiet. Kill switch: `messaging_settings.slot_alerts_enabled`,
+  default false. **Left to do**: flip that switch and disable Xano triggers 116 and
+  118 in the same sitting, else every alert goes out twice. See
+  [`docs/capacity-alerts.md`](docs/capacity-alerts.md).
 - **WhatsApp** shares that engine but not its rules. Meta lets a business open a
   conversation only with an approved template; when the customer replies, a **24-hour
   window** opens in which free-form text is allowed, and each new reply restarts it.

@@ -96,3 +96,7 @@ verify_jwt = false
 
 [functions.kiosk-booking]
 verify_jwt = false
+
+# Called by the bookings capacity triggers with x-cron-secret, not a user token.
+[functions.slot-capacity-alert]
+verify_jwt = false
