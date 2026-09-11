@@ -501,6 +501,110 @@ export type Database = {
         }
         Relationships: []
       }
+      capacity_alert_log: {
+        Row: {
+          alert_id: string
+          created_at: string
+          emails_sent: number
+          id: string
+          seats: number
+          sms_sent: number
+          starts_at: string
+          threshold_pax: number
+        }
+        Insert: {
+          alert_id: string
+          created_at?: string
+          emails_sent?: number
+          id?: string
+          seats: number
+          sms_sent?: number
+          starts_at: string
+          threshold_pax: number
+        }
+        Update: {
+          alert_id?: string
+          created_at?: string
+          emails_sent?: number
+          id?: string
+          seats?: number
+          sms_sent?: number
+          starts_at?: string
+          threshold_pax?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "capacity_alert_log_alert_id_fkey"
+            columns: ["alert_id"]
+            isOneToOne: false
+            referencedRelation: "capacity_alerts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      capacity_alert_tours: {
+        Row: {
+          alert_id: string
+          tour_id: string
+        }
+        Insert: {
+          alert_id: string
+          tour_id: string
+        }
+        Update: {
+          alert_id?: string
+          tour_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "capacity_alert_tours_alert_id_fkey"
+            columns: ["alert_id"]
+            isOneToOne: false
+            referencedRelation: "capacity_alerts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "capacity_alert_tours_tour_id_fkey"
+            columns: ["tour_id"]
+            isOneToOne: false
+            referencedRelation: "tours"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      capacity_alerts: {
+        Row: {
+          created_at: string
+          emails: string[]
+          id: string
+          is_active: boolean
+          name: string
+          phones: string[]
+          threshold_pax: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          emails?: string[]
+          id?: string
+          is_active?: boolean
+          name: string
+          phones?: string[]
+          threshold_pax: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          emails?: string[]
+          id?: string
+          is_active?: boolean
+          name?: string
+          phones?: string[]
+          threshold_pax?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       cash_sales: {
         Row: {
           amount_cents: number
@@ -1328,6 +1432,7 @@ export type Database = {
           review_ask_lookback_hours: number
           review_automation_enabled: boolean
           review_reminder_hours: number
+          slot_alerts_enabled: boolean
           sms_hourly_cap: number
           updated_at: string
         }
@@ -1343,6 +1448,7 @@ export type Database = {
           review_ask_lookback_hours?: number
           review_automation_enabled?: boolean
           review_reminder_hours?: number
+          slot_alerts_enabled?: boolean
           sms_hourly_cap?: number
           updated_at?: string
         }
@@ -1358,6 +1464,7 @@ export type Database = {
           review_ask_lookback_hours?: number
           review_automation_enabled?: boolean
           review_reminder_hours?: number
+          slot_alerts_enabled?: boolean
           sms_hourly_cap?: number
           updated_at?: string
         }
@@ -2517,6 +2624,10 @@ export type Database = {
           bookings: number
           guests: number
         }[]
+      }
+      capacity_alert_seats: {
+        Args: { p_alert_id: string; p_starts_at: string }
+        Returns: number
       }
       claim_due_scheduled_messages: {
         Args: { batch?: number }
