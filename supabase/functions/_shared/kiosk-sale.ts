@@ -561,7 +561,20 @@ export async function createPendingBooking(
   try {
     res = await fetch(`${SUPABASE_URL}/functions/v1/xano-booking-sync`, {
       method: "POST",
-      headers: { "content-type": "application/json", "x-webhook-secret": XANO_WEBHOOK_SECRET },
+      // Run the sync next to the database (us-west-2) instead of wherever this
+      // isolate happens to be. The same function measures p50 1,562 ms invoked
+      // from us-east-2 and 3,340 ms from us-east-1: the ingest makes six or seven
+      // PostgREST round trips, and from the east coast every one of them crosses
+      // the country. Latency only, nothing about the sync's behaviour changes.
+      // A pinned request is NOT re-routed if the region is down, which costs
+      // nothing here: the database only lives in us-west-2, so a call that cannot
+      // reach it cannot do its job anyway, and it fails the way it fails today
+      // (caught below -> booking_failed -> no Stripe object was created yet).
+      headers: {
+        "content-type": "application/json",
+        "x-webhook-secret": XANO_WEBHOOK_SECRET,
+        "x-region": "us-west-2",
+      },
       body: JSON.stringify(record),
       signal: AbortSignal.timeout(15_000),
     });
