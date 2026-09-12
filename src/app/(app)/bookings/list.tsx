@@ -472,6 +472,13 @@ function HoverTooltip({
     setIsMounted(true);
   }, []);
 
+  // Watch for truncation once per label, not on every parent render. This ran
+  // on every render before (children is a new object each time), so a busy day
+  // rebuilt about a thousand observers per list refresh and chained updates
+  // until React threw "Maximum update depth exceeded" (Sentry, 2026-09-12,
+  // iPhone). The observer sees every size change of the text, so no window
+  // resize listener is needed, and only the boolean is set here: where to draw
+  // the bubble is worked out when it opens.
   useEffect(() => {
     if (!trimmedLabel) {
       setIsVisible(false);
@@ -491,13 +498,10 @@ function HoverTooltip({
 
     const measureOverflow = () => {
       const target = (node.firstElementChild as HTMLElement | null) ?? node;
-      const hasOverflow =
+      setIsVisible(
         target.scrollWidth - target.clientWidth > 1 ||
-        target.scrollHeight - target.clientHeight > 1;
-      setIsVisible(hasOverflow);
-      if (hasOverflow) {
-        updatePlacement();
-      }
+          target.scrollHeight - target.clientHeight > 1,
+      );
     };
 
     measureOverflow();
@@ -508,13 +512,9 @@ function HoverTooltip({
     if (target) {
       resizeObserver.observe(target);
     }
-    window.addEventListener("resize", measureOverflow);
 
-    return () => {
-      resizeObserver.disconnect();
-      window.removeEventListener("resize", measureOverflow);
-    };
-  }, [children, onlyWhenTruncated, trimmedLabel]);
+    return () => resizeObserver.disconnect();
+  }, [onlyWhenTruncated, trimmedLabel]);
 
   useEffect(() => {
     if (!isOpen || !isVisible) {
