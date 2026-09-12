@@ -49,10 +49,15 @@ makes Stripe the only authority on outcomes.
   server, the server asks Stripe. A captured payment shows as paid and prints a receipt.
 - **A crash cannot orphan a payment.** The sale exists before the card is read; the sweep
   finishes it. And a *new* sale started on that kiosk within five minutes for the same amount
-  and first name, while the earlier captured sale was never acknowledged by any tablet, is
-  **attached** to that payment (`completed_by = reuse`) instead of charging again. Two
-  different customers paying the same amount seconds apart both get acknowledged sales, so
-  they never match (`canReuseSale`, unit-tested).
+  and the same first name (prefix tolerant), while the earlier captured sale was never
+  acknowledged by any tablet, is **attached** to that payment instead of charging again.
+  Since 2026-09-13 the first name is required at every age, and a sale with no real name
+  ("Walk-in", "Guest", empty) on either side never matches: kiosk tickets are a fixed price
+  list, and in one week 20 pairs of different guests paid the same price on the same kiosk
+  within two minutes, which the old price-only window would have attached. Two or more
+  matches are refused rather than guessed. Every refusal and every ambiguity is written to
+  `kiosk_events` (`sale_reuse_refused`, `sale_reuse_ambiguous`) with both names and both
+  references (`canReuseSale`, unit-tested).
 - **Existing-booking card payments** (the Bookings screen's "pay by card") keep the v1 calls
   but, on a v2 kiosk, verify the intent with Stripe after an error before showing "failed".
 
@@ -78,6 +83,46 @@ Battery thresholds are per kiosk too: `reader_block_battery_pct` (card sales ref
 as a warning in `kiosk_events`, nothing on screen). The staff screens show no battery
 indicator on purpose: the block is the safeguard, and staff do not need the number.
 
+### The faster sale: two more per-kiosk switches (build 20)
+
+Both default to today's behaviour. The tablet reads them through `kiosk-config` (their own
+query, never through `resolveKiosk`'s shared select, so a column problem can never take
+thirteen functions down) and re-reads them in the background on every Book tap, so a flip
+reaches the next sale within a tap and a rollback is just as quick. A sale reads them ONCE
+when it is handed to the Payment screen and carries them (`BookingData.saleFlags`): a switch
+flipped mid-sale never mixes two flows inside one payment.
+
+- **`kiosks.edge_region`** (`null` default, `'us-west-2'`): the tablet adds `x-region` to
+  `kiosk-sale-start` and `kiosk-sale-complete` only, never to the config call, so a bad
+  value can never stop a tablet from reading the switch that turns it off. The database
+  (CHECK) and `kiosk-config` both allow-list the value. Why: the database is in us-west-2
+  and the tablet-facing functions ran in us-east-1; measured write-free, two extra database
+  round trips cost 308 ms from us-east-1 and 47 ms from us-west-2, and a sale makes about
+  thirty. A pinned request is not re-routed if the region is down, so a transport failure or
+  a gateway 503/504 with the pin on is retried once without it (both calls are idempotent on
+  the reference). The nested `xano-booking-sync` call inside `createPendingBooking` has been
+  pinned unconditionally since 2026-09-12: the same function measured p50 3,340 ms from
+  us-east-1 and 1,562 ms next to the database.
+- **`kiosks.sale_settle`** (`'inline'` default, `'deferred'`): with `'deferred'` AND a build
+  that sends `fast_settle: true` (build 20+), `kiosk-sale-complete` answers `paid` after the
+  booking confirm, the ledger row and the acknowledgement, and runs the Xano copy after the
+  reply through `EdgeRuntime.waitUntil` (`runAfterReply`; where the runtime lacks it the copy
+  is awaited inline, never dropped). The sweep's pass 2 is the retry, for a day. The receipt
+  then prints without the Xano `payment_qr`, a Bubble-era leftover (a QR of a link to a
+  picture of another QR) that 23 of the first 148 card sales already printed without. An old
+  build on a switched kiosk, or a new build on an unswitched one, runs the inline path byte
+  for byte.
+
+```sql
+update kiosks set edge_region = 'us-west-2' where slug = 'kiosk2';                  -- pin the calls
+update kiosks set sale_settle = 'deferred'  where slug = 'kiosk2';                  -- reply before the copy
+update kiosks set edge_region = null, sale_settle = 'inline' where slug = 'kiosk2'; -- back to today
+```
+
+Roll out one kiosk at a time, `kiosk2` first, one trading day each, watching `kiosk_events`
+for `sale_start_failed`, `xano_mirror_failed`, `sale_reuse_refused`, and the sale timings in
+the edge logs (`execution_time_ms`, `x_sb_edge_region`).
+
 ## Xano mirror (a Xano write, deliberately)
 
 In v1 the tablet posts every card sale to Xano itself (`api:2k2IsvEZ/booking`, then
@@ -88,6 +133,16 @@ died mid-sale. It is the same write, from a different client. `KIOSK_V2_XANO_MIR
 `xano-booking-sync`, which converges on the row v2 created (same `legacy_id`, the KS code).
 Known, pre-existing: that round trip stores kiosk prices under $100 as cents times 100
 (`total_cents`), because the Xano lambda treats a cents value under 10000 as dollars.
+
+**One copy per sale (2026-09-13).** `mirrorAndRecord` claims the sale with one guarded
+UPDATE (`kiosk_sales.xano_mirror_claimed_at`, stale after two minutes, given back on a clean
+failure) before it posts anything. Without that, the tablet's `kiosk-sale-complete` and the
+once-a-minute sweep both posted, and six of one week's 138 card sales reached Xano twice,
+every one of them in the first seconds of a minute. The Xano booking id is saved the moment
+the booking POST answers, before the cash_sales POST, and `xano_booking_attempted_at` is
+stamped just before that POST: a retry that finds it set with no id asks Xano by internal id
+(read-only, `xanoGetBookingByInternalId`) before ever posting again, and stops if Xano cannot
+answer. The sweep's pass 2 also gives a paid sale a minute before touching it.
 
 ## Logs: `kiosk_events`
 
@@ -115,6 +170,7 @@ The table is in the `supabase_realtime` publication for a future live kiosks scr
 | Where | What |
 |---|---|
 | `supabase/migrations/20260907152133_kiosk_card_flow_v2.sql` | `kiosks.card_flow` + battery thresholds, `kiosk_sales`, `kiosk_events`, RLS, realtime, the sweep cron |
+| `supabase/migrations/20260912232500_kiosk_sales_mirror_claim.sql`, `20260912232504_kiosks_sale_switches.sql` | the mirror claim columns; `kiosks.edge_region` + `kiosks.sale_settle`, CHECK-constrained |
 | `supabase/functions/_shared/kiosk-sale.ts` (+ `.test.ts`) | Stripe REST helpers, date parsing, pending booking, Xano mirror, idempotent completion, reuse rule |
 | `kiosk-config`, `kiosk-sale-start`, `kiosk-sale-complete`, `kiosk-sale-sweep`, `kiosk-log` | the five functions (JWT off; `config.toml`) |
 | PrimeKiosk `src/config/backend.ts` | `fetchKioskConfig`, `getCardFlow`, `kioskSaleStart`, `kioskSaleComplete` |
@@ -132,14 +188,15 @@ Secrets used: `STRIPE_SECRET_KEY`, `XANO_WEBHOOK_SECRET`, `CRON_SECRET`, optiona
 - **Supabase unreachable:** v2 card sales stop (no Xano failover on purpose, since a charge
   without a recorded sale is the thing we are removing). Cash keeps working. v1 kiosks are
   unaffected.
-- **Reuse is two-tiered:** under two minutes a matching amount on an unacknowledged captured
-  payment is enough; two to five minutes also needs the first name (prefix tolerant). Past
-  five minutes never.
+- **Reuse needs the first name at every age** (prefix tolerant): never on price alone, never
+  with a generic or empty name on either side, never past five minutes, and never when two or
+  more captured payments match. Refusals and ambiguities are logged (see above).
 - **Abandon only after Stripe confirms the cancel.** The sweep marks a sale abandoned only
   when the cancel returns `canceled`; an intent still able to succeed stays pending.
-- **Mirror retries never duplicate a Xano booking.** The booking post and the cash_sales post
-  are resumable separately; a booking post whose reply carried no id is left flagged for a
-  person instead of retried.
+- **Mirror retries never duplicate a Xano booking.** One caller at a time (the claim), the
+  booking id saved before the cash_sales post, and a retry after a possible partial post looks
+  the booking up in Xano first. A booking post whose reply carried no id is still left flagged
+  for a person instead of retried.
 - **After a completed card sale the Quick Sale form resets**; after a back-out only the guest
   fields clear and the counts stay.
 

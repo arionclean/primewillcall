@@ -166,6 +166,10 @@ Deno.serve(withSentry("kiosk-sale-start", async (req) => {
       .order("created_at", { ascending: false })
       .limit(5)
       .returns<SaleRow[]>();
+    // Every candidate is judged before any is attached: one match attaches, two or
+    // more is exactly the confusion that pays one guest's card against another
+    // guest's booking, so that case is refused and recorded instead of guessed.
+    const matches: SaleRow[] = [];
     for (let candidate of candidates ?? []) {
       if (candidate.status === "pending") {
         if (!candidate.payment_intent_id || !candidate.stripe_account_id) continue;
@@ -173,17 +177,50 @@ Deno.serve(withSentry("kiosk-sale-start", async (req) => {
         if (!r.ok || r.pi.status !== "succeeded") continue;
         candidate = (await completeSale(sb, candidate, "reuse", r.pi)).sale;
       }
+      if (candidate.status !== "paid" || candidate.tablet_acked_at) continue;
       if (canReuseSale(candidate, { amountCents: amount, customerName })) {
-        const acked = await ackSale(sb, candidate);
-        await logEvent(sb, {
-          ...meta,
-          ref: candidate.ref,
-          event: "sale_reused",
-          level: "warn",
-          payload: { attempted_ref: ref, customer_name: customerName, amount },
-        });
-        return json(paidPayload(acked, { reused: true }), 200);
+        matches.push(candidate);
+        continue;
       }
+      // Same kiosk, same price, never acknowledged: the old rule would have attached
+      // it. Record why this one did not, so a genuine crash retry that is turned
+      // away shows up in the event log rather than as a silent second charge.
+      await logEvent(sb, {
+        ...meta,
+        ref: candidate.ref,
+        event: "sale_reuse_refused",
+        level: "warn",
+        payload: {
+          attempted_ref: ref,
+          candidate_name: candidate.customer_name,
+          customer_name: customerName,
+          amount,
+          candidate_age_s: Math.round((Date.now() - new Date(candidate.created_at).getTime()) / 1000),
+        },
+      });
+    }
+    if (matches.length > 1) {
+      await logEvent(sb, {
+        ...meta,
+        ref,
+        event: "sale_reuse_ambiguous",
+        level: "error",
+        payload: {
+          candidates: matches.map((m) => ({ ref: m.ref, customer_name: m.customer_name })),
+          customer_name: customerName,
+          amount,
+        },
+      });
+    } else if (matches.length === 1) {
+      const acked = await ackSale(sb, matches[0]);
+      await logEvent(sb, {
+        ...meta,
+        ref: matches[0].ref,
+        event: "sale_reused",
+        level: "warn",
+        payload: { attempted_ref: ref, customer_name: customerName, amount },
+      });
+      return json(paidPayload(acked, { reused: true }), 200);
     }
   }
 

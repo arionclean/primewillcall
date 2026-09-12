@@ -48,23 +48,33 @@ const base = {
   created_at: CREATED,
 };
 
-Deno.test("canReuseSale: under two minutes, the same amount on an unacknowledged captured payment is enough", () => {
+Deno.test("canReuseSale: the same guest's crash retry is attached, at any age inside five minutes", () => {
   assertEquals(canReuseSale(base, { amountCents: 8025, customerName: "Rafael" }, t(48)), true);
-  assertEquals(canReuseSale(base, { amountCents: 8025, customerName: "Michelle" }, t(48)), true); // typo-tolerant window
+  assertEquals(canReuseSale(base, { amountCents: 8025, customerName: "rafael perez" }, t(180)), true);
+  assertEquals(canReuseSale(base, { amountCents: 8025, customerName: "Rafael" }, t(290)), true);
   assertEquals(canReuseSale(base, { amountCents: 5350, customerName: "Rafael" }, t(48)), false); // different amount, never
 });
 
-Deno.test("canReuseSale: two to five minutes needs the first name, prefix tolerant", () => {
-  assertEquals(canReuseSale(base, { amountCents: 8025, customerName: "rafael perez" }, t(180)), true);
-  assertEquals(canReuseSale({ ...base, customer_name: "Rachelle Moscozo" }, { amountCents: 8025, customerName: "Rachel" }, t(180)), true);
-  assertEquals(canReuseSale({ ...base, customer_name: "Rachel" }, { amountCents: 8025, customerName: "Rachelle" }, t(180)), true);
+Deno.test("canReuseSale: a different first name is never attached, not even in the first two minutes", () => {
+  // The price-only window is gone: kiosk tickets are a fixed price list, and a
+  // stranger paying the same price a minute later used to walk off with this payment.
+  assertEquals(canReuseSale(base, { amountCents: 8025, customerName: "Michelle" }, t(48)), false);
   assertEquals(canReuseSale(base, { amountCents: 8025, customerName: "Michelle" }, t(180)), false);
+});
+
+Deno.test("canReuseSale: first names are prefix tolerant, but not below three letters", () => {
+  assertEquals(canReuseSale({ ...base, customer_name: "Rachelle Moscozo" }, { amountCents: 8025, customerName: "Rachel" }, t(180)), true);
+  assertEquals(canReuseSale({ ...base, customer_name: "Rachel" }, { amountCents: 8025, customerName: "Rachelle" }, t(48)), true);
   assertEquals(canReuseSale(base, { amountCents: 8025, customerName: "Ra" }, t(180)), false); // too short to trust
 });
 
-Deno.test("canReuseSale: a sale with no real name is reused on amount alone inside five minutes", () => {
-  assertEquals(canReuseSale({ ...base, customer_name: "Walk-in" }, { amountCents: 8025, customerName: "Ana" }, t(200)), true);
-  assertEquals(canReuseSale({ ...base, customer_name: null }, { amountCents: 8025, customerName: "Ana" }, t(200)), true);
+Deno.test("canReuseSale: no real name on either side is never enough", () => {
+  assertEquals(canReuseSale({ ...base, customer_name: "Walk-in" }, { amountCents: 8025, customerName: "Ana" }, t(48)), false);
+  assertEquals(canReuseSale({ ...base, customer_name: null }, { amountCents: 8025, customerName: "Ana" }, t(48)), false);
+  assertEquals(canReuseSale({ ...base, customer_name: "Guest" }, { amountCents: 8025, customerName: "Guest" }, t(48)), false);
+  assertEquals(canReuseSale({ ...base, customer_name: "Walk-in" }, { amountCents: 8025, customerName: "Walk-in" }, t(48)), false);
+  assertEquals(canReuseSale(base, { amountCents: 8025, customerName: "" }, t(48)), false);
+  assertEquals(canReuseSale(base, { amountCents: 8025, customerName: null }, t(48)), false);
 });
 
 Deno.test("canReuseSale: never for an acknowledged, old, pending or abandoned sale", () => {

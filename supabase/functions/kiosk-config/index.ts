@@ -19,6 +19,9 @@ import {
 } from "../_shared/kiosk-sale.ts";
 import { withSentry } from "../_shared/sentry.ts";
 
+/** The only regions a tablet may be told to pin its payment calls to. */
+const EDGE_REGIONS = new Set(["us-west-2"]);
+
 Deno.serve(withSentry("kiosk-config", async (req) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
   if (!kioskAuthorized(req)) return json({ error: "unauthorized" }, 401);
@@ -36,6 +39,25 @@ Deno.serve(withSentry("kiosk-config", async (req) => {
   const resolved = await resolveKiosk(sb, slug);
   if (!resolved) return json({ error: "unknown_kiosk" }, 404);
   const { kiosk } = resolved;
+
+  // The faster-sale switches, read with their own query and defaulted to today's
+  // behaviour on any failure, so a column problem can never take the config down.
+  // Nothing new ever goes into resolveKiosk's select: it feeds thirteen functions.
+  // edge_region is allow-listed here as well as in the database, because a tablet
+  // will pin its payment calls to whatever string it is handed.
+  let edgeRegion: string | null = null;
+  let saleSettle: "inline" | "deferred" = "inline";
+  try {
+    const { data: sw } = await sb
+      .from("kiosks")
+      .select("edge_region, sale_settle")
+      .eq("id", kiosk.id)
+      .maybeSingle<{ edge_region: string | null; sale_settle: string | null }>();
+    if (sw?.edge_region && EDGE_REGIONS.has(sw.edge_region)) edgeRegion = sw.edge_region;
+    if (sw?.sale_settle === "deferred") saleSettle = "deferred";
+  } catch {
+    // defaults
+  }
 
   // When the kiosk asks for a PIN, the eligible employees ride along (id, name,
   // salted hash) so the tablet can check a PIN on the spot and unlock at once;
@@ -78,6 +100,11 @@ Deno.serve(withSentry("kiosk-config", async (req) => {
       // Where this tablet reads products, bookings and sales from. 'xano' until the
       // owner flips it; an older build never reads the field and keeps reading Xano.
       read_source: kiosk.read_source === "supabase" ? "supabase" : "xano",
+      // Where this tablet runs its two payment calls (null = platform default) and
+      // whether a paid sale may be settled after the reply. Both are per-kiosk
+      // switches; an older build never reads either and keeps today's behaviour.
+      edge_region: edgeRegion,
+      sale_settle: saleSettle,
       business_id: kiosk.business_id,
       employees,
       xano_mirror: xanoMirrorEnabled(),

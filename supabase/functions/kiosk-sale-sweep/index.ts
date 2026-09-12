@@ -155,6 +155,10 @@ Deno.serve(withSentry("kiosk-sale-sweep", async (req) => {
       .eq("status", "paid")
       .is("xano_mirrored_at", null)
       .or(`xano_error.is.null,xano_error.neq.${XANO_NO_ID}`)
+      // Give the tablet's own copy a minute, the same grace pass 1 gives a sale. This
+      // pass used to race the inline copy the moment a sale was paid; mirrorAndRecord's
+      // claim is what actually stops the double post, this just stops the contest.
+      .lt("paid_at", new Date(now - SWEEP_MIN_AGE_MS).toISOString())
       .gte("created_at", new Date(now - 24 * 3600_000).toISOString())
       .order("created_at", { ascending: true })
       .limit(20)
