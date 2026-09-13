@@ -69,7 +69,8 @@ Service-role writers have no `current_staff()` row and pass through.
 
 **View switches** (`can_view_details`, `can_view_attachments`) decide what the
 bookings page fetches and shows. Off, `can_view_details` leaves the desk with the ID,
-name, phone, guest count and check-in status (no note, no email, no edit form);
+name, phone, guest count, note and check-in status (no email, no edit form; the note
+stays because the desk needs it to check guests in);
 `can_view_attachments` off hides the voucher photos. `can_redeem_groupon` also gates
 seeing the Redemption Codes. These are screen-level: RLS is row-level and cannot hide
 a column, so `bookingSelect()` in `bookings/list.tsx` leaves the withheld columns out
@@ -155,7 +156,7 @@ records the update with its diff, so the owner sees who voided what and why. Bui
 on `cancelled` is deliberate: every manifest, report, message rule and the tablet
 already leave cancelled bookings out, so a voided booking stops counting with no other
 query touched. The screens tell the two apart by the stamp ("Voided" versus
-"Cancelled"), and `void_reason` is withheld like `notes` without `can_view_details`.
+"Cancelled"), and `void_reason` is withheld like the customer's email without `can_view_details`.
 
 Guards, in layers: the Void button needs `can_void_bookings` (owners always); the
 function re-checks it; RLS scopes which rows it reaches (SECURITY INVOKER); the

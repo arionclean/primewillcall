@@ -227,7 +227,7 @@ export type BookingRow = {
   /** The void stamp: set when staff void the booking. The row stays. */
   voided_at: string | null;
   voided_by_staff_id: string | null;
-  /** Why it was voided. Withheld like `notes` without "See full booking details". */
+  /** Why it was voided. Withheld, like the customer's email, without "See full booking details". */
   void_reason: string | null;
   /** The voider's name, through the staff join; null where staff RLS hides it. */
   voided_by: { full_name: string } | null;
@@ -1619,10 +1619,10 @@ function BookingRowItem({
   const voided = booking.voided_at != null;
   const badge = statusBadge(booking.status, voided);
   const paxBreakdown = describePax(booking);
-  // What "See full booking details" withholds on this row: the note and the
-  // edit form (which shows every field). bookingSelect already left the note
-  // out of the read; this keeps the rule visible where the row is drawn.
-  const note = caps.canViewDetails ? (booking.notes?.trim() ?? "") : "";
+  // Every account sees the note: the desk needs it to check guests in.
+  // What "See full booking details" withholds on this row is the edit form,
+  // which shows every field.
+  const note = booking.notes?.trim() ?? "";
   const canEdit = caps.canEditBookings && caps.canViewDetails;
   const photoUrls = caps.canViewAttachments ? booking.groupon_voucher_urls : [];
 
