@@ -331,6 +331,18 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   trigger or cron), then grant execute again and mount the block. In the same incident
   `rpcWithRetry` (`lib/dashboard/queries.ts`) was limited to socket failures: a
   cancelled statement is never retried.
+- **Xano's trigger does not retry** (seen 2026-09-13): when `xano-booking-sync` answers
+  5xx (a database stall, a deploy), every booking Xano created in that window never
+  arrives here, and the screens that read from here (web `/bookings`, any kiosk with
+  `read_source = 'supabase'`) cannot see those guests. Recovery: read the window's rows
+  from Xano's bookings table (table 64, read-only) and POST them as a JSON array to
+  `/functions/v1/kiosk-booking` (public, `verify_jwt` off, no shared secret set; it
+  forwards to the sync, which upserts on the booking key, so a resend is harmless).
+  Six bookings were restored that way after the 2026-09-13 stall. The real fix is a
+  bookings sweep like `kiosk-cash-sweep`. Also seen that night: the cash sweep and the
+  tablet's outbox can race into two ledger rows for one sale when the tablet's write
+  lands minutes late (`xano-cash:<id>` plus `KS-...:cash`). Void the sweep's copy with a
+  reason; nothing is deleted (`20260907240000_void_not_delete.sql`).
 - Customers list (scoped by business) not built.
 - Profile / settings not built.
 - **Messaging automations** (`/admin/messaging`) are built: owner rules grouped as
