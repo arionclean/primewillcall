@@ -324,6 +324,13 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   a mistyped password against Xano). So every tablet's password must exist here before
   build 17 goes out; the five check-in accounts already do. Wrong password answers
   Xano's "Invalid Credentials." verbatim.
+- **"Sold this year" sidebar block is off** (2026-09-13): `YtdSales` is not mounted
+  and `bookings_sales_ytd` has execute revoked from the app roles. Its scan of the
+  year's bookings ran on every owner page and, with the analytics aggregates, stalled
+  the database at Saturday peak. Bring it back only as a rollup (a small table kept by
+  trigger or cron), then grant execute again and mount the block. In the same incident
+  `rpcWithRetry` (`lib/dashboard/queries.ts`) was limited to socket failures: a
+  cancelled statement is never retried.
 - Customers list (scoped by business) not built.
 - Profile / settings not built.
 - **Messaging automations** (`/admin/messaging`) are built: owner rules grouped as
