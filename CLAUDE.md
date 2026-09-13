@@ -53,7 +53,7 @@ can_add_to_peek / can_redeem_groupon`), enforced in layers (UI, server action, R
 plus a bookings trigger that checks each stamp against its own switch and limits an
 account without edit to those stamps). Two are view switches
 (`can_view_details`, `can_view_attachments`): off, the bookings page shows only the
-ID, name, phone, guests and check-in status, or hides the voucher photos. Those are
+ID, name, phone, guests, notes and check-in status, or hides the voucher photos. Those are
 screen-level (RLS cannot hide a column): `bookingSelect()` leaves the withheld columns
 out of the read. One is a screen switch, `can_use_caja` (default on): whether a check-in
 login gets the Caja screen; `current_kiosk_slug()` returns NULL without it, so RLS

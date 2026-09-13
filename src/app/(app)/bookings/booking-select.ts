@@ -19,10 +19,12 @@ export type BookingViewCaps = Pick<
 /**
  * The columns the list reads, shaped by what this account may see. A column
  * an account may not see is left out of the query rather than hidden after
- * the fact, so it never reaches the device on the normal path: `notes`, the
- * customer's email and the reason a booking was voided are details, the
- * voucher photos are attachments, and the Redemption Codes go only to whoever
- * redeems. The void stamp itself (when, by whom) goes to every role, since the
+ * the fact, so it never reaches the device on the normal path: the customer's
+ * email and the reason a booking was voided are details, the voucher photos
+ * are attachments, and the Redemption Codes go only to whoever redeems. The
+ * booking's note is read by every account: the desk needs it to check guests
+ * in, so "See full booking details" off no longer hides it. The void stamp
+ * itself (when, by whom) goes to every role, since the
  * row reads "Voided" for everyone; the voider's name comes through the staff
  * join and resolves only where staff RLS lets this account read it. RLS is row-level and
  * cannot do this, which is why the same rule lives here and in the Realtime
@@ -60,7 +62,7 @@ export function bookingSelect(caps: BookingViewCaps): string {
   pax_adult,
   pax_child,
   pax_infant,
-  ${caps.canViewDetails ? "notes," : ""}
+  notes,
   business_tour:business_tours!bookings_business_tour_id_fkey(
     id,
     name,
@@ -92,7 +94,7 @@ export function normalizeBookingRow(raw: unknown): BookingRow {
 /** The row keys `bookingSelect` leaves out for this account. */
 export function withheldKeys(caps: BookingViewCaps): (keyof BookingRow)[] {
   const keys: (keyof BookingRow)[] = [];
-  if (!caps.canViewDetails) keys.push("notes", "void_reason");
+  if (!caps.canViewDetails) keys.push("void_reason");
   if (!caps.canViewAttachments) keys.push("groupon_voucher_urls");
   if (!caps.canRedeemGroupon) keys.push("groupon_voucher_codes");
   return keys;
