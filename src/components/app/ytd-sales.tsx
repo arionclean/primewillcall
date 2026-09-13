@@ -15,6 +15,11 @@ const KEY = ["bookings-sales-ytd"];
 /**
  * Bookings sold so far this year, at the foot of the owner's sidebar.
  *
+ * NOT MOUNTED since 2026-09-13. The aggregate behind it reads the whole year's
+ * bookings and ran once per owner page; at Saturday peak on the small compute
+ * it was one of the two reads that took the database down. Kept so it can
+ * return once bookings_sales_ytd is served from a rollup.
+ *
  * "Sold" is the sale date, not the departure: a booking made today for December
  * counts today. Same basis as the Sales tab on /analytics, which the block links
  * to so the detail is one click away.

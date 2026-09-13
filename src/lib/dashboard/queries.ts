@@ -329,17 +329,37 @@ export type SourceTourRow = {
  * fail with a transient `fetch failed` when undici reuses a keep-alive socket
  * that Supabase has already closed. Retry a couple of times with a short
  * backoff before giving up; the retry almost always succeeds on a fresh socket.
+ *
+ * Only that kind of failure is retried. An answer from Postgres is final: a
+ * statement cancelled at the role's timeout, an RLS denial, a bad argument.
+ * On 2026-09-13 the database stalled at Saturday peak and this wrapper re-ran
+ * every cancelled analytics query up to three times, so one open Analytics tab
+ * sent over a hundred heavy calls a minute and kept the box down.
  */
 async function rpcWithRetry<T extends { error: unknown }>(
   run: () => PromiseLike<T>,
   attempts = 3,
 ): Promise<T> {
   let result = await run();
-  for (let i = 1; i < attempts && result.error; i++) {
+  for (let i = 1; i < attempts && isTransportError(result.error); i++) {
     await new Promise((r) => setTimeout(r, 150 * i));
     result = await run();
   }
   return result;
+}
+
+/**
+ * A failure that never reached Postgres. Postgres answers carry a SQLSTATE
+ * (57014 is "cancelled at statement_timeout") and PostgREST its own PGRST
+ * codes; a dropped socket has no code and names the transport.
+ */
+function isTransportError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const { code, message } = error as { code?: string; message?: string };
+  if (code) return false;
+  return /fetch failed|ECONNRESET|ECONNREFUSED|EPIPE|socket|network/i.test(
+    message ?? "",
+  );
 }
 
 /** Pull a readable message out of a Supabase/Postgres error (avoids logging `{}`). */

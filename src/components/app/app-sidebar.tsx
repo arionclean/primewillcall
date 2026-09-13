@@ -25,7 +25,6 @@ import {
 import { cn } from "@/lib/utils";
 
 import { UnmatchedBadge } from "./unmatched-badge";
-import { YtdSales } from "./ytd-sales";
 import { buttonVariants } from "@/components/ui/button";
 import type { Database } from "@/lib/supabase/database.types";
 
@@ -273,9 +272,11 @@ export function AppSidebar({
         );
       })}
 
-      {/* The owner's running total. Last, so it reads as a summary of the
-          screens above rather than another link. */}
-      {role === "owner" && <YtdSales />}
+      {/* The owner's running total ("Sold this year", ./ytd-sales.tsx) used to
+          close the list. Off since 2026-09-13: its aggregate scanned the year's
+          bookings on every owner page and was one of the two reads that stalled
+          the database at Saturday peak. Mount it again once bookings_sales_ytd
+          reads a rollup instead of the bookings table. */}
     </nav>
   );
 }
