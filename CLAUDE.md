@@ -223,7 +223,8 @@ src/app/_archive, src/components/_archive   legacy Bubble pages, kept as referen
   aggregation into a Postgres function (RPC), e.g. `dashboard_monthly_guests`, which
   does `SUM`/`GROUP BY` in the database (using the `starts_at` index) and returns a
   handful of rows. Keep such functions `SECURITY INVOKER` so RLS still scopes them by
-  business. This is the pattern for reports and any future dashboards.
+  business. This is the pattern for reports and any future dashboards. A report over
+  bookings reads the `analytics_daily` rollup, never the bookings table (see Known gaps).
 
 ## The data model in one paragraph
 
@@ -324,13 +325,18 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   a mistyped password against Xano). So every tablet's password must exist here before
   build 17 goes out; the five check-in accounts already do. Wrong password answers
   Xano's "Invalid Credentials." verbatim.
-- **"Sold this year" sidebar block is off** (2026-09-13): `YtdSales` is not mounted
-  and `bookings_sales_ytd` has execute revoked from the app roles. Its scan of the
-  year's bookings ran on every owner page and, with the analytics aggregates, stalled
-  the database at Saturday peak. Bring it back only as a rollup (a small table kept by
-  trigger or cron), then grant execute again and mount the block. In the same incident
-  `rpcWithRetry` (`lib/dashboard/queries.ts`) was limited to socket failures: a
-  cancelled statement is never retried.
+- **Analytics rollup** (`analytics_daily`, 2026-09-13): every report aggregate
+  (`analytics_source_tour`, `analytics_kiosk_source_tour`, `analytics_daily_by_tour`,
+  `bookings_sales_ytd`) reads one small rollup table (one row per basis, New York day,
+  business, product, source, kiosk; about 34k rows for 98k bookings) instead of the
+  bookings table. A trigger on `bookings` applies each change's delta;
+  `analytics_daily_rebuild()` recomputes it nightly (pg_cron, 08:30 UTC) and whenever
+  it is in doubt. Labels join at read time, so renaming a source or product needs no
+  rebuild. Built after the 2026-09-13 stall, when these calls scanned the year's
+  bookings on every owner page and, retried by `rpcWithRetry` (now limited to socket
+  failures), took the database down. Unpaid checkouts (`awaiting_payment`) are out of
+  every report, including the monthly chart, which used to count them. See "Analytics
+  rollup" in [`docs/DATABASE.md`](docs/DATABASE.md).
 - **Xano's trigger does not retry** (seen 2026-09-13): when `xano-booking-sync` answers
   5xx (a database stall, a deploy), every booking Xano created in that window never
   arrives here, and the screens that read from here (web `/bookings`, any kiosk with

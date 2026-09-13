@@ -879,3 +879,64 @@ screen; nothing subscribes to it yet.
 - Timestamps are `timestamptz`; `created_at` / `updated_at` on every table.
 - Money is integer `*_cents`; never floats.
 - Business operating timezone is `America/New_York` (see `businesses.timezone`).
+
+## Analytics rollup (`analytics_daily`)
+
+Every report aggregate reads this table, never `bookings`. Migration
+`20260913234500_analytics_daily_rollup.sql`.
+
+**Why.** On 2026-09-13 the four report functions scanned the bookings table on every
+call (98,000 rows; the "sale" basis had no usable index). The sidebar's "Sold this
+year" did it on every owner page. Under Saturday-peak load, and re-run up to three
+times by a retry wrapper, they stalled the database for fifteen minutes. A report must
+not cost more as the business grows.
+
+**Shape.** One row per `(basis, day, business_id, business_tour_id, source, kiosk_id)`
+with `pax` and `bookings`. `basis` is `departure` (the day of `starts_at`) or `sale`
+(the day of `coalesce(booked_at, created_at)`); `day` is the New York calendar day.
+`source` is the trimmed `source_channel` (empty string when none); `kiosk_id` is
+`bookings.kiosk_id`, null for anything that is not a kiosk sale. Only bookings that
+count are in it: not cancelled, not an unpaid checkout (`awaiting_payment`). About
+34,000 rows and 8 MB for 98,000 bookings. The unique key is `nulls not distinct`, so
+rows without a kiosk still collapse into one.
+
+**Kept current.** The `analytics_daily_sync` trigger (after insert, update, delete on
+`bookings`) removes the old row's contribution and adds the new one, through
+`analytics_daily_apply(booking, sign)`. An update that changes nothing counted (a
+check-in, a note, a balance) writes nothing. `analytics_daily_rebuild()` truncates and
+recomputes the table from bookings; pg_cron runs it at 08:30 UTC (4:30 AM New York),
+and it is the answer whenever the rollup is in doubt. The rebuild also resolves the
+kiosk of the few legacy rows whose `kiosk_id` is null, through the ledgers
+(`cash_sales`, `kiosk_sales`, `stripe_transactions`), the way the old report did per
+call. Both functions are `SECURITY DEFINER` and revoked from the app roles: the
+trigger fires inside a staffer's own write, and the rebuild is the cron's.
+
+**Reads.** `analytics_source_tour`, `analytics_kiosk_source_tour`,
+`analytics_daily_by_tour` and `bookings_sales_ytd` keep their signatures and row
+shapes. They convert the `timestamptz` window to New York days, so callers must keep
+passing New York day boundaries (`getLocalDateRange`, `monthStartUtc`), as they do.
+`p_tz` on `analytics_daily_by_tour` is accepted and ignored: the rollup is New York
+only, which is the only zone the app reports in. Labels (`booking_source_labels`,
+`tour_analytics_labels`) join at read time, so a rename needs no rebuild. The source
+spelling shown for an unlabelled channel is the one with the most bookings in the
+window. `analytics_bookings` (the drill-down list, capped at 300 rows) still reads
+bookings directly, by design: it lists rows, it does not aggregate.
+
+**RLS.** `analytics_daily_select`: owner reads all, business manager reads own
+business, check-in nothing. The read functions stay `SECURITY INVOKER`, so the
+policy scopes them.
+
+**One behaviour change.** The monthly chart (`analytics_daily_by_tour`) used to count
+unpaid checkouts; it no longer does, like every other report.
+
+**Checking it.** Compare the rollup to bookings for a day:
+
+```sql
+select (select sum(bookings) from analytics_daily where basis = 'departure' and day = current_date),
+       (select count(*) from bookings
+         where (starts_at at time zone 'America/New_York')::date = current_date
+           and status <> 'cancelled' and not awaiting_payment);
+```
+
+If they differ, `select analytics_daily_rebuild();` as the `postgres` role.
+
