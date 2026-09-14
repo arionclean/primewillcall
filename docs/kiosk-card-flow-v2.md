@@ -193,6 +193,14 @@ Secrets used: `STRIPE_SECRET_KEY`, `XANO_WEBHOOK_SECRET`, `CRON_SECRET`, optiona
   more captured payments match. Refusals and ambiguities are logged (see above).
 - **Abandon only after Stripe confirms the cancel.** The sweep marks a sale abandoned only
   when the cancel returns `canceled`; an intent still able to succeed stays pending.
+- **A sale can hold both a QR page and a card request.** Staff open the QR, cancel it on the
+  tablet and take the card on the same sale (18 of the first 189 paid sales). The sweep asks
+  the card request FIRST: captured completes the sale, in flight is left alone, and a sale
+  written off has its card request cancelled along with its page. A sale paid through the
+  card while its page is still open gets the page closed
+  (`closeCheckoutSessionAfterCardPayment`), so a guest who scanned it cannot pay a second
+  time. The tablet does not yet tell the server when staff cancel the QR; that is the next
+  build.
 - **Mirror retries never duplicate a Xano booking.** One caller at a time (the claim), the
   booking id saved before the cash_sales post, and a retry after a possible partial post looks
   the booking up in Xano first. A booking post whose reply carried no id is still left flagged
