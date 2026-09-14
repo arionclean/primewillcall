@@ -864,6 +864,18 @@ subscriber, so an owner streams every business, a manager only their own, a kios
 its own. Client-side `filter:` arguments are an efficiency (they stop one business's
 traffic from waking another's screen), never a security boundary.
 
+**Policy functions must run as `anon` too.** Realtime evaluates that policy as the
+subscriber's JWT role, and a browser whose session has lapsed keeps its channels as
+`anon`. One subscriber the policy cannot even evaluate (it calls a function `anon` may
+not execute) throws inside `realtime.apply_rls`, which aborts the whole batch of changes
+for every subscriber on that table: the Realtime log fills with `permission denied for
+function current_staff` and staff have to refresh to see a kiosk sale (2026-09-14). So
+`current_staff()` grants EXECUTE to `anon` (migration
+`realtime_anon_can_execute_current_staff`). Nothing leaks: `auth.uid()` is NULL for
+`anon`, the function returns no row, and every policy built on it evaluates false. Any
+new function a policy on a published table calls needs the same grant, and that error in
+the Realtime log is the symptom to look for.
+
 **On the client**, prefer `useLiveRefresh` (`src/lib/realtime/use-live-refresh.ts`) for
 server-rendered screens: it subscribes for the signal and lets `router.refresh()` fetch
 the answer, so the query stays in Postgres and there is no second copy of the filter and
