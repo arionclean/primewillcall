@@ -936,3 +936,38 @@ export async function runAfterReply(label: string, work: () => Promise<unknown>)
   }
   await settled;
 }
+
+// ── a card payment on a sale that also has a QR page ──────────────────────────
+/**
+ * Close the sale's Checkout page once the sale has been paid through its card
+ * request instead. Staff open the QR page, cancel it on the tablet and take the card
+ * on the same sale (18 of the first 189 paid sales did that); nothing told Stripe, so
+ * the page stayed payable for a day, and a guest who had scanned it could pay it as
+ * well: a second charge for one sale. Runs AFTER the money is recorded and never
+ * fails the sale; a page Stripe will not close is logged for a person.
+ */
+export async function closeCheckoutSessionAfterCardPayment(
+  sb: SupabaseClient,
+  sale: SaleRow,
+  paidIntentId: string,
+): Promise<void> {
+  const stored = (sale.xano_payload as Record<string, unknown> | null) ?? {};
+  const sessionId = typeof stored.__checkout_session === "string" ? stored.__checkout_session : null;
+  if (!sessionId || !sale.stripe_account_id) return;
+  const base = { kioskId: sale.kiosk_id, kioskSlug: sale.kiosk_slug, businessId: sale.business_id, ref: sale.ref };
+  const r = await stripeRetrieveCheckoutSession(sessionId, sale.stripe_account_id);
+  if (!r.ok) {
+    await logEvent(sb, { ...base, event: "checkout_close_failed", level: "warn", payload: { session: sessionId, error: r.error } });
+    return;
+  }
+  // The page is how this sale was paid, or it is already closed: nothing to do.
+  if (r.session.payment_intent === paidIntentId) return;
+  if (r.session.status !== "open") return;
+  const closed = await stripeExpireCheckoutSession(sessionId, sale.stripe_account_id);
+  await logEvent(sb, {
+    ...base,
+    event: closed ? "checkout_closed_after_card" : "checkout_close_failed",
+    level: closed ? "info" : "warn",
+    payload: { session: sessionId, paid_intent: paidIntentId, session_status: r.session.status },
+  });
+}
