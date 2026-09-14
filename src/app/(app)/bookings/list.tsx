@@ -209,6 +209,8 @@ export type BookingRow = {
   id: string;
   starts_at: string;
   ends_at: string;
+  /** When the booking reached this platform. Orders a departure newest first. */
+  created_at: string;
   status: BookingStatus;
   total_cents: number;
   due_cents: number;
@@ -227,7 +229,7 @@ export type BookingRow = {
   /** The void stamp: set when staff void the booking. The row stays. */
   voided_at: string | null;
   voided_by_staff_id: string | null;
-  /** Why it was voided. Withheld like `notes` without "See full booking details". */
+  /** Why it was voided. Withheld, like the customer's email, without "See full booking details". */
   void_reason: string | null;
   /** The voider's name, through the staff join; null where staff RLS hides it. */
   voided_by: { full_name: string } | null;
@@ -651,9 +653,15 @@ function groupByTime(rows: BookingRow[]): Group[] {
   return Array.from(buckets.entries())
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([slotKey, metrics]) => {
+      // Inside a departure, the newest booking first: one that just came in sits
+      // at the top of its time instead of wherever the read happened to put it.
       const sortedRows = metrics.rows
         .slice()
-        .sort((a, b) => (a.starts_at < b.starts_at ? -1 : a.starts_at > b.starts_at ? 1 : 0));
+        .sort(
+          (a, b) =>
+            (a.starts_at < b.starts_at ? -1 : a.starts_at > b.starts_at ? 1 : 0) ||
+            Date.parse(b.created_at) - Date.parse(a.created_at),
+        );
       const d = new Date(metrics.first);
       const slotLabel = `${dateLabelFormatter.format(d)} ${timeLabelFormatter.format(d)}`;
       return {
@@ -1619,10 +1627,10 @@ function BookingRowItem({
   const voided = booking.voided_at != null;
   const badge = statusBadge(booking.status, voided);
   const paxBreakdown = describePax(booking);
-  // What "See full booking details" withholds on this row: the note and the
-  // edit form (which shows every field). bookingSelect already left the note
-  // out of the read; this keeps the rule visible where the row is drawn.
-  const note = caps.canViewDetails ? (booking.notes?.trim() ?? "") : "";
+  // Every account sees the note: the desk needs it to check guests in.
+  // What "See full booking details" withholds on this row is the edit form,
+  // which shows every field.
+  const note = booking.notes?.trim() ?? "";
   const canEdit = caps.canEditBookings && caps.canViewDetails;
   const photoUrls = caps.canViewAttachments ? booking.groupon_voucher_urls : [];
 

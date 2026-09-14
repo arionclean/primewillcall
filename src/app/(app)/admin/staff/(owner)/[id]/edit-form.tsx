@@ -159,7 +159,7 @@ const CAPABILITY_OPTIONS: {
   {
     name: "can_view_details",
     label: "See full booking details",
-    hint: "Off: only the ID, name, phone, guests and check-in status show. Notes, emails and the edit form stay hidden.",
+    hint: "Off: only the ID, name, phone, guests, notes and check-in status show. Emails and the edit form stay hidden.",
   },
   {
     name: "can_view_attachments",

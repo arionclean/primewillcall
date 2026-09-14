@@ -53,7 +53,7 @@ can_add_to_peek / can_redeem_groupon`), enforced in layers (UI, server action, R
 plus a bookings trigger that checks each stamp against its own switch and limits an
 account without edit to those stamps). Two are view switches
 (`can_view_details`, `can_view_attachments`): off, the bookings page shows only the
-ID, name, phone, guests and check-in status, or hides the voucher photos. Those are
+ID, name, phone, guests, notes and check-in status, or hides the voucher photos. Those are
 screen-level (RLS cannot hide a column): `bookingSelect()` leaves the withheld columns
 out of the read. One is a screen switch, `can_use_caja` (default on): whether a check-in
 login gets the Caja screen; `current_kiosk_slug()` returns NULL without it, so RLS
@@ -223,7 +223,8 @@ src/app/_archive, src/components/_archive   legacy Bubble pages, kept as referen
   aggregation into a Postgres function (RPC), e.g. `dashboard_monthly_guests`, which
   does `SUM`/`GROUP BY` in the database (using the `starts_at` index) and returns a
   handful of rows. Keep such functions `SECURITY INVOKER` so RLS still scopes them by
-  business. This is the pattern for reports and any future dashboards.
+  business. This is the pattern for reports and any future dashboards. A report over
+  bookings reads the `analytics_daily` rollup, never the bookings table (see Known gaps).
 
 ## The data model in one paragraph
 
@@ -324,6 +325,30 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   a mistyped password against Xano). So every tablet's password must exist here before
   build 17 goes out; the five check-in accounts already do. Wrong password answers
   Xano's "Invalid Credentials." verbatim.
+- **Analytics rollup** (`analytics_daily`, 2026-09-13): every report aggregate
+  (`analytics_source_tour`, `analytics_kiosk_source_tour`, `analytics_daily_by_tour`,
+  `bookings_sales_ytd`) reads one small rollup table (one row per basis, New York day,
+  business, product, source, kiosk; about 34k rows for 98k bookings) instead of the
+  bookings table. A trigger on `bookings` applies each change's delta;
+  `analytics_daily_rebuild()` recomputes it nightly (pg_cron, 08:30 UTC) and whenever
+  it is in doubt. Labels join at read time, so renaming a source or product needs no
+  rebuild. Built after the 2026-09-13 stall, when these calls scanned the year's
+  bookings on every owner page and, retried by `rpcWithRetry` (now limited to socket
+  failures), took the database down. Unpaid checkouts (`awaiting_payment`) are out of
+  every report, including the monthly chart, which used to count them. See "Analytics
+  rollup" in [`docs/DATABASE.md`](docs/DATABASE.md).
+- **Xano's trigger does not retry** (seen 2026-09-13): when `xano-booking-sync` answers
+  5xx (a database stall, a deploy), every booking Xano created in that window never
+  arrives here, and the screens that read from here (web `/bookings`, any kiosk with
+  `read_source = 'supabase'`) cannot see those guests. Recovery: read the window's rows
+  from Xano's bookings table (table 64, read-only) and POST them as a JSON array to
+  `/functions/v1/kiosk-booking` (public, `verify_jwt` off, no shared secret set; it
+  forwards to the sync, which upserts on the booking key, so a resend is harmless).
+  Six bookings were restored that way after the 2026-09-13 stall. The real fix is a
+  bookings sweep like `kiosk-cash-sweep`. Also seen that night: the cash sweep and the
+  tablet's outbox can race into two ledger rows for one sale when the tablet's write
+  lands minutes late (`xano-cash:<id>` plus `KS-...:cash`). Void the sweep's copy with a
+  reason; nothing is deleted (`20260907240000_void_not_delete.sql`).
 - Customers list (scoped by business) not built.
 - Profile / settings not built.
 - **Messaging automations** (`/admin/messaging`) are built: owner rules grouped as

@@ -274,7 +274,8 @@ export function AppSidebar({
       })}
 
       {/* The owner's running total. Last, so it reads as a summary of the
-          screens above rather than another link. */}
+          screens above rather than another link. Its aggregate reads the
+          analytics_daily rollup (a few milliseconds), not the bookings table. */}
       {role === "owner" && <YtdSales />}
     </nav>
   );

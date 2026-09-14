@@ -14,6 +14,54 @@ export type Database = {
   }
   public: {
     Tables: {
+      analytics_daily: {
+        Row: {
+          basis: string
+          bookings: number
+          business_id: string
+          business_tour_id: string
+          day: string
+          kiosk_id: string | null
+          pax: number
+          source: string
+        }
+        Insert: {
+          basis: string
+          bookings?: number
+          business_id: string
+          business_tour_id: string
+          day: string
+          kiosk_id?: string | null
+          pax?: number
+          source?: string
+        }
+        Update: {
+          basis?: string
+          bookings?: number
+          business_id?: string
+          business_tour_id?: string
+          day?: string
+          kiosk_id?: string | null
+          pax?: number
+          source?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "analytics_daily_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "analytics_daily_business_tour_id_fkey"
+            columns: ["business_tour_id"]
+            isOneToOne: false
+            referencedRelation: "business_tours"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       audit_log: {
         Row: {
           action: string
@@ -1112,8 +1160,10 @@ export type Database = {
           tablet_acked_at: string | null
           type: string
           updated_at: string
+          xano_booking_attempted_at: string | null
           xano_booking_id: string | null
           xano_error: string | null
+          xano_mirror_claimed_at: string | null
           xano_mirrored_at: string | null
           xano_payload: Json
           xano_payment_qr: string | null
@@ -1142,8 +1192,10 @@ export type Database = {
           tablet_acked_at?: string | null
           type?: string
           updated_at?: string
+          xano_booking_attempted_at?: string | null
           xano_booking_id?: string | null
           xano_error?: string | null
+          xano_mirror_claimed_at?: string | null
           xano_mirrored_at?: string | null
           xano_payload?: Json
           xano_payment_qr?: string | null
@@ -1172,8 +1224,10 @@ export type Database = {
           tablet_acked_at?: string | null
           type?: string
           updated_at?: string
+          xano_booking_attempted_at?: string | null
           xano_booking_id?: string | null
           xano_error?: string | null
+          xano_mirror_claimed_at?: string | null
           xano_mirrored_at?: string | null
           xano_payload?: Json
           xano_payment_qr?: string | null
@@ -1256,6 +1310,7 @@ export type Database = {
           card_flow: string
           closing_report_email: string | null
           created_at: string
+          edge_region: string | null
           id: string
           last_seen_at: string | null
           name: string
@@ -1267,6 +1322,7 @@ export type Database = {
           reader_block_battery_pct: number
           reader_low_battery_pct: number
           revoked_at: string | null
+          sale_settle: string
           simulated: boolean
           slug: string | null
           status: Database["public"]["Enums"]["kiosk_status"]
@@ -1282,6 +1338,7 @@ export type Database = {
           card_flow?: string
           closing_report_email?: string | null
           created_at?: string
+          edge_region?: string | null
           id?: string
           last_seen_at?: string | null
           name: string
@@ -1293,6 +1350,7 @@ export type Database = {
           reader_block_battery_pct?: number
           reader_low_battery_pct?: number
           revoked_at?: string | null
+          sale_settle?: string
           simulated?: boolean
           slug?: string | null
           status?: Database["public"]["Enums"]["kiosk_status"]
@@ -1308,6 +1366,7 @@ export type Database = {
           card_flow?: string
           closing_report_email?: string | null
           created_at?: string
+          edge_region?: string | null
           id?: string
           last_seen_at?: string | null
           name?: string
@@ -1319,6 +1378,7 @@ export type Database = {
           reader_block_battery_pct?: number
           reader_low_battery_pct?: number
           revoked_at?: string | null
+          sale_settle?: string
           simulated?: boolean
           slug?: string | null
           status?: Database["public"]["Enums"]["kiosk_status"]
@@ -2538,6 +2598,13 @@ export type Database = {
           tour: string
         }[]
       }
+      analytics_daily_apply: {
+        Args: {
+          b: Database["public"]["Tables"]["bookings"]["Row"]
+          sign: number
+        }
+        Returns: undefined
+      }
       analytics_daily_by_tour: {
         Args: { p_end: string; p_start: string; p_tz: string }
         Returns: {
@@ -2549,6 +2616,7 @@ export type Database = {
           tour: string
         }[]
       }
+      analytics_daily_rebuild: { Args: never; Returns: number }
       analytics_kiosk_bookings: {
         Args: {
           p_basis?: string

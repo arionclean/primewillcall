@@ -69,7 +69,8 @@ Service-role writers have no `current_staff()` row and pass through.
 
 **View switches** (`can_view_details`, `can_view_attachments`) decide what the
 bookings page fetches and shows. Off, `can_view_details` leaves the desk with the ID,
-name, phone, guest count and check-in status (no note, no email, no edit form);
+name, phone, guest count, note and check-in status (no email, no edit form; the note
+stays because the desk needs it to check guests in);
 `can_view_attachments` off hides the voucher photos. `can_redeem_groupon` also gates
 seeing the Redemption Codes. These are screen-level: RLS is row-level and cannot hide
 a column, so `bookingSelect()` in `bookings/list.tsx` leaves the withheld columns out
@@ -155,7 +156,7 @@ records the update with its diff, so the owner sees who voided what and why. Bui
 on `cancelled` is deliberate: every manifest, report, message rule and the tablet
 already leave cancelled bookings out, so a voided booking stops counting with no other
 query touched. The screens tell the two apart by the stamp ("Voided" versus
-"Cancelled"), and `void_reason` is withheld like `notes` without `can_view_details`.
+"Cancelled"), and `void_reason` is withheld like the customer's email without `can_view_details`.
 
 Guards, in layers: the Void button needs `can_void_bookings` (owners always); the
 function re-checks it; RLS scopes which rows it reaches (SECURITY INVOKER); the
@@ -863,6 +864,18 @@ subscriber, so an owner streams every business, a manager only their own, a kios
 its own. Client-side `filter:` arguments are an efficiency (they stop one business's
 traffic from waking another's screen), never a security boundary.
 
+**Policy functions must run as `anon` too.** Realtime evaluates that policy as the
+subscriber's JWT role, and a browser whose session has lapsed keeps its channels as
+`anon`. One subscriber the policy cannot even evaluate (it calls a function `anon` may
+not execute) throws inside `realtime.apply_rls`, which aborts the whole batch of changes
+for every subscriber on that table: the Realtime log fills with `permission denied for
+function current_staff` and staff have to refresh to see a kiosk sale (2026-09-14). So
+`current_staff()` grants EXECUTE to `anon` (migration
+`realtime_anon_can_execute_current_staff`). Nothing leaks: `auth.uid()` is NULL for
+`anon`, the function returns no row, and every policy built on it evaluates false. Any
+new function a policy on a published table calls needs the same grant, and that error in
+the Realtime log is the symptom to look for.
+
 **On the client**, prefer `useLiveRefresh` (`src/lib/realtime/use-live-refresh.ts`) for
 server-rendered screens: it subscribes for the signal and lets `router.refresh()` fetch
 the answer, so the query stays in Postgres and there is no second copy of the filter and
@@ -878,3 +891,64 @@ screen; nothing subscribes to it yet.
 - Timestamps are `timestamptz`; `created_at` / `updated_at` on every table.
 - Money is integer `*_cents`; never floats.
 - Business operating timezone is `America/New_York` (see `businesses.timezone`).
+
+## Analytics rollup (`analytics_daily`)
+
+Every report aggregate reads this table, never `bookings`. Migration
+`20260913234500_analytics_daily_rollup.sql`.
+
+**Why.** On 2026-09-13 the four report functions scanned the bookings table on every
+call (98,000 rows; the "sale" basis had no usable index). The sidebar's "Sold this
+year" did it on every owner page. Under Saturday-peak load, and re-run up to three
+times by a retry wrapper, they stalled the database for fifteen minutes. A report must
+not cost more as the business grows.
+
+**Shape.** One row per `(basis, day, business_id, business_tour_id, source, kiosk_id)`
+with `pax` and `bookings`. `basis` is `departure` (the day of `starts_at`) or `sale`
+(the day of `coalesce(booked_at, created_at)`); `day` is the New York calendar day.
+`source` is the trimmed `source_channel` (empty string when none); `kiosk_id` is
+`bookings.kiosk_id`, null for anything that is not a kiosk sale. Only bookings that
+count are in it: not cancelled, not an unpaid checkout (`awaiting_payment`). About
+34,000 rows and 8 MB for 98,000 bookings. The unique key is `nulls not distinct`, so
+rows without a kiosk still collapse into one.
+
+**Kept current.** The `analytics_daily_sync` trigger (after insert, update, delete on
+`bookings`) removes the old row's contribution and adds the new one, through
+`analytics_daily_apply(booking, sign)`. An update that changes nothing counted (a
+check-in, a note, a balance) writes nothing. `analytics_daily_rebuild()` truncates and
+recomputes the table from bookings; pg_cron runs it at 08:30 UTC (4:30 AM New York),
+and it is the answer whenever the rollup is in doubt. The rebuild also resolves the
+kiosk of the few legacy rows whose `kiosk_id` is null, through the ledgers
+(`cash_sales`, `kiosk_sales`, `stripe_transactions`), the way the old report did per
+call. Both functions are `SECURITY DEFINER` and revoked from the app roles: the
+trigger fires inside a staffer's own write, and the rebuild is the cron's.
+
+**Reads.** `analytics_source_tour`, `analytics_kiosk_source_tour`,
+`analytics_daily_by_tour` and `bookings_sales_ytd` keep their signatures and row
+shapes. They convert the `timestamptz` window to New York days, so callers must keep
+passing New York day boundaries (`getLocalDateRange`, `monthStartUtc`), as they do.
+`p_tz` on `analytics_daily_by_tour` is accepted and ignored: the rollup is New York
+only, which is the only zone the app reports in. Labels (`booking_source_labels`,
+`tour_analytics_labels`) join at read time, so a rename needs no rebuild. The source
+spelling shown for an unlabelled channel is the one with the most bookings in the
+window. `analytics_bookings` (the drill-down list, capped at 300 rows) still reads
+bookings directly, by design: it lists rows, it does not aggregate.
+
+**RLS.** `analytics_daily_select`: owner reads all, business manager reads own
+business, check-in nothing. The read functions stay `SECURITY INVOKER`, so the
+policy scopes them.
+
+**One behaviour change.** The monthly chart (`analytics_daily_by_tour`) used to count
+unpaid checkouts; it no longer does, like every other report.
+
+**Checking it.** Compare the rollup to bookings for a day:
+
+```sql
+select (select sum(bookings) from analytics_daily where basis = 'departure' and day = current_date),
+       (select count(*) from bookings
+         where (starts_at at time zone 'America/New_York')::date = current_date
+           and status <> 'cancelled' and not awaiting_payment);
+```
+
+If they differ, `select analytics_daily_rebuild();` as the `postgres` role.
+

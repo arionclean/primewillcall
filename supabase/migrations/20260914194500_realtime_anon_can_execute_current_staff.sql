@@ -1,0 +1,13 @@
+-- Realtime runs a table's SELECT policy once per subscriber, as that
+-- subscriber's role, before it fans a change out. A browser whose session has
+-- lapsed keeps its channels and now holds them as `anon`, and for that one
+-- subscriber the bookings policy calls current_staff(), which anon could not
+-- execute (revoked in 20260527120300). The error aborts the whole batch of
+-- changes, so nobody connected receives them: 279 "permission denied for
+-- function current_staff" in the Realtime log on 2026-09-14, and the desk had
+-- to refresh to see a kiosk sale.
+--
+-- anon gets EXECUTE. It reveals nothing: auth.uid() is NULL for anon, the
+-- function returns no row, every policy built on it evaluates false, and the
+-- batch reaches everyone else.
+GRANT EXECUTE ON FUNCTION public.current_staff() TO anon;
