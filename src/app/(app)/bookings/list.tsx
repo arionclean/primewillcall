@@ -209,6 +209,8 @@ export type BookingRow = {
   id: string;
   starts_at: string;
   ends_at: string;
+  /** When the booking reached this platform. Orders a departure newest first. */
+  created_at: string;
   status: BookingStatus;
   total_cents: number;
   due_cents: number;
@@ -651,9 +653,15 @@ function groupByTime(rows: BookingRow[]): Group[] {
   return Array.from(buckets.entries())
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([slotKey, metrics]) => {
+      // Inside a departure, the newest booking first: one that just came in sits
+      // at the top of its time instead of wherever the read happened to put it.
       const sortedRows = metrics.rows
         .slice()
-        .sort((a, b) => (a.starts_at < b.starts_at ? -1 : a.starts_at > b.starts_at ? 1 : 0));
+        .sort(
+          (a, b) =>
+            (a.starts_at < b.starts_at ? -1 : a.starts_at > b.starts_at ? 1 : 0) ||
+            Date.parse(b.created_at) - Date.parse(a.created_at),
+        );
       const d = new Date(metrics.first);
       const slotLabel = `${dateLabelFormatter.format(d)} ${timeLabelFormatter.format(d)}`;
       return {

@@ -41,6 +41,7 @@ export function bookingSelect(caps: BookingViewCaps): string {
   id,
   starts_at,
   ends_at,
+  created_at,
   status,
   total_cents,
   due_cents,
