@@ -111,6 +111,16 @@ verify_jwt = false
 [functions.kiosk-booking]
 verify_jwt = false
 
+# Kiosk card flow v1 (the tablets still on kiosks.card_flow = 'v1'): the Terminal
+# connection token and the card_present PaymentIntent. Public like the Xano endpoints
+# they replaced; the tablet sends no Supabase token. Deployed with JWT off since
+# 2026-07-12.
+[functions.kiosk-connection-token]
+verify_jwt = false
+
+[functions.kiosk-payment-intent]
+verify_jwt = false
+
 # Called by the bookings capacity triggers with x-cron-secret, not a user token.
 [functions.slot-capacity-alert]
 verify_jwt = false
