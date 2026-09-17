@@ -375,33 +375,34 @@ export function HoursView({
                                     >
                                       <PersonPhoto shift={s} size="size-8" />
                                     </button>
-                                    <span className="w-28 shrink-0 text-muted-foreground">
+                                    {/* Fixed widths, so the times and tablets line up down the column. */}
+                                    <span className="w-24 shrink-0 text-muted-foreground">
                                       {dayLabel(s.inAt)}
                                     </span>
-                                    <span className="tabular-nums">
+                                    <span className="w-[4.5rem] shrink-0 text-right tabular-nums">
                                       {timeLabel(s.inAt)}
-                                      <span className="px-1.5 text-muted-foreground">to</span>
+                                    </span>
+                                    <span className="w-5 shrink-0 text-center text-muted-foreground">to</span>
+                                    <span className="w-[4.5rem] shrink-0 tabular-nums">
                                       {s.outAt ? (
                                         timeLabel(s.outAt)
                                       ) : (
                                         <span className="text-muted-foreground">now</span>
                                       )}
                                     </span>
-                                    {s.inKiosk && (
-                                      <span className="text-xs text-muted-foreground">
-                                        {kioskLabel(s.inKiosk)}
-                                        {s.outKiosk && s.outKiosk !== s.inKiosk
-                                          ? ` to ${kioskLabel(s.outKiosk)}`
-                                          : ""}
-                                      </span>
-                                    )}
+                                    <span className="w-16 shrink-0 text-xs text-muted-foreground">
+                                      {s.inKiosk ? kioskLabel(s.inKiosk) : ""}
+                                      {s.outKiosk && s.outKiosk !== s.inKiosk
+                                        ? ` to ${kioskLabel(s.outKiosk)}`
+                                        : ""}
+                                    </span>
                                     {s.autoClosed && !s.reviewed && (
                                       <Badge tone="warning">Forgot to clock out</Badge>
                                     )}
                                     {s.edited && (
                                       <span className="text-xs text-muted-foreground">edited</span>
                                     )}
-                                    <span className="ml-auto font-medium tabular-nums">
+                                    <span className="ml-auto w-16 shrink-0 text-right font-medium tabular-nums">
                                       {formatMinutes(shiftMinutes(s, now))}
                                     </span>
                                     {s.autoClosed && !s.reviewed && (
