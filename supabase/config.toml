@@ -69,6 +69,19 @@ verify_jwt = true
 [functions.gp-book]
 verify_jwt = true
 
+# Deployed with the gateway check on, which is also the CLI default, so these entries
+# change nothing; they are here so this file names every function. stripe-connect and
+# payments are called from the browser with the staff member's own JWT (CLAUDE.md,
+# Payments); gp-shadow-compare is the shadow test's endpoint (docs/gp-shadow-test.md).
+[functions.stripe-connect]
+verify_jwt = true
+
+[functions.payments]
+verify_jwt = true
+
+[functions.gp-shadow-compare]
+verify_jwt = true
+
 # Kiosk card flow v2 (docs/kiosk-card-flow-v2.md). The tablet sends only the anon key,
 # like the other kiosk functions; kiosk-sale-sweep is pg_cron with x-cron-secret.
 [functions.kiosk-config]
