@@ -20,6 +20,7 @@ import {
   XANO_NO_ID,
   logEvent,
   abandonSale,
+  closeCheckoutSessionAfterCardPayment,
   completeSale,
   json,
   mirrorAndRecord,
@@ -36,6 +37,9 @@ import { withSentry } from "../_shared/sentry.ts";
 
 const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
 
+/** PaymentIntent statuses that mean nothing has been collected on it yet. */
+const UNCOLLECTED = ["requires_payment_method", "requires_confirmation", "requires_action"];
+
 Deno.serve(withSentry("kiosk-sale-sweep", async (req) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
   if (!CRON_SECRET || req.headers.get("x-cron-secret") !== CRON_SECRET) {
@@ -45,7 +49,7 @@ Deno.serve(withSentry("kiosk-sale-sweep", async (req) => {
 
   const sb = serviceClient();
   const now = Date.now();
-  const counts = { scanned: 0, completed: 0, abandoned: 0, mirrored: 0, errors: 0 };
+  const counts = { scanned: 0, completed: 0, abandoned: 0, mirrored: 0, errors: 0, waiting: 0 };
 
   // 1. Pending sales the tablet went quiet on.
   const { data: pending } = await sb
@@ -67,9 +71,36 @@ Deno.serve(withSentry("kiosk-sale-sweep", async (req) => {
     // paid while no tablet was watching still completes, and a session we give up
     // on is EXPIRED on Stripe first, so a late scan cannot charge a card against a
     // sale we already wrote off.
+    //
+    // A sale can also hold BOTH: staff open the QR page, cancel it, and take the card
+    // on the same sale (18 of the first 189 paid sales did exactly that). The card
+    // request is the one that can have captured money at the reader, so it is asked
+    // FIRST. A captured payment completes the sale, one still in flight is left alone,
+    // and when the sale is written off the card request is cancelled along with the
+    // page, so nothing chargeable is left open on a sale nobody is watching.
     const stored = (sale.xano_payload as Record<string, unknown> | null) ?? {};
     const sessionId = typeof stored.__checkout_session === "string" ? stored.__checkout_session : null;
     if (sessionId && sale.stripe_account_id) {
+      let cardStatus: string | null = null;
+      if (sale.payment_intent_id) {
+        const card = await stripeRetrievePaymentIntent(sale.payment_intent_id, sale.stripe_account_id);
+        if (!card.ok) {
+          counts.errors++;
+          continue;
+        }
+        cardStatus = card.pi.status;
+        if (cardStatus === "succeeded") {
+          const { already } = await completeSale(sb, sale, "sweep", card.pi);
+          if (!already) counts.completed++;
+          await closeCheckoutSessionAfterCardPayment(sb, sale, card.pi.id);
+          continue;
+        }
+        if (cardStatus !== "canceled" && !UNCOLLECTED.includes(cardStatus)) {
+          // "processing", or a status this code does not know: it may yet succeed.
+          counts.waiting++;
+          continue;
+        }
+      }
       const r = await stripeRetrieveCheckoutSession(sessionId, sale.stripe_account_id);
       if (!r.ok) {
         counts.errors++;
@@ -92,6 +123,24 @@ Deno.serve(withSentry("kiosk-sale-sweep", async (req) => {
           // Leave the sale pending; the next sweep asks again.
           counts.errors++;
           continue;
+        }
+        // The card request goes too. Cancel on Stripe FIRST and close the sale only
+        // once Stripe confirms, exactly as the reader-only path below does.
+        if (sale.payment_intent_id && cardStatus !== "canceled") {
+          const c = await stripeCancelPaymentIntent(sale.payment_intent_id, sale.stripe_account_id);
+          if (!(c.ok && c.pi.status === "canceled")) {
+            counts.errors++;
+            await logEvent(sb, {
+              kioskId: sale.kiosk_id,
+              kioskSlug: sale.kiosk_slug,
+              businessId: sale.business_id,
+              ref: sale.ref,
+              event: "sale_cancel_failed",
+              level: "warn",
+              payload: { error: c.ok ? c.pi.status : c.error, alongside: "checkout_expired" },
+            });
+            continue;
+          }
         }
         await abandonSale(sb, sale, "checkout_expired");
         counts.abandoned++;
@@ -121,8 +170,7 @@ Deno.serve(withSentry("kiosk-sale-sweep", async (req) => {
       counts.abandoned++;
       continue;
     }
-    const uncollected = ["requires_payment_method", "requires_confirmation", "requires_action"];
-    if (age > ABANDON_AFTER_MS && uncollected.includes(r.pi.status)) {
+    if (age > ABANDON_AFTER_MS && UNCOLLECTED.includes(r.pi.status)) {
       // Nothing was ever collected on it. Cancel on Stripe FIRST and close the sale only
       // once Stripe confirms the cancel, so an intent that is still able to succeed
       // (a "processing" one, or a cancel that failed) is never marked abandoned.
@@ -155,6 +203,10 @@ Deno.serve(withSentry("kiosk-sale-sweep", async (req) => {
       .eq("status", "paid")
       .is("xano_mirrored_at", null)
       .or(`xano_error.is.null,xano_error.neq.${XANO_NO_ID}`)
+      // Give the tablet's own copy a minute, the same grace pass 1 gives a sale. This
+      // pass used to race the inline copy the moment a sale was paid; mirrorAndRecord's
+      // claim is what actually stops the double post, this just stops the contest.
+      .lt("paid_at", new Date(now - SWEEP_MIN_AGE_MS).toISOString())
       .gte("created_at", new Date(now - 24 * 3600_000).toISOString())
       .order("created_at", { ascending: true })
       .limit(20)
