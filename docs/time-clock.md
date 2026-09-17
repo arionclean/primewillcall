@@ -41,11 +41,10 @@ record, so `kiosk-clock` proves the person itself, against the live employee lis
 ## What the owner sees: Team -> Hours
 
 Owner only (the tab, the page and the RLS policy all say so). The tab's pill is how
-many people are on the clock right now.
+many people are on the clock right now, and the screen is live: a clock in or out
+anywhere redraws it within a second (Realtime on `time_clock_shifts`). Whoever is
+still working shows an "On the clock" badge and a running total in the table.
 
-- **On the clock**: a card per person with their clock-in photo, since when, which
-  tablet, and the running total. Live: someone clocking in shows up within a second
-  (Realtime on `time_clock_shifts`).
 - **A range**: the same filter bar Analytics uses, a calendar for one day plus
   Today (the default), Yesterday, This week, Last week, This month, Last month and a
   custom From / To. Weeks start Monday.

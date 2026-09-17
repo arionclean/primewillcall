@@ -54,8 +54,6 @@ type Props = {
   /** Shifts waiting on the owner anywhere in the record, not just in this range. */
   needsReview: { count: number; from: string | null; to: string };
   shifts: ShiftRow[];
-  /** Everyone with a shift still running, whatever range is on screen. */
-  onTheClock: ShiftRow[];
   filters: { from: string; to: string };
   truncated: boolean;
   loadError: boolean;
@@ -156,7 +154,6 @@ export function HoursView({
   totals,
   needsReview,
   shifts,
-  onTheClock,
   filters,
   truncated,
   loadError,
@@ -182,12 +179,13 @@ export function HoursView({
   useLiveRefresh("time-clock", [{ table: "time_clock_shifts" }]);
 
   // An open shift is a running clock, so the minutes on screen have to move.
+  const anyRunning = shifts.some((s) => !s.outAt);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    if (onTheClock.length === 0) return;
+    if (!anyRunning) return;
     const t = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(t);
-  }, [onTheClock.length]);
+  }, [anyRunning]);
 
   function setRange(nextFrom: string, nextTo: string) {
     startTransition(() => router.push(`/admin/staff/hours?from=${nextFrom}&to=${nextTo}`));
@@ -221,43 +219,6 @@ export function HoursView({
           Could not load the hours. Refresh the page and try again.
         </p>
       )}
-
-      {/* ── Who is working right now ─────────────────────────────────────── */}
-      <section>
-        <h2 className="mb-2 text-sm font-medium text-muted-foreground">On the clock</h2>
-        {onTheClock.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nobody is clocked in right now.</p>
-        ) : (
-          <ul className="flex flex-wrap gap-3">
-            {onTheClock.map((s) => (
-              <li key={s.id}>
-                <Card>
-                  <CardContent className="flex items-center gap-3 py-3 pr-5">
-                    <button
-                      type="button"
-                      onClick={() => s.photoUrl && setPhoto(s)}
-                      className="rounded-full"
-                      aria-label={s.photoUrl ? `See ${s.name}'s clock-in photo` : s.name}
-                    >
-                      <PersonPhoto shift={s} size="size-11" />
-                    </button>
-                    <div>
-                      <p className="font-medium">{s.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        Since {timeLabel(s.inAt)}
-                        {s.inKiosk ? ` on ${kioskLabel(s.inKiosk)}` : ""} ·{" "}
-                        <span className="font-medium text-foreground">
-                          {formatMinutes(shiftMinutes(s, now))}
-                        </span>
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
 
       {/*
         One filter bar, the same one Analytics uses: a calendar that picks a

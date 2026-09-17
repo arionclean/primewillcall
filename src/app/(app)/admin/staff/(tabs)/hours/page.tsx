@@ -17,8 +17,8 @@ import { HoursView, type PersonTotal, type ShiftRow } from "../hours-view";
  *
  * The totals come from the time_clock_hours RPC (summed in Postgres, one row
  * per person) rather than from the shift rows, which are read for the list
- * itself. Anyone on the clock right now is fetched separately and ignores the
- * range: "who is working" is a question about now, whatever week is on screen.
+ * itself. Whoever is still on the clock shows up as an open shift in the range
+ * they clocked in on, badged in the table; the tab's own pill counts them.
  */
 
 /** A wide range still reads one page. 500 rows is about two months of a busy week. */
@@ -78,7 +78,7 @@ export default async function HoursPage({
   const endIso = nyLocalToUtcIso(shiftDayISO(to, 1), "00:00");
 
   const supabase = await getSupabaseServerClient();
-  const [totalsRes, shiftsRes, openRes, reviewRes] = await Promise.all([
+  const [totalsRes, shiftsRes, reviewRes] = await Promise.all([
     supabase.rpc("time_clock_hours", { p_start: startIso, p_end: endIso }),
     supabase
       .from("time_clock_shifts")
@@ -87,12 +87,6 @@ export default async function HoursPage({
       .lt("clock_in_at", endIso)
       .order("clock_in_at", { ascending: false })
       .limit(MAX_SHIFTS)
-      .returns<ShiftSelect[]>(),
-    supabase
-      .from("time_clock_shifts")
-      .select(SHIFT_COLUMNS)
-      .is("clock_out_at", null)
-      .order("clock_in_at", { ascending: true })
       .returns<ShiftSelect[]>(),
     // Shifts still waiting on the owner, whatever range is on screen: the
     // default view is today, and a clock out forgotten on Tuesday would
@@ -110,15 +104,12 @@ export default async function HoursPage({
 
   if (totalsRes.error) console.error("[hours] totals fetch error:", totalsRes.error);
   if (shiftsRes.error) console.error("[hours] shifts fetch error:", shiftsRes.error);
-  if (openRes.error) console.error("[hours] open shifts fetch error:", openRes.error);
-
   const shiftRows = shiftsRes.data ?? [];
-  const openRows = openRes.data ?? [];
 
   // The photos live in a private bucket, so each one needs a signed link. One
   // call for every photo on the page, and only the owner's session can get them.
   const paths = Array.from(
-    new Set([...shiftRows, ...openRows].map((s) => s.photo_path).filter((p): p is string => Boolean(p))),
+    new Set(shiftRows.map((s) => s.photo_path).filter((p): p is string => Boolean(p))),
   );
   const photos = new Map<string, string>();
   if (paths.length > 0) {
@@ -152,7 +143,6 @@ export default async function HoursPage({
         to: today,
       }}
       shifts={shiftRows.map((s) => toRow(s, photos))}
-      onTheClock={openRows.map((s) => toRow(s, photos))}
       filters={{ from, to }}
       truncated={shiftRows.length >= MAX_SHIFTS}
       loadError={Boolean(totalsRes.error || shiftsRes.error)}
