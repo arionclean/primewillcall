@@ -7,7 +7,7 @@
 // Supabase session. Optional hardening: if KIOSK_SHARED_SECRET is set, the caller
 // must send header `x-kiosk-secret: <that value>`.
 //
-// Body: { kiosk }          (kiosks.slug — the tablet's login username in the app)
+// Body: { kiosk }          (kiosks.slug, the tablet's login username in the app)
 // Response (Xano's shape): { secret, location, account, simulated }
 //
 // Secrets: STRIPE_SECRET_KEY (Prime's PLATFORM key). SUPABASE_URL +
