@@ -83,6 +83,11 @@ verify_jwt = false
 [functions.kiosk-sale-sweep]
 verify_jwt = false
 
+# pg_cron with x-cron-secret, like kiosk-sale-sweep. Imports the cash sales the
+# tablet delivered to Xano and never delivered here.
+[functions.kiosk-cash-sweep]
+verify_jwt = false
+
 [functions.kiosk-log]
 verify_jwt = false
 
