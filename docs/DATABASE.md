@@ -734,6 +734,56 @@ rows and the customers policy decides whether the name is readable (else "Guest"
 from the browser when a right-list item is clicked on `/analytics`; each row links to
 `/bookings?date=<day>&booking=<id>`, the deep link the bookings page already honours.
 
+## Time clock (`time_clock_shifts`)
+
+Desk staff clock in and out on the tablets with their PIN; the owner reads the hours on
+Team -> Hours. Full design in [`time-clock.md`](time-clock.md).
+
+### time_clock_shifts
+`id uuid pk, employee_id? (-> kiosk_employees, on delete set null), employee_name,
+clock_in_at, clock_in_kiosk_id?, clock_in_kiosk_slug?, photo_path?,
+clock_out_at?, clock_out_kiosk_id?, clock_out_kiosk_slug?,
+auto_closed_at?, reviewed_at?, edited_at?, created_at, updated_at`
+
+One row per worked shift, not one per punch: "who is on the clock" is
+`clock_out_at is null`, and a week of hours is a sum over a handful of rows. The name is
+copied onto the row (like `kiosk_events.employee_name`) so removing an employee never
+deletes their hours.
+
+- **`time_clock_shifts_open_idx`**, unique on `employee_id` where `clock_out_at is null`:
+  one open shift per person, whichever tablet they used. The kiosk-clock function treats
+  a 23505 here as "already clocked in", never an error.
+- **`auto_closed_at`** is set by the nightly job, not by a person. `auto_closed_at is not
+  null and reviewed_at is null` is what the screen flags as "Forgot to clock out".
+- **`photo_path`** points into the PRIVATE `time-clock-photos` bucket. Only the owner can
+  read an object there (storage policy `time_clock_photos_select`), through a signed URL
+  the page mints per request; the tablet's upload is service-role and bypasses RLS.
+- Published to `supabase_realtime`, so the owner's screen is live.
+- `trg_log_staff_change` is attached: every owner correction lands in `audit_log` and on
+  the Activity tab. The kiosk function's writes carry no `auth.uid()` and are skipped.
+
+**RLS: owner only**, one `for all` policy (`time_clock_shifts_owner_all`). No manager,
+no desk, no kiosk login can read a row. The tablets never touch the table directly; the
+`kiosk-clock` edge function does, with the service role, after checking the PIN itself.
+
+### time_clock_hours(p_start, p_end)
+Per-person totals for the Hours screen: `shifts`, `days` (distinct New York days),
+`minutes`, `open_shifts`, `needs_review`. `stable`, SECURITY INVOKER, so the owner-only
+policy still decides what it can see. An open shift counts up to `now()`, which is what
+makes "this week" read as the week so far. Shifts are filed under the day they started.
+
+### time_clock_auto_close()
+`security definer`, executable by nobody but the cron job (`revoke ... from public, anon,
+authenticated`). Closes every shift still open from an earlier New York day at that
+person's last `pin_ok` event of the day (else the clock-in time) and stamps
+`auto_closed_at`. Scheduled as `time-clock-auto-close`, `0 8 * * *` (4 AM New York).
+Returns how many it closed, so it can be run by hand and read.
+
+### kiosks.time_clock
+`boolean not null default false`. The rollout switch: `kiosk-config` serves it to the
+tablet (which shows the button) and `kiosk-clock` checks it on every call (so a tablet
+cannot clock anyone in on a kiosk that is off). Builds before 23 ignore it.
+
 ## Access control (RLS)
 
 RLS is enabled on all app tables. Every policy is expressed through the
@@ -850,7 +900,7 @@ have to be true in the database for that to work.
 
 **Published tables.** Postgres only emits changes for tables in the `supabase_realtime`
 publication. Currently: `bookings`, `kiosks`, `sms_messages`, `whatsapp_messages`,
-`stripe_transactions`, `stripe_refunds`, `cash_sales`, `staff`. A new live screen needs
+`stripe_transactions`, `stripe_refunds`, `cash_sales`, `staff`, `time_clock_shifts`. A new live screen needs
 its table added in a migration, or the client subscribes to silence. `staff` is not
 there for a screen: each signed-in account watches its own row so a permission edit can
 refresh its access token (see "The staff row in the access token" above).

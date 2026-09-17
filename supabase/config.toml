@@ -90,6 +90,10 @@ verify_jwt = false
 [functions.kiosk-pin-verify]
 verify_jwt = false
 
+# Clock in and out (docs/time-clock.md). Checks the PIN itself; same gate as the rest.
+[functions.kiosk-clock]
+verify_jwt = false
+
 # The two original kiosk writers, now in the repo (they gained employee attribution).
 [functions.kiosk-cash-sale]
 verify_jwt = false

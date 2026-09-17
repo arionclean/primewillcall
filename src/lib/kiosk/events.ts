@@ -29,6 +29,12 @@ const LABELS: Record<string, string> = {
   qr_scanned: "Scanned a ticket",
   receipt_printed: "Printed a receipt",
   sale_viewed: "Opened a sale",
+  // Time clock (tablet, then the owner's corrections on the web)
+  clock_in: "Clocked in",
+  clock_out: "Clocked out",
+  "time_clock_shifts.created": "Added a shift",
+  "time_clock_shifts.updated": "Fixed a shift",
+  "time_clock_shifts.deleted": "Removed a shift",
   // Guests and bookings (web)
   "bookings.created": "Created a booking",
   "bookings.updated": "Edited a booking",
@@ -140,6 +146,9 @@ export function eventLabel(event: string, changed: string[] = [], payload: Recor
     if (changed.includes("total_cents")) return "Changed a booking's price";
     if (changed.includes("notes")) return "Edited a booking's notes";
   }
+  if (event === "time_clock_shifts.updated" && changed.length === 1 && changed.includes("reviewed_at")) {
+    return "Confirmed a shift";
+  }
   if (event === "kiosk_employees.updated") {
     if (changed.includes("pin_hash")) return "Changed an employee's PIN";
     if (changed.includes("is_active")) return after("is_active") ? "Reactivated an employee" : "Deactivated an employee";
@@ -164,6 +173,8 @@ export const PERSON_EVENTS = new Set([
   "qr_scanned",
   "receipt_printed",
   "sale_viewed",
+  "clock_in",
+  "clock_out",
   "sale_recorded",
   "sale_details_entered",
   "sale_start",
@@ -271,6 +282,10 @@ export const EVENT_GROUPS = {
       "reader_low_battery",
     ],
   },
+  clock: {
+    label: "Time clock",
+    events: ["clock_in", "clock_out", ...crud(["time_clock_shifts"])],
+  },
   setup: {
     label: "Settings and setup",
     events: crud(SETUP_ENTITIES),
@@ -297,10 +312,12 @@ export function eventGroup(event: string): EventGroup | null {
     if (entity === "bookings" || entity === "customers") return "guests";
     if (entity.startsWith("cash_") || entity.startsWith("stripe_")) return "sales";
     if (entity === "employee") return "signins";
+    if (entity === "time_clock_shifts") return "clock";
     return null;
   }
   if (event.startsWith("sale_") || event.startsWith("card_")) return "sales";
   if (event.startsWith("pin_")) return "signins";
+  if (event.startsWith("clock_")) return "clock";
   if (event.startsWith("reader_")) return "reader";
   if (event.startsWith("app_") || event.startsWith("config_")) return "tablet";
   return null;
@@ -341,6 +358,12 @@ export function eventDetail(event: string, payload: Record<string, unknown> | nu
   if (typeof p.code === "string" && p.code) parts.push(p.code);
   if (typeof p.pct === "number") parts.push(`${p.pct}%`);
   if (typeof p.pax === "number") parts.push(`${p.pax} pax`);
+  if (event === "clock_out" && typeof p.minutes === "number") {
+    const h = Math.floor(p.minutes / 60);
+    const m = p.minutes % 60;
+    parts.push(h > 0 ? `${h}h ${m}m` : `${m}m`);
+  }
+  if (event === "clock_in" && p.photo === false) parts.push("no photo");
   if (event === "config_fetched" && typeof p.card_flow === "string") parts.push(`card flow ${p.card_flow}`);
   return parts.join(" · ");
 }

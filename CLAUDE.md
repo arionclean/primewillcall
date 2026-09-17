@@ -87,7 +87,8 @@ src/
           [id]/variants/new/   owner: add a business's copy of a tour
         staff/                 Team. (tabs)/ = accounts/ (owner: every login, grouped by
                                business; where Team opens), people/ (owner + manager: the PIN
-                               people) and activity/ (the tablets + web log); (owner)/ = new/[id]
+                               people), hours/ (owner: the tablets' time clock) and
+                               activity/ (the tablets + web log); (owner)/ = new/[id]
         unmatched/             owner-only. OTA email review queue (page + actions)
         groupon/               owner-only. per-product Groupon convenience fee config
         payments/              owner + manager. Stripe charges ledger + refunds
@@ -527,6 +528,25 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   `staff.pin_required` ("Shared computer") gets the same PIN keypad and stamps the
   employee through the `x-employee-id` header, and `activity_feed()` shows tablets and
   web as one stream. See [`docs/kiosk-employees.md`](docs/kiosk-employees.md).
+- **Time clock** (built 2026-09-17, switch still OFF everywhere): desk staff clock in and
+  out on the iPad with the PIN they already type for sales, and the owner reads the hours
+  on Team -> **Hours** (owner only, tab and RLS). One button does both directions: the
+  PIN goes to `kiosk-clock`, which answers who they are and whether a shift is running
+  (it must be the server: the employee pool is shared, so somebody can clock in at one
+  desk and out at another), then opens or closes it. Clocking IN takes a front-camera
+  photo into a **private** bucket the owner alone can read, through a signed URL; no
+  camera or a refused permission still clocks the person in, without a picture.
+  Online only, on purpose: the open shift lives on the server, so a queued punch could
+  not be reconciled honestly. One row per shift (`time_clock_shifts`), one open shift per
+  person enforced by a partial unique index. A **forgotten clock out** is closed nightly
+  by `time_clock_auto_close()` (pg_cron 08:00 UTC) at that person's last PIN of the day,
+  else at the clock-in time, and flagged until the owner confirms or fixes it: short
+  rather than long, never a number nobody checked. Totals come from the
+  `time_clock_hours` RPC, and the owner's edits are audited like any other staff edit.
+  Switch: `kiosks.time_clock` (default false), served by `kiosk-config` and enforced
+  again in `kiosk-clock`; tablet build 23+. **Left to do**: flip the switch per kiosk
+  once build 23 is out. Deliberately not built: breaks, pay rates, manager access,
+  adding a shift by hand. See [`docs/time-clock.md`](docs/time-clock.md).
 - **Payments (Stripe)** are largely built (Supabase-native replication of the live Xano
   Connect model; Xano is never written to). Model: Stripe Connect **direct charges** on each
   business's connected account with a platform `application_fee` (Prime's cut). Built:

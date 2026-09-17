@@ -49,9 +49,9 @@ which iPad; the employee PIN says who.
 
 ## The admin page: Team
 
-Three tabs (Accounts, People, Activity; Team opens on Accounts for the owner, on People
-for a manager), the model a new owner learns in one sentence: a **person** works here and
-types a PIN; an **account** is a login.
+Four tabs (Accounts, People, Hours, Activity; Team opens on Accounts for the owner, on
+People for a manager), the model a new owner learns in one sentence: a **person** works
+here and types a PIN; an **account** is a login.
 
 - **People** (`/admin/staff/people`, owner and any business manager; a manager changes
   things only with the `can_manage_team` switch, otherwise the list is read-only): the employees who type a
@@ -60,6 +60,9 @@ types a PIN; an **account** is a login.
   filtered to them), Change PIN, Deactivate / Reactivate, Remove (past activity keeps
   the name). **Add employee** is a small dialog: name, PIN, confirm. Nothing else on
   the tab, by the owner's choice: no intro text, no always-open form.
+- **Hours** (`/admin/staff/hours`, owner only): when those people clocked in and out on
+  the tablets, and the hours that add up to. Its own feature, described in
+  [`time-clock.md`](time-clock.md).
 - **Activity** (`/admin/staff/activity`, owner and manager): the log, described below.
   Its Person filter lists the people (by PIN) and the accounts (by login) under two
   headings.

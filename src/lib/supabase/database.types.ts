@@ -1328,6 +1328,7 @@ export type Database = {
           status: Database["public"]["Enums"]["kiosk_status"]
           stripe_account_id: string | null
           terminal_location_id: string | null
+          time_clock: boolean
           updated_at: string
           xano_company_id: string | null
           xano_kiosk_id: string | null
@@ -1356,6 +1357,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["kiosk_status"]
           stripe_account_id?: string | null
           terminal_location_id?: string | null
+          time_clock?: boolean
           updated_at?: string
           xano_company_id?: string | null
           xano_kiosk_id?: string | null
@@ -1384,6 +1386,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["kiosk_status"]
           stripe_account_id?: string | null
           terminal_location_id?: string | null
+          time_clock?: boolean
           updated_at?: string
           xano_company_id?: string | null
           xano_kiosk_id?: string | null
@@ -2145,6 +2148,82 @@ export type Database = {
             columns: ["source_moved_by"]
             isOneToOne: false
             referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      time_clock_shifts: {
+        Row: {
+          auto_closed_at: string | null
+          clock_in_at: string
+          clock_in_kiosk_id: string | null
+          clock_in_kiosk_slug: string | null
+          clock_out_at: string | null
+          clock_out_kiosk_id: string | null
+          clock_out_kiosk_slug: string | null
+          created_at: string
+          edited_at: string | null
+          employee_id: string | null
+          employee_name: string
+          id: string
+          photo_path: string | null
+          reviewed_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          auto_closed_at?: string | null
+          clock_in_at: string
+          clock_in_kiosk_id?: string | null
+          clock_in_kiosk_slug?: string | null
+          clock_out_at?: string | null
+          clock_out_kiosk_id?: string | null
+          clock_out_kiosk_slug?: string | null
+          created_at?: string
+          edited_at?: string | null
+          employee_id?: string | null
+          employee_name: string
+          id?: string
+          photo_path?: string | null
+          reviewed_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          auto_closed_at?: string | null
+          clock_in_at?: string
+          clock_in_kiosk_id?: string | null
+          clock_in_kiosk_slug?: string | null
+          clock_out_at?: string | null
+          clock_out_kiosk_id?: string | null
+          clock_out_kiosk_slug?: string | null
+          created_at?: string
+          edited_at?: string | null
+          employee_id?: string | null
+          employee_name?: string
+          id?: string
+          photo_path?: string | null
+          reviewed_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "time_clock_shifts_clock_in_kiosk_id_fkey"
+            columns: ["clock_in_kiosk_id"]
+            isOneToOne: false
+            referencedRelation: "kiosks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "time_clock_shifts_clock_out_kiosk_id_fkey"
+            columns: ["clock_out_kiosk_id"]
+            isOneToOne: false
+            referencedRelation: "kiosks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "time_clock_shifts_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "kiosk_employees"
             referencedColumns: ["id"]
           },
         ]
@@ -3082,6 +3161,19 @@ export type Database = {
       text_array_union: {
         Args: { a: string[]; b: string[] }
         Returns: string[]
+      }
+      time_clock_auto_close: { Args: never; Returns: number }
+      time_clock_hours: {
+        Args: { p_end: string; p_start: string }
+        Returns: {
+          days: number
+          employee_id: string
+          employee_name: string
+          minutes: number
+          needs_review: number
+          open_shifts: number
+          shifts: number
+        }[]
       }
       void_booking: {
         Args: { p_booking_id: string; p_reason: string }
