@@ -135,6 +135,9 @@ docs/                          ARCHITECTURE, DATABASE, platform-migration, shadc
 scripts/                       import_legacy_bookings.py (one-way Xano -> Supabase tunnel);
                                reconcile_xano_ghosts.py (bookings Xano deleted that still
                                count here: dry run reports, --live VOIDS them, never deletes);
+                               reconcile_xano_cancellations.py (bookings Xano cancelled that
+                               are still active here: dry run reports, --live voids them;
+                               matches on Xano's unique ids only, never a shared reference);
                                reconcile_kiosk_sales.py (kiosk sales Xano has and we do
                                not: dry run reports both directions, --live imports only
                                the Xano-only ones. Skips days before a kiosk went live
