@@ -46,12 +46,17 @@ many people are on the clock right now.
 - **On the clock**: a card per person with their clock-in photo, since when, which
   tablet, and the running total. Live: someone clocking in shows up within a second
   (Realtime on `time_clock_shifts`).
-- **A range** (This week by default; weeks start Monday), with the usual presets and a
-  custom From / To.
+- **A range**: the same filter bar Analytics uses, a calendar for one day plus
+  Today (the default), Yesterday, This week, Last week, This month, Last month and a
+  custom From / To. Weeks start Monday.
 - **Hours per person**: days worked, shifts, total. Summed in Postgres by the
   `time_clock_hours` RPC, never by adding rows up in the browser.
 - **Every shift in the range**, grouped by day, each with its photo, times, tablet and
   hours.
+- **A banner for anything waiting on the owner**, counted across the whole record rather
+  than the range on screen (the default view is today, and a clock out forgotten on
+  Tuesday would otherwise never be in front of anyone). "Show them" widens the range to
+  the oldest one.
 - **Export CSV** for payroll: date, person, in, out, decimal hours, tablet, note.
 
 ### Fixing things

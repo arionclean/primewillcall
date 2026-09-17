@@ -6,12 +6,14 @@ import { useActionState, useEffect, useMemo, useState, useTransition } from "rea
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { DateField } from "@/components/ui/date-field";
 import { Dialog } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { SEGMENT, SEGMENT_ITEM, SEGMENT_OFF, SEGMENT_ON } from "@/components/ui/segment";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { useLiveRefresh } from "@/lib/realtime/use-live-refresh";
+import { cn } from "@/lib/utils";
 
 import {
   confirmShiftAction,
@@ -19,14 +21,7 @@ import {
   updateShiftAction,
   type HoursActionState,
 } from "./hours-actions";
-import {
-  decimalHours,
-  detectPreset,
-  formatMinutes,
-  presetRange,
-  RANGE_PRESETS,
-  type PresetKey,
-} from "./hours-range";
+import { decimalHours, formatMinutes, hoursPresets } from "./hours-range";
 
 export type ShiftRow = {
   id: string;
@@ -55,6 +50,8 @@ export type PersonTotal = {
 
 type Props = {
   totals: PersonTotal[];
+  /** Shifts waiting on the owner anywhere in the record, not just in this range. */
+  needsReview: { count: number; from: string | null; to: string };
   shifts: ShiftRow[];
   /** Everyone with a shift still running, whatever range is on screen. */
   onTheClock: ShiftRow[];
@@ -149,11 +146,26 @@ function PersonPhoto({ shift, size = "size-10" }: { shift: ShiftRow; size?: stri
   );
 }
 
-export function HoursView({ totals, shifts, onTheClock, filters, truncated, loadError }: Props) {
+export function HoursView({
+  totals,
+  needsReview,
+  shifts,
+  onTheClock,
+  filters,
+  truncated,
+  loadError,
+}: Props) {
   const router = useRouter();
-  const [preset, setPreset] = useState<PresetKey>(() => detectPreset(filters.from, filters.to));
-  const [from, setFrom] = useState(filters.from);
-  const [to, setTo] = useState(filters.to);
+  const presets = hoursPresets();
+  // The From / To pair is only open when the range on screen is not a preset and
+  // not a single day, the same rule the analytics bar follows.
+  const [custom, setCustom] = useState(
+    () =>
+      filters.from !== filters.to &&
+      !presets.some((p) => p.from === filters.from && p.to === filters.to),
+  );
+  const from = filters.from;
+  const to = filters.to;
   const [editing, setEditing] = useState<ShiftRow | null>(null);
   const [photo, setPhoto] = useState<ShiftRow | null>(null);
   const [, startTransition] = useTransition();
@@ -169,27 +181,12 @@ export function HoursView({ totals, shifts, onTheClock, filters, truncated, load
     return () => clearInterval(t);
   }, [onTheClock.length]);
 
-  function pushFilters(next: { from?: string; to?: string }) {
-    const params = new URLSearchParams();
-    params.set("from", next.from ?? from);
-    params.set("to", next.to ?? to);
-    startTransition(() => router.push(`/admin/staff/hours?${params.toString()}`));
+  function setRange(nextFrom: string, nextTo: string) {
+    startTransition(() => router.push(`/admin/staff/hours?from=${nextFrom}&to=${nextTo}`));
   }
 
-  function onPresetChange(key: PresetKey) {
-    setPreset(key);
-    const range = presetRange(key);
-    if (!range) return; // "Custom" just reveals the two date inputs
-    setFrom(range.from);
-    setTo(range.to);
-    pushFilters(range);
-  }
-
-  const grandTotal = useMemo(
-    () => ({
-      minutes: totals.reduce((sum, t) => sum + t.minutes, 0),
-      review: totals.reduce((sum, t) => sum + t.needsReview, 0),
-    }),
+  const totalMinutes = useMemo(
+    () => totals.reduce((sum, t) => sum + t.minutes, 0),
     [totals],
   );
 
@@ -266,56 +263,77 @@ export function HoursView({ totals, shifts, onTheClock, filters, truncated, load
         )}
       </section>
 
-      {/* ── Range ────────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-          Range
-          <Select
-            value={preset}
-            onChange={(e) => onPresetChange(e.target.value as PresetKey)}
-            className="h-9 w-[10rem]"
-          >
-            {RANGE_PRESETS.map((p) => (
-              <option key={p.key} value={p.key}>
-                {p.label}
-              </option>
-            ))}
-            <option value="custom">Custom</option>
-          </Select>
-        </label>
-        {preset === "custom" && (
-          <>
-            <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-              From
-              <Input
-                type="date"
-                value={from}
-                onChange={(e) => {
-                  setFrom(e.target.value);
-                  if (e.target.value) pushFilters({ from: e.target.value });
-                }}
-                className="h-9 w-[9.5rem]"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-              To
-              <Input
-                type="date"
-                value={to}
-                onChange={(e) => {
-                  setTo(e.target.value);
-                  if (e.target.value) pushFilters({ to: e.target.value });
-                }}
-                className="h-9 w-[9.5rem]"
-              />
-            </label>
-          </>
+      {/*
+        One filter bar, the same one Analytics uses: a calendar that picks a
+        single day, the ranges in a segmented control, and Custom to open a
+        From / To pair. The field carries no label; the tab above says what
+        this is.
+      */}
+      <div className="flex flex-wrap items-center gap-2">
+        {custom ? (
+          <div className="inline-flex items-center gap-1.5">
+            <DateField
+              value={from}
+              onChange={(e) => e.target.value && setRange(e.target.value, to)}
+              aria-label="From date"
+              className="h-8 w-[9rem] text-xs"
+            />
+            <span className="text-xs text-muted-foreground">to</span>
+            <DateField
+              value={to}
+              onChange={(e) => e.target.value && setRange(from, e.target.value)}
+              aria-label="To date"
+              className="h-8 w-[9rem] text-xs"
+            />
+          </div>
+        ) : (
+          <DateField
+            value={from === to ? from : ""}
+            onChange={(e) => {
+              const day = e.target.value;
+              if (day) setRange(day, day);
+            }}
+            aria-label="Day"
+            className="h-8 w-[9rem] text-xs"
+          />
         )}
-        <div className="ml-auto">
-          <Button type="button" variant="outline" size="sm" onClick={exportCsv} disabled={shifts.length === 0}>
-            Export CSV
-          </Button>
+
+        <div className={SEGMENT}>
+          {presets.map((p) => (
+            <button
+              key={p.label}
+              type="button"
+              onClick={() => {
+                setCustom(false);
+                setRange(p.from, p.to);
+              }}
+              className={cn(
+                SEGMENT_ITEM,
+                !custom && p.from === from && p.to === to ? SEGMENT_ON : SEGMENT_OFF,
+              )}
+            >
+              {p.label}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => setCustom(true)}
+            className={cn(SEGMENT_ITEM, custom ? SEGMENT_ON : SEGMENT_OFF)}
+          >
+            Custom
+          </button>
         </div>
+
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={exportCsv}
+          disabled={shifts.length === 0}
+          className="ml-auto"
+        >
+          Export CSV
+        </Button>
       </div>
 
       {/* ── Hours per person ─────────────────────────────────────────────── */}
@@ -369,7 +387,7 @@ export function HoursView({ totals, shifts, onTheClock, filters, truncated, load
                     Everyone
                   </td>
                   <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
-                    {formatMinutes(grandTotal.minutes)}
+                    {formatMinutes(totalMinutes)}
                   </td>
                 </tr>
               </tfoot>
@@ -378,11 +396,27 @@ export function HoursView({ totals, shifts, onTheClock, filters, truncated, load
         </CardContent>
       </Card>
 
-      {grandTotal.review > 0 && (
-        <p className="text-sm text-amber-700">
-          {grandTotal.review === 1 ? "One shift needs" : `${grandTotal.review} shifts need`} a look:
-          somebody forgot to clock out and the times below are a guess.
-        </p>
+      {needsReview.count > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <span>
+            {needsReview.count === 1
+              ? "One shift needs a look"
+              : `${needsReview.count} shifts need a look`}
+            : somebody forgot to clock out, so the hours are a guess until you say.
+          </span>
+          {needsReview.from && (
+            <button
+              type="button"
+              onClick={() => {
+                setCustom(true);
+                setRange(needsReview.from as string, needsReview.to);
+              }}
+              className="ml-auto rounded-md border border-amber-300 bg-background px-2.5 py-1 text-xs font-medium text-amber-900 transition hover:bg-amber-100"
+            >
+              Show them
+            </button>
+          )}
+        </div>
       )}
 
       {/* ── Every shift in the range ─────────────────────────────────────── */}

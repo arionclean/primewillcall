@@ -14,44 +14,29 @@ export function weekStartISO(iso: string): string {
   return shiftDayISO(iso, dow === 0 ? -6 : 1 - dow);
 }
 
-export const RANGE_PRESETS = [
-  { key: "week", label: "This week" },
-  { key: "lastWeek", label: "Last week" },
-  { key: "today", label: "Today" },
-  { key: "month", label: "This month" },
-  { key: "lastMonth", label: "Last month" },
-] as const;
-
-export type PresetKey = (typeof RANGE_PRESETS)[number]["key"] | "custom";
-
-export function presetRange(key: PresetKey): { from: string; to: string } | null {
-  const today = nyDateISO();
-  switch (key) {
-    case "week":
-      return { from: weekStartISO(today), to: today };
-    case "lastWeek": {
-      const lastMonday = shiftDayISO(weekStartISO(today), -7);
-      return { from: lastMonday, to: shiftDayISO(lastMonday, 6) };
-    }
-    case "today":
-      return { from: today, to: today };
-    case "month":
-      return { from: `${today.slice(0, 8)}01`, to: today };
-    case "lastMonth": {
-      const lastOfPrev = shiftDayISO(`${today.slice(0, 8)}01`, -1);
-      return { from: `${lastOfPrev.slice(0, 8)}01`, to: lastOfPrev };
-    }
-    default:
-      return null;
-  }
+/**
+ * The presets on the filter bar, in the order they appear. Same shape as the
+ * analytics bar: each one is a finished range, so the active one is simply the
+ * one whose dates match the URL.
+ */
+export function hoursPresets(today: string = nyDateISO()): { label: string; from: string; to: string }[] {
+  const thisMonday = weekStartISO(today);
+  const lastMonday = shiftDayISO(thisMonday, -7);
+  const firstOfMonth = `${today.slice(0, 8)}01`;
+  const lastOfPrevMonth = shiftDayISO(firstOfMonth, -1);
+  return [
+    { label: "Today", from: today, to: today },
+    { label: "Yesterday", from: shiftDayISO(today, -1), to: shiftDayISO(today, -1) },
+    { label: "This week", from: thisMonday, to: today },
+    { label: "Last week", from: lastMonday, to: shiftDayISO(lastMonday, 6) },
+    { label: "This month", from: firstOfMonth, to: today },
+    { label: "Last month", from: `${lastOfPrevMonth.slice(0, 8)}01`, to: lastOfPrevMonth },
+  ];
 }
 
-export function detectPreset(from: string, to: string): PresetKey {
-  for (const p of RANGE_PRESETS) {
-    const range = presetRange(p.key);
-    if (range && range.from === from && range.to === to) return p.key;
-  }
-  return "custom";
+/** What the screen opens on: today, the question a desk asks most. */
+export function defaultRange(today: string = nyDateISO()): { from: string; to: string } {
+  return { from: today, to: today };
 }
 
 /** 492 -> "8h 12m". Minutes alone under an hour, so a short shift reads right. */

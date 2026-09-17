@@ -5,7 +5,7 @@ import { nyDateISO, nyLocalToUtcIso, shiftDayISO } from "@/lib/dashboard/queries
 import { parseLocalYmd } from "@/lib/dates";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
-import { presetRange } from "../hours-range";
+import { defaultRange } from "../hours-range";
 import { HoursView, type PersonTotal, type ShiftRow } from "../hours-view";
 
 /**
@@ -70,7 +70,7 @@ export default async function HoursPage({
 
   const sp = await searchParams;
   const today = nyDateISO();
-  const thisWeek = presetRange("week") ?? { from: today, to: today };
+  const thisWeek = defaultRange(today);
   const from = parseLocalYmd(sp.from) ?? thisWeek.from;
   const to = parseLocalYmd(sp.to) ?? thisWeek.to;
   // Business-time day bounds, end exclusive: the same window the RPC sums over.
@@ -78,7 +78,7 @@ export default async function HoursPage({
   const endIso = nyLocalToUtcIso(shiftDayISO(to, 1), "00:00");
 
   const supabase = await getSupabaseServerClient();
-  const [totalsRes, shiftsRes, openRes] = await Promise.all([
+  const [totalsRes, shiftsRes, openRes, reviewRes] = await Promise.all([
     supabase.rpc("time_clock_hours", { p_start: startIso, p_end: endIso }),
     supabase
       .from("time_clock_shifts")
@@ -94,6 +94,18 @@ export default async function HoursPage({
       .is("clock_out_at", null)
       .order("clock_in_at", { ascending: true })
       .returns<ShiftSelect[]>(),
+    // Shifts still waiting on the owner, whatever range is on screen: the
+    // default view is today, and a clock out forgotten on Tuesday would
+    // otherwise never be in front of anyone. The oldest one gives the banner
+    // a range to jump to.
+    supabase
+      .from("time_clock_shifts")
+      .select("clock_in_at", { count: "exact" })
+      .not("auto_closed_at", "is", null)
+      .is("reviewed_at", null)
+      .order("clock_in_at", { ascending: true })
+      .limit(1)
+      .returns<{ clock_in_at: string }[]>(),
   ]);
 
   if (totalsRes.error) console.error("[hours] totals fetch error:", totalsRes.error);
@@ -129,9 +141,16 @@ export default async function HoursPage({
     needsReview: Number(t.needs_review ?? 0),
   }));
 
+  const oldestFlagged = reviewRes.data?.[0]?.clock_in_at ?? null;
+
   return (
     <HoursView
       totals={totals}
+      needsReview={{
+        count: reviewRes.count ?? 0,
+        from: oldestFlagged ? nyDateISO(new Date(oldestFlagged)) : null,
+        to: today,
+      }}
       shifts={shiftRows.map((s) => toRow(s, photos))}
       onTheClock={openRows.map((s) => toRow(s, photos))}
       filters={{ from, to }}
