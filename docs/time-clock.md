@@ -50,7 +50,9 @@ many people are on the clock right now.
   Today (the default), Yesterday, This week, Last week, This month, Last month and a
   custom From / To. Weeks start Monday.
 - **Hours per person**: days worked, shifts, total. Summed in Postgres by the
-  `time_clock_hours` RPC, never by adding rows up in the browser.
+  `time_clock_hours` RPC, never by adding rows up in the browser. Clicking a person
+  opens their shifts underneath, each with the exact clock in and clock out times, the
+  tablet, a thumbnail of the clock-in photo (tap it for the full size) and Edit.
 - **Every shift in the range**, grouped by day, each with its photo, times, tablet and
   hours.
 - **A banner for anything waiting on the owner**, counted across the whole record rather

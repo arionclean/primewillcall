@@ -1,7 +1,8 @@
 "use client";
 
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useActionState, useEffect, useMemo, useState, useTransition } from "react";
+import { Fragment, useActionState, useEffect, useMemo, useState, useTransition } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -100,6 +101,11 @@ function shiftMinutes(s: ShiftRow, now: number): number {
   return Math.max(0, Math.round((end - new Date(s.inAt).getTime()) / 60000));
 }
 
+/** One key per person, falling back to the name for somebody since removed. */
+function personKey(employeeId: string | null, name: string): string {
+  return employeeId ?? `name:${name}`;
+}
+
 function kioskLabel(slug: string | null): string {
   if (!slug) return "";
   return slug.charAt(0).toUpperCase() + slug.slice(1);
@@ -166,6 +172,8 @@ export function HoursView({
   );
   const from = filters.from;
   const to = filters.to;
+  // Clicking a person opens their shifts underneath, with the exact times.
+  const [openPerson, setOpenPerson] = useState<string | null>(null);
   const [editing, setEditing] = useState<ShiftRow | null>(null);
   const [photo, setPhoto] = useState<ShiftRow | null>(null);
   const [, startTransition] = useTransition();
@@ -356,28 +364,118 @@ export function HoursView({
                   </td>
                 </tr>
               ) : (
-                totals.map((t) => (
-                  <tr key={`${t.employeeId ?? "gone"}-${t.name}`} className="border-b last:border-0">
-                    <td className="px-4 py-2.5">
-                      <span className="font-medium">{t.name}</span>
-                      {t.open > 0 && (
-                        <Badge tone="success" className="ml-2">
-                          On the clock
-                        </Badge>
+                totals.map((t) => {
+                  const key = personKey(t.employeeId, t.name);
+                  const open = openPerson === key;
+                  const theirs = shifts.filter((s) => personKey(s.employeeId, s.name) === key);
+                  return (
+                    <Fragment key={key}>
+                      <tr
+                        className={cn(
+                          "cursor-pointer border-b transition last:border-0 hover:bg-muted/40",
+                          open && "bg-muted/40",
+                        )}
+                        onClick={() => setOpenPerson(open ? null : key)}
+                        aria-expanded={open}
+                      >
+                        <td className="px-4 py-2.5">
+                          {open ? (
+                            <ChevronDown className="mr-1.5 inline size-3.5 text-muted-foreground" />
+                          ) : (
+                            <ChevronRight className="mr-1.5 inline size-3.5 text-muted-foreground" />
+                          )}
+                          <span className="font-medium">{t.name}</span>
+                          {t.open > 0 && (
+                            <Badge tone="success" className="ml-2">
+                              On the clock
+                            </Badge>
+                          )}
+                          {t.needsReview > 0 && (
+                            <Badge tone="warning" className="ml-2">
+                              {t.needsReview} to review
+                            </Badge>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5 text-muted-foreground">{t.days}</td>
+                        <td className="px-4 py-2.5 text-muted-foreground">{t.shifts}</td>
+                        <td className="px-4 py-2.5 text-right font-medium tabular-nums">
+                          {formatMinutes(t.minutes)}
+                        </td>
+                      </tr>
+                      {open && (
+                        <tr className="border-b bg-muted/20 last:border-0">
+                          <td colSpan={4} className="px-4 py-3">
+                            {theirs.length === 0 ? (
+                              <p className="text-sm text-muted-foreground">
+                                No shifts in this range.
+                              </p>
+                            ) : (
+                              <ul className="space-y-1.5">
+                                {theirs.map((s) => (
+                                  <li key={s.id} className="flex flex-wrap items-center gap-3 text-sm">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (s.photoUrl) setPhoto(s);
+                                      }}
+                                      className="rounded-full"
+                                      aria-label={
+                                        s.photoUrl ? `See ${s.name}'s clock-in photo` : s.name
+                                      }
+                                    >
+                                      <PersonPhoto shift={s} size="size-8" />
+                                    </button>
+                                    <span className="w-28 shrink-0 text-muted-foreground">
+                                      {dayLabel(s.inAt)}
+                                    </span>
+                                    <span className="tabular-nums">
+                                      {timeLabel(s.inAt)}
+                                      <span className="px-1.5 text-muted-foreground">to</span>
+                                      {s.outAt ? (
+                                        timeLabel(s.outAt)
+                                      ) : (
+                                        <span className="text-muted-foreground">now</span>
+                                      )}
+                                    </span>
+                                    {s.inKiosk && (
+                                      <span className="text-xs text-muted-foreground">
+                                        {kioskLabel(s.inKiosk)}
+                                        {s.outKiosk && s.outKiosk !== s.inKiosk
+                                          ? ` to ${kioskLabel(s.outKiosk)}`
+                                          : ""}
+                                      </span>
+                                    )}
+                                    {s.autoClosed && !s.reviewed && (
+                                      <Badge tone="warning">Forgot to clock out</Badge>
+                                    )}
+                                    {s.edited && (
+                                      <span className="text-xs text-muted-foreground">edited</span>
+                                    )}
+                                    <span className="ml-auto font-medium tabular-nums">
+                                      {formatMinutes(shiftMinutes(s, now))}
+                                    </span>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setEditing(s);
+                                      }}
+                                    >
+                                      Edit
+                                    </Button>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </td>
+                        </tr>
                       )}
-                      {t.needsReview > 0 && (
-                        <Badge tone="warning" className="ml-2">
-                          {t.needsReview} to review
-                        </Badge>
-                      )}
-                    </td>
-                    <td className="px-4 py-2.5 text-muted-foreground">{t.days}</td>
-                    <td className="px-4 py-2.5 text-muted-foreground">{t.shifts}</td>
-                    <td className="px-4 py-2.5 text-right font-medium tabular-nums">
-                      {formatMinutes(t.minutes)}
-                    </td>
-                  </tr>
-                ))
+                    </Fragment>
+                  );
+                })
               )}
             </tbody>
             {totals.length > 1 && (
