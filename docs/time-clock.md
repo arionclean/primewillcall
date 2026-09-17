@@ -52,9 +52,9 @@ many people are on the clock right now.
 - **Hours per person**: days worked, shifts, total. Summed in Postgres by the
   `time_clock_hours` RPC, never by adding rows up in the browser. Clicking a person
   opens their shifts underneath, each with the exact clock in and clock out times, the
-  tablet, a thumbnail of the clock-in photo (tap it for the full size) and Edit.
-- **Every shift in the range**, grouped by day, each with its photo, times, tablet and
-  hours.
+  tablet, a thumbnail of the clock-in photo (tap it for the full size), the flags and
+  the actions. That table is the whole screen: an earlier day-by-day list of every
+  shift said the same things twice and the owner asked for it to go.
 - **A banner for anything waiting on the owner**, counted across the whole record rather
   than the range on screen (the default view is today, and a clock out forgotten on
   Tuesday would otherwise never be in front of anyone). "Show them" widens the range to

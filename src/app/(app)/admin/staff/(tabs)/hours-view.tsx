@@ -198,18 +198,6 @@ export function HoursView({
     [totals],
   );
 
-  // The list, split into the days it covers, newest day first.
-  const byDay = useMemo(() => {
-    const groups = new Map<string, ShiftRow[]>();
-    for (const s of shifts) {
-      const key = dayValue(s.inAt);
-      const list = groups.get(key);
-      if (list) list.push(s);
-      else groups.set(key, [s]);
-    }
-    return Array.from(groups.entries());
-  }, [shifts]);
-
   function exportCsv() {
     downloadCsv(
       from === to ? `hours-${from}.csv` : `hours-${from}_to_${to}.csv`,
@@ -455,6 +443,14 @@ export function HoursView({
                                     <span className="ml-auto font-medium tabular-nums">
                                       {formatMinutes(shiftMinutes(s, now))}
                                     </span>
+                                    {s.autoClosed && !s.reviewed && (
+                                      <form action={confirmShiftAction} onClick={(e) => e.stopPropagation()}>
+                                        <input type="hidden" name="shift_id" value={s.id} />
+                                        <SubmitButton variant="outline" size="sm">
+                                          Looks right
+                                        </SubmitButton>
+                                      </form>
+                                    )}
                                     <Button
                                       type="button"
                                       variant="ghost"
@@ -494,13 +490,19 @@ export function HoursView({
         </CardContent>
       </Card>
 
+      {truncated && (
+        <p className="text-sm text-muted-foreground">
+          Showing the most recent shifts only. Pick a shorter range to see the rest.
+        </p>
+      )}
+
       {needsReview.count > 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
           <span>
             {needsReview.count === 1
               ? "One shift needs a look"
               : `${needsReview.count} shifts need a look`}
-            : somebody forgot to clock out, so the hours are a guess until you say.
+            : somebody forgot to clock out.
           </span>
           {needsReview.from && (
             <button
@@ -516,62 +518,6 @@ export function HoursView({
           )}
         </div>
       )}
-
-      {/* ── Every shift in the range ─────────────────────────────────────── */}
-      <section className="space-y-4">
-        {byDay.map(([day, rows]) => (
-          <div key={day}>
-            <h3 className="mb-1.5 text-sm font-medium">{dayLabel(rows[0].inAt)}</h3>
-            <Card>
-              <CardContent className="divide-y p-0">
-                {rows.map((s) => (
-                  <div key={s.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
-                    <button
-                      type="button"
-                      onClick={() => s.photoUrl && setPhoto(s)}
-                      className="rounded-full"
-                      aria-label={s.photoUrl ? `See ${s.name}'s clock-in photo` : s.name}
-                    >
-                      <PersonPhoto shift={s} />
-                    </button>
-                    <div className="min-w-0 flex-1">
-                      <p className="font-medium">{s.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {timeLabel(s.inAt)} to {s.outAt ? timeLabel(s.outAt) : "now"}
-                        {s.inKiosk ? ` · ${kioskLabel(s.inKiosk)}` : ""}
-                        {s.edited ? " · edited" : ""}
-                      </p>
-                    </div>
-                    {!s.outAt && <Badge tone="success">On the clock</Badge>}
-                    {s.autoClosed && !s.reviewed && <Badge tone="warning">Forgot to clock out</Badge>}
-                    <span className="w-20 text-right font-medium tabular-nums">
-                      {formatMinutes(shiftMinutes(s, now))}
-                    </span>
-                    <div className="flex items-center gap-2">
-                      {s.autoClosed && !s.reviewed && (
-                        <form action={confirmShiftAction}>
-                          <input type="hidden" name="shift_id" value={s.id} />
-                          <SubmitButton variant="outline" size="sm">
-                            Looks right
-                          </SubmitButton>
-                        </form>
-                      )}
-                      <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(s)}>
-                        Edit
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          </div>
-        ))}
-        {truncated && (
-          <p className="text-sm text-muted-foreground">
-            Showing the most recent shifts only. Pick a shorter range to see the rest.
-          </p>
-        )}
-      </section>
 
       {editing && <EditShiftDialog shift={editing} onClose={() => setEditing(null)} />}
       {photo?.photoUrl && (
