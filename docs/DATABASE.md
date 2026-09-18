@@ -553,7 +553,10 @@ business's current account.
 - `payments_summary(p_start, p_end, p_business, p_source)` — the same totals plus kiosk cash
   (`cash_sales` where `type='cash'` only; its `card` rows mirror Stripe charges and would
   double count). Backs the `/admin/payments` summary cards (never sum the ledger in JS: the
-  1000-row read cap would truncate).
+  1000-row read cap would truncate). `card_gross` / `cash_total` are what was taken and
+  `card_refunded` / `cash_refunded` what went back (`refunded` is their sum, kept for older
+  callers). The cards show each tender less its own refunds, with "$x refunded" under it:
+  refunded cash left the drawer, so the Cash card must match what the desk holds.
 - `payments_feed(p_start, p_end, p_business, p_source, p_q, p_limit, p_offset)` — one page of
   the merged card + cash feed, newest first, with the whole-range row count in `total_count`
   (a `count(*) over ()` computed before the LIMIT). The union, sort, paging and count all
@@ -597,7 +600,8 @@ role. `stripe_events`: RLS on, no policies (service-role only).
 - **Payments dashboard** (`/admin/payments`, owner + `business_manager`; `check_in` is
   redirected out since it has no ledger read): a merged card + cash table (date range,
   source and owner business filters, search, paged 50 at a time via `payments_feed`) plus
-  summary cards from `payments_summary`. The range defaults to the current month to date.
+  summary cards from `payments_summary` (Total, Card, Cash, each net of its refunds). The
+  range defaults to the current month to date.
 - **Move a sale to another kiosk** (`moveSaleSource` in `admin/payments/actions.ts`): a
   tablet sometimes rings up a sale that belongs to another kiosk, so owner and the
   business's own manager can re-tag it. No money moves, so there is no passcode. It writes

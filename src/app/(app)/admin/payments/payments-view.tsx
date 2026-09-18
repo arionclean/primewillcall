@@ -106,9 +106,10 @@ type CashFeedItem = Extract<FeedItem, { kind: "cash" }>;
 type Summary = {
   card_gross: number;
   card_count: number;
-  refunded: number;
+  card_refunded: number;
   cash_total: number;
   cash_count: number;
+  cash_refunded: number;
 } | null;
 
 // Non-kiosk channels; kiosk options come from the kiosks table (selling
@@ -1216,31 +1217,61 @@ export function PaymentsView({
 }
 
 function SummaryCards({ summary }: { summary: Summary }) {
-  const cardGross = summary?.card_gross ?? 0;
   const cardCount = summary?.card_count ?? 0;
-  const cashTotal = summary?.cash_total ?? 0;
   const cashCount = summary?.cash_count ?? 0;
-  const refunded = summary?.refunded ?? 0;
-  const total = cardGross + cashTotal;
+  const cardRefunded = summary?.card_refunded ?? 0;
+  const cashRefunded = summary?.cash_refunded ?? 0;
+  // What was kept: each tender less its own refunds. Cash handed back left the
+  // drawer, so the Cash card matches what the desk should hold. The refund is
+  // still shown under the figure it came off.
+  const cardNet = (summary?.card_gross ?? 0) - cardRefunded;
+  const cashNet = (summary?.cash_total ?? 0) - cashRefunded;
   const count = cardCount + cashCount;
 
-  const cards: { label: string; value: string; hint?: string }[] = [
-    { label: "Gross", value: formatCents(total), hint: `${count} sale${count === 1 ? "" : "s"}` },
-    { label: "Card", value: formatCents(cardGross), hint: `${cardCount} charge${cardCount === 1 ? "" : "s"}` },
-    { label: "Cash", value: formatCents(cashTotal), hint: `${cashCount} sale${cashCount === 1 ? "" : "s"}` },
-    { label: "Refunded", value: formatCents(refunded) },
+  const cards: {
+    label: string;
+    value: string;
+    hint: string;
+    refunded: number;
+    className?: string;
+  }[] = [
+    {
+      label: "Total",
+      value: formatCents(cardNet + cashNet),
+      hint: `${count} sale${count === 1 ? "" : "s"}`,
+      refunded: cardRefunded + cashRefunded,
+      // Full width on a phone, so Card and Cash sit side by side under it.
+      className: "col-span-2 sm:col-span-1",
+    },
+    {
+      label: "Card",
+      value: formatCents(cardNet),
+      hint: `${cardCount} charge${cardCount === 1 ? "" : "s"}`,
+      refunded: cardRefunded,
+    },
+    {
+      label: "Cash",
+      value: formatCents(cashNet),
+      hint: `${cashCount} sale${cashCount === 1 ? "" : "s"}`,
+      refunded: cashRefunded,
+    },
   ];
 
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
       {cards.map((c) => (
-        <Card key={c.label}>
+        <Card key={c.label} className={c.className}>
           <CardContent className="py-4">
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               {c.label}
             </p>
             <p className="mt-1 text-xl font-semibold tracking-tight">{c.value}</p>
-            {c.hint && <p className="text-xs text-muted-foreground">{c.hint}</p>}
+            <p className="text-xs text-muted-foreground">{c.hint}</p>
+            {c.refunded > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {formatCents(c.refunded)} refunded
+              </p>
+            )}
           </CardContent>
         </Card>
       ))}
