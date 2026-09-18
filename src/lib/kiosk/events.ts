@@ -32,6 +32,8 @@ const LABELS: Record<string, string> = {
   // Time clock (tablet, then the owner's corrections on the web)
   clock_in: "Clocked in",
   clock_out: "Clocked out",
+  clock_camera_off: "Could not clock in: camera unavailable",
+  clock_photo_failed: "Could not take the clock-in photo",
   "time_clock_shifts.created": "Added a shift",
   "time_clock_shifts.updated": "Fixed a shift",
   "time_clock_shifts.deleted": "Removed a shift",
@@ -284,7 +286,7 @@ export const EVENT_GROUPS = {
   },
   clock: {
     label: "Time clock",
-    events: ["clock_in", "clock_out", ...crud(["time_clock_shifts"])],
+    events: ["clock_in", "clock_out", "clock_camera_off", "clock_photo_failed", ...crud(["time_clock_shifts"])],
   },
   setup: {
     label: "Settings and setup",

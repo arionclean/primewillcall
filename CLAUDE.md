@@ -533,9 +533,11 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   on Team -> **Hours** (owner only, tab and RLS). One button does both directions: the
   PIN goes to `kiosk-clock`, which answers who they are and whether a shift is running
   (it must be the server: the employee pool is shared, so somebody can clock in at one
-  desk and out at another), then opens or closes it. Clocking IN takes a front-camera
-  photo into a **private** bucket the owner alone can read, through a signed URL; no
-  camera or a refused permission still clocks the person in, without a picture.
+  desk and out at another), then opens or closes it. Clocking IN **requires** a
+  front-camera photo (no photo, no clock in: the tablet will not send one without it and
+  `kiosk-clock` refuses it as `photo_required`), stored in a **private** bucket the owner
+  alone can read, through a signed URL. A refused camera permission gets a screen that
+  sends the person to Settings, and every blocked attempt is logged (`clock_camera_off`).
   Online only, on purpose: the open shift lives on the server, so a queued punch could
   not be reconciled honestly. One row per shift (`time_clock_shifts`), one open shift per
   person enforced by a partial unique index. A **forgotten clock out** is closed nightly

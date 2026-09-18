@@ -4,7 +4,8 @@
 // the clock, and record the punch), because the person is standing there waiting:
 //
 //   op=status  ->  who the PIN belongs to and their open shift, if any
-//   op=in      ->  opens a shift; multipart, with the front-camera photo
+//   op=in      ->  opens a shift; multipart, with the front-camera photo (required:
+//                  none, and it answers photo_required without writing anything)
 //   op=out     ->  closes the open shift
 //
 // The PIN is checked HERE, against the live employee list, on every op. The other
@@ -156,19 +157,22 @@ Deno.serve(withSentry("kiosk-clock", async (req) => {
     const already = await openShift();
     if (already) return json({ ok: true, already_in: true, employee: who, shift: shiftView(already) }, 200);
 
+    // No photo, no shift: the picture is what ties a payroll record to the person
+    // who stood at the desk (the owner's rule). The tablet never sends a clock in
+    // without one; this refuses any caller that tries, before anything is written.
+    if (!photo || photo.size > MAX_PHOTO_BYTES || !PHOTO_TYPES.has(photo.type || "image/jpeg")) {
+      return json({ error: "photo_required" }, 400);
+    }
+
     const shiftId = crypto.randomUUID();
-    let photoPath: string | null = null;
-    if (photo && photo.size <= MAX_PHOTO_BYTES && PHOTO_TYPES.has(photo.type || "image/jpeg")) {
-      const path = `${employee.id}/${shiftId}.jpg`;
-      const bytes = new Uint8Array(await photo.arrayBuffer());
-      const up = await sb.storage.from(PHOTO_BUCKET).upload(path, bytes, {
-        contentType: photo.type || "image/jpeg",
-        upsert: true,
-      });
-      // A photo that will not upload never stops someone starting work. The shift
-      // is recorded without one and the owner's screen says so.
-      if (up.error) console.error("kiosk-clock: photo upload failed", up.error);
-      else photoPath = path;
+    const photoPath = `${employee.id}/${shiftId}.jpg`;
+    const up = await sb.storage.from(PHOTO_BUCKET).upload(photoPath, new Uint8Array(await photo.arrayBuffer()), {
+      contentType: photo.type || "image/jpeg",
+      upsert: true,
+    });
+    if (up.error) {
+      console.error("kiosk-clock: photo upload failed", up.error);
+      return json({ error: "photo_upload_failed" }, 500);
     }
 
     const { data: created, error } = await sb
@@ -186,10 +190,11 @@ Deno.serve(withSentry("kiosk-clock", async (req) => {
       .maybeSingle<ShiftRow>();
 
     if (error) {
+      // Whatever went wrong, the photo now belongs to no shift.
+      await sb.storage.from(PHOTO_BUCKET).remove([photoPath]);
       // 23505: the partial unique index caught a second clock in (two tablets at
       // once). Whoever lost the race gets the shift that exists, not an error.
       if (error.code === "23505") {
-        if (photoPath) await sb.storage.from(PHOTO_BUCKET).remove([photoPath]);
         const open = await openShift();
         if (open) return json({ ok: true, already_in: true, employee: who, shift: shiftView(open) }, 200);
       }
@@ -207,7 +212,7 @@ Deno.serve(withSentry("kiosk-clock", async (req) => {
         event: "clock_in",
         employeeId: employee.id,
         employeeName: employee.name,
-        payload: { photo: Boolean(photoPath) },
+        payload: { photo: true },
       }),
     ]);
 

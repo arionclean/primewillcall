@@ -17,17 +17,34 @@ the switch on. One button does both directions:
    That question can only be answered centrally: the pool is shared, so somebody can
    clock in at one desk and out at another.
 3. **Not on the clock** -> the front camera opens, "Smile, then tap Clock in". One tap
-   takes the photo and opens the shift.
+   takes the photo and opens the shift (the button stays grey until the camera is live).
    **On the clock** -> "On the clock since 9:02 AM", the hours so far, and one red
    Clock out button.
 4. A short confirmation ("Clocked in at 9:02 AM", "Clocked out at 5:14 PM. 8h 12m
    today") that closes itself.
 
-**The photo is best effort.** No camera (the simulator), a refused permission or a
-failed shutter all still clock the person in; the shift simply carries no picture and
-the owner's screen shows their initial instead. Work is never blocked by a lens. The
-photos go to a **private** bucket; only the owner can open one, through a signed link
-that expires in an hour.
+**The photo is required.** No photo, no clock in: the picture is what ties a shift to
+the person who stood at the desk (the owner's call, 2026-09-18; the first version let a
+missing camera through). So the screen deals with the camera instead of assuming it:
+
+| The camera | What the person sees |
+|---|---|
+| Never asked on this iPad | iOS asks right there, once ("Allow" / "Don't Allow"), with the purpose line that mentions the clock-in photo |
+| Refused, or switched off later | "Camera is off. Tap Open Settings, then turn on Camera." and an **Open Settings** button, which opens the app's own page in Settings. iOS restarts an app whose camera permission changed, so the person comes back to the main screen and taps the clock again (had it not restarted, the screen checks again by itself on the way back) |
+| Blocked by Screen Time or device management | "Camera is blocked. Ask a manager to allow the camera on this iPad." Settings cannot fix that one, so there is no button |
+| No camera at all (the simulator) | "No camera found. Ask a manager to check this iPad." |
+| The shutter fails | "Could not take the photo. Try again." Nothing is recorded |
+
+Each blocked case writes `clock_camera_off` to the activity log with the reason, under the
+person who typed the PIN, and a failed shutter writes `clock_photo_failed`, so the owner
+can see which iPad needs its camera fixed. The server holds the same line: `kiosk-clock`
+answers a clock in without a photo with `photo_required`, and one whose photo will not
+upload with `photo_upload_failed`, both before anything is written.
+
+The simulator has no camera, so clocking IN can only be tried on a real iPad (clocking
+out works anywhere). The photos go to a **private** bucket; only the owner can open one,
+through a signed link that expires in an hour. Shifts without a picture (the test data
+from before the rule) show the person's initial on the owner's screen.
 
 **Online only, deliberately.** The open shift lives on the server, and another tablet
 may hold it, so a punch queued on a tablet could not be reconciled honestly. A call
