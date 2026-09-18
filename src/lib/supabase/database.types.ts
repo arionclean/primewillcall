@@ -3006,7 +3006,9 @@ export type Database = {
         Returns: {
           card_count: number
           card_gross: number
+          card_refunded: number
           cash_count: number
+          cash_refunded: number
           cash_total: number
           refunded: number
         }[]
