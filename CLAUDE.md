@@ -530,6 +530,18 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   `staff.pin_required` ("Shared computer") gets the same PIN keypad and stamps the
   employee through the `x-employee-id` header, and `activity_feed()` shows tablets and
   web as one stream. See [`docs/kiosk-employees.md`](docs/kiosk-employees.md).
+  **The end-of-night close** (2026-09-21): `kiosk_closings`, one row per kiosk per
+  business day, written by `kiosk-closing-report` through `record_kiosk_closing()`
+  BEFORE the email is attempted. The close is the record; the email is a copy. Until
+  now it lived only in that email and a `kiosk_events` line, so the commission staff
+  type at the desk (money that leaves the till) could not be totalled or corrected:
+  kiosk3 on 2026-09-19 was closed with a $500 commission against $1,307 of cash where
+  every other night was $0 to $200. `commission_cents` is what the tablet reported and
+  is never edited; an owner's fix goes in `commission_cents_corrected` with who and
+  why, and `total_cash_cents` is generated from the two. `UNIQUE (kiosk_id,
+  business_date)` means a reprint corrects that night instead of adding a row.
+  Backfilled from `kiosk_events` for 2026-09-09 on. No screen reads it yet. See
+  "kiosk_closings" in [`docs/DATABASE.md`](docs/DATABASE.md).
 - **Payments (Stripe)** are largely built (Supabase-native replication of the live Xano
   Connect model; Xano is never written to). Model: Stripe Connect **direct charges** on each
   business's connected account with a platform `application_fee` (Prime's cut). Built:
