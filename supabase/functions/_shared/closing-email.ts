@@ -2,9 +2,10 @@
 //
 // The tablet prints the paper form for the desk to sign; this is the same figures
 // sent to whoever watches the money, so they see the night without waiting for the
-// paper. Commission and the counted cash are deliberately absent: those are worked
-// out and signed at the desk, and the email says so rather than showing blanks that
-// look like zeroes.
+// paper. From build 21 the tablet sends the commission staff typed at close, and the
+// email shows it with Total cash (cash sales less commission), the same two lines the
+// paper prints. An older tablet sends none, and the email then says those are on the
+// printed form rather than showing blanks that look like zeroes.
 
 export interface ClosingReport {
   /** The till itself, e.g. "Miami kiosk (kiosk3)". This is what tells two kiosks apart. */
@@ -20,12 +21,21 @@ export interface ClosingReport {
   totalCount: number;
   cardCount: number;
   cashCount: number;
+  /** Dollars, as typed at close. Null or missing: not entered on the tablet. */
+  commission?: number | null;
   products: { name: string; count: number; amount: number }[];
   printedAt: string;
 }
 
 const money = (amount: number): string =>
   `$${amount.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
+
+/** Money that can go below zero (a commission bigger than the cash), as -$12.00. */
+const signedMoney = (amount: number): string => (amount < 0 ? `-${money(-amount)}` : money(amount));
+
+/** Cash to hand over: cash sales less the commission, to the cent. Null without one. */
+const totalCashOf = (r: ClosingReport): number | null =>
+  typeof r.commission === "number" ? Math.round((r.cashSales - r.commission) * 100) / 100 : null;
 
 const escapeHtml = (value: string): string =>
   value
@@ -50,17 +60,26 @@ export function closingText(r: ClosingReport): string {
     `  Cash        ${money(r.cashSales)} (${r.cashCount})`,
     `Transactions  ${r.totalCount}`,
     "",
+  ];
+  const totalCash = totalCashOf(r);
+  if (totalCash !== null) {
+    lines.push(`Commission    ${money(r.commission as number)}`, `Total cash    ${signedMoney(totalCash)}`, "");
+  }
+  lines.push(
     r.representative ? `Closed by ${r.representative}` : "Closed by (unsigned)",
     "",
     "Products sold",
-  ];
+  );
   r.products.forEach((p) => lines.push(`  ${p.name} x${p.count}  ${money(p.amount)}`));
   lines.push("", `Printed ${r.printedAt}`);
-  lines.push("Commission and the counted cash are filled in on the printed form.");
+  if (totalCash === null) {
+    lines.push("Commission and the counted cash are filled in on the printed form.");
+  }
   return lines.join("\n");
 }
 
 export function closingHtml(r: ClosingReport): string {
+  const totalCash = totalCashOf(r);
   const productRows = r.products
     .map(
       (p, i) => `
@@ -136,6 +155,27 @@ export function closingHtml(r: ClosingReport): string {
         </td></tr>
 
         ${
+          totalCash !== null
+            ? `<tr><td style="background:#ffffff;padding:12px 28px 8px;">
+                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e8ecf1;border-radius:12px;border-collapse:separate;">
+                   <tr>
+                     <td style="padding:14px 16px;color:#64748b;font-size:15px;">Commission</td>
+                     <td style="padding:14px 16px;color:#0f172a;font-size:15px;text-align:right;font-weight:600;white-space:nowrap;">${money(
+                       r.commission as number,
+                     )}</td>
+                   </tr>
+                   <tr>
+                     <td style="padding:14px 16px;border-top:1px solid #e8ecf1;color:#0f172a;font-size:15px;font-weight:700;">Total cash</td>
+                     <td style="padding:14px 16px;border-top:1px solid #e8ecf1;color:#16a34a;font-size:18px;text-align:right;font-weight:700;white-space:nowrap;">${signedMoney(
+                       totalCash,
+                     )}</td>
+                   </tr>
+                 </table>
+               </td></tr>`
+            : ""
+        }
+
+        ${
           r.products.length > 0
             ? `<tr><td style="background:#ffffff;padding:20px 28px 8px;">
                  <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#94a3b8;font-weight:600;padding-bottom:10px;">Products sold</div>
@@ -154,9 +194,13 @@ export function closingHtml(r: ClosingReport): string {
                   ? escapeHtml(r.representative)
                   : '<span style="color:#94a3b8;">not signed on the tablet</span>'
               }</div>
-              <div style="margin-top:8px;font-size:13px;color:#64748b;line-height:1.5;">
+              ${
+                totalCash === null
+                  ? `<div style="margin-top:8px;font-size:13px;color:#64748b;line-height:1.5;">
                 Commission and the counted cash are written on the printed form at the desk, so they are not in this email.
-              </div>
+              </div>`
+                  : ""
+              }
             </td></tr>
           </table>
         </td></tr>

@@ -15,6 +15,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { DateField } from "@/components/ui/date-field";
+import { SEGMENT, SEGMENT_ITEM, SEGMENT_OFF, SEGMENT_ON } from "@/components/ui/segment";
 import { cn } from "@/lib/utils";
 import { BUSINESS_TZ, getLocalDateRange } from "@/lib/dates";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -75,11 +76,6 @@ type DetailRpcRow = {
 
 /* One segmented control, used by every filter in the bar so they read as one
    row of controls rather than a scatter of pills. */
-const SEGMENT = "inline-flex items-center rounded-lg border bg-muted/40 p-0.5";
-const SEGMENT_ITEM =
-  "rounded-md px-2.5 py-1 text-xs font-medium transition whitespace-nowrap";
-const SEGMENT_ON = "bg-background text-foreground shadow-sm";
-const SEGMENT_OFF = "text-muted-foreground hover:text-foreground";
 
 const DETAIL_CAP = 300; // matches the limit in the analytics_bookings RPC
 

@@ -10,7 +10,9 @@
 //
 // Body: { kiosk, business_name?, date_label, representative?, total_sales,
 //         credit_sales, cash_sales, total_count, card_count, cash_count,
-//         products: [{name,count,amount}], printed_at }
+//         commission?, products: [{name,count,amount}], printed_at }
+// `commission` (dollars) is what staff typed at close, from build 21. Without it the
+// email reads as it always has; with it, Commission and Total Cash appear too.
 
 import { json, kioskAuthorized, resolveKiosk, serviceClient } from "../_shared/kiosk-sale.ts";
 import {
@@ -28,6 +30,13 @@ const FROM = Deno.env.get("CLOSING_REPORT_FROM") ?? "alerts@alert.primewillcall.
 const num = (v: unknown): number => {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
+};
+
+/** The commission typed at close, in dollars, or null when the tablet sent none. */
+const commissionOf = (v: unknown): number | null => {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : null;
 };
 
 Deno.serve(withSentry("kiosk-closing-report", async (req) => {
@@ -69,6 +78,7 @@ Deno.serve(withSentry("kiosk-closing-report", async (req) => {
     totalCount: Math.trunc(num(body.total_count)),
     cardCount: Math.trunc(num(body.card_count)),
     cashCount: Math.trunc(num(body.cash_count)),
+    commission: commissionOf(body.commission),
     products: rawProducts.slice(0, 40).map((p) => {
       const item = p as Record<string, unknown>;
       return {
@@ -95,6 +105,7 @@ Deno.serve(withSentry("kiosk-closing-report", async (req) => {
       total_cents: Math.round(report.totalSales * 100),
       card_cents: Math.round(report.creditSales * 100),
       cash_cents: Math.round(report.cashSales * 100),
+      commission_cents: report.commission == null ? null : Math.round(report.commission * 100),
       sales: report.totalCount,
       date: report.dateLabel,
     },

@@ -286,7 +286,9 @@ function toXanoBooking(b: BookingRow) {
     status: xanoStatus(b.status),
     product: productId,
     product_var: b.business_tour?.name ?? b.business_tour?.tour?.name ?? null,
-    price: b.total_cents,
+    // While a balance is due, price is what the tablet collects: the amount owed, not the
+    // booking total (the same rule balanceFields in _shared/xano-mirror.ts writes to Xano).
+    price: b.due_cents > 0 ? b.due_cents : b.total_cents,
     payment_status: b.due_cents > 0 ? "pending" : "completed",
     payment_qr: null,
     date: nyParts(at).ymd,
