@@ -21,7 +21,7 @@
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { withSentry } from "../_shared/sentry.ts";
-import { companyFor, processInbound } from "../_shared/inbound-email.ts";
+import { processInbound } from "../_shared/inbound-email.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -30,7 +30,9 @@ const WEBHOOK_SECRET = Deno.env.get("RESEND_WEBHOOK_SECRET") ?? "";
 /** Replay window. Standard Webhooks' own recommendation. */
 const MAX_SKEW_SECONDS = 300;
 
-const sb = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
+const sb = createClient(SUPABASE_URL, SERVICE_KEY, {
+  auth: { persistSession: false },
+});
 
 function json(obj: unknown, status: number): Response {
   return new Response(JSON.stringify(obj), {
@@ -56,13 +58,18 @@ function timingSafeEqual(a: string, b: string): boolean {
  * `v1,<sig>` entries. Resend sends the headers under both the `svix-` and the
  * vendor-neutral `webhook-` prefixes depending on age, so both are accepted.
  */
-async function signatureOk(req: Request, body: string): Promise<{ ok: boolean; why?: string }> {
+async function signatureOk(
+  req: Request,
+  body: string,
+): Promise<{ ok: boolean; why?: string }> {
   const h = (name: string) =>
     req.headers.get(`svix-${name}`) ?? req.headers.get(`webhook-${name}`) ?? "";
   const id = h("id");
   const ts = h("timestamp");
   const sigHeader = h("signature");
-  if (!id || !ts || !sigHeader) return { ok: false, why: "missing signature headers" };
+  if (!id || !ts || !sigHeader) {
+    return { ok: false, why: "missing signature headers" };
+  }
 
   const sent = Number(ts);
   if (!Number.isFinite(sent)) return { ok: false, why: "bad timestamp" };
@@ -98,7 +105,9 @@ async function signatureOk(req: Request, body: string): Promise<{ ok: boolean; w
 
   for (const part of sigHeader.split(" ")) {
     const [version, value] = part.split(",");
-    if (version === "v1" && value && timingSafeEqual(value, expected)) return { ok: true };
+    if (version === "v1" && value && timingSafeEqual(value, expected)) {
+      return { ok: true };
+    }
   }
   return { ok: false, why: "signature mismatch" };
 }
@@ -147,6 +156,7 @@ async function runPass(row: {
         status: out.status,
         raw_text: out.raw_text,
         legacy_company_id: out.legacy_company_id,
+        to_addresses: out.recipients,
         booking_id: bookingId,
         business_tour_id: out.business_tour_id,
         match_queue_id: out.match_queue_id,
@@ -174,7 +184,10 @@ async function runPass(row: {
 Deno.serve(withSentry("email-inbound", async (req) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
   if (!WEBHOOK_SECRET) {
-    return json({ error: "server not configured: set RESEND_WEBHOOK_SECRET" }, 503);
+    return json(
+      { error: "server not configured: set RESEND_WEBHOOK_SECRET" },
+      503,
+    );
   }
 
   const body = await req.text();
@@ -190,7 +203,9 @@ Deno.serve(withSentry("email-inbound", async (req) => {
 
   // Resend can send other event types on the same endpoint (delivery, bounce). They
   // are not ours; acknowledge so it stops retrying.
-  if (event.type !== "email.received") return json({ ok: true, ignored: event.type ?? null }, 200);
+  if (event.type !== "email.received") {
+    return json({ ok: true, ignored: event.type ?? null }, 200);
+  }
 
   const emailId = event.data?.email_id;
   if (!emailId) return json({ error: "event has no data.email_id" }, 400);
@@ -199,7 +214,9 @@ Deno.serve(withSentry("email-inbound", async (req) => {
     ...(event.data?.to ?? []),
     ...(event.data?.cc ?? []),
     ...Object.entries(event.data?.headers ?? {})
-      .filter(([k]) => ["to", "cc", "delivered-to", "x-forwarded-to"].includes(k.toLowerCase()))
+      .filter(([k]) =>
+        ["to", "cc", "delivered-to", "x-forwarded-to"].includes(k.toLowerCase())
+      )
       .map(([, v]) => String(v)),
   ].map((s) => s.toLowerCase());
 
@@ -211,27 +228,40 @@ Deno.serve(withSentry("email-inbound", async (req) => {
     from_address: event.data?.from ?? null,
     to_addresses: recipients,
     subject: event.data?.subject ?? null,
-    // Only decided here when the webhook carried recipients; otherwise the first
-    // pass resolves it from the full headers, which survive forwarding.
-    legacy_company_id: recipients.length > 0 ? companyFor(recipients) : null,
+    // NOT decided here. The webhook carries the ENVELOPE recipient, which after a
+    // forward is only our own inbound address, so deciding from it would pin every
+    // email to the fallback business before the real headers are ever read. The
+    // first pass resolves it from the fetched To: header. See companyFor.
+    legacy_company_id: null,
   });
   if (insertError && insertError.code !== "23505") {
     // The log itself failed. This is the one error worth making Resend retry, since
     // without the row nothing downstream would ever look at this email again.
-    return json({ error: `could not record the email: ${insertError.message}` }, 500);
+    return json(
+      { error: `could not record the email: ${insertError.message}` },
+      500,
+    );
   }
 
   const { data: row } = await sb
     .from("inbound_emails")
-    .select("id, provider_email_id, subject, raw_text, to_addresses, legacy_company_id, attempts, status")
+    .select(
+      "id, provider_email_id, subject, raw_text, to_addresses, legacy_company_id, attempts, status",
+    )
     .eq("provider", "resend")
     .eq("provider_email_id", emailId)
     .single();
   if (!row) return json({ error: "row vanished after insert" }, 500);
 
   // Already finished on an earlier delivery: acknowledge and touch nothing.
-  if (row.status === "booked" || row.status === "parsed" || row.status === "ignored") {
-    return json({ ok: true, id: row.id, status: row.status, duplicate: true }, 200);
+  if (
+    row.status === "booked" || row.status === "parsed" ||
+    row.status === "ignored"
+  ) {
+    return json(
+      { ok: true, id: row.id, status: row.status, duplicate: true },
+      200,
+    );
   }
 
   const status = await runPass(row);

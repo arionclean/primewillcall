@@ -40,7 +40,9 @@ const BATCH = 20;
 /** Leave the first pass (in email-inbound) alone for this long before retrying it. */
 const RETRY_AFTER_MINUTES = 5;
 
-const sb = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
+const sb = createClient(SUPABASE_URL, SERVICE_KEY, {
+  auth: { persistSession: false },
+});
 
 function json(obj: unknown, status: number): Response {
   return new Response(JSON.stringify(obj), {
@@ -84,7 +86,11 @@ function inQuietHours(hour: number, from: number, to: number): boolean {
   return from <= to ? hour >= from && hour < to : hour >= from || hour < to;
 }
 
-async function sendResendEmail(to: string, subject: string, text: string): Promise<boolean> {
+async function sendResendEmail(
+  to: string,
+  subject: string,
+  text: string,
+): Promise<boolean> {
   if (!RESEND_API_KEY) return false;
   try {
     const res = await fetch("https://api.resend.com/emails", {
@@ -130,7 +136,11 @@ async function sendSmsAlert(to: string, body: string): Promise<boolean> {
  * Tell the owner, on both channels. Email carries the detail, the text carries the
  * urgency; a missed booking is worth waking someone for.
  */
-async function alertOwner(subject: string, detail: string, sms: string): Promise<boolean> {
+async function alertOwner(
+  subject: string,
+  detail: string,
+  sms: string,
+): Promise<boolean> {
   const { data: settings } = await sb
     .from("messaging_settings")
     .select("alert_email, alert_phone")
@@ -138,7 +148,8 @@ async function alertOwner(subject: string, detail: string, sms: string): Promise
     .maybeSingle();
   let notified = false;
   if (settings?.alert_email) {
-    notified = await sendResendEmail(settings.alert_email, subject, detail) || notified;
+    notified = await sendResendEmail(settings.alert_email, subject, detail) ||
+      notified;
   }
   if (settings?.alert_phone) {
     notified = await sendSmsAlert(settings.alert_phone, sms) || notified;
@@ -168,6 +179,7 @@ async function retry(row: PendingRow, maxAttempts: number): Promise<string> {
         status: out.status,
         raw_text: out.raw_text,
         legacy_company_id: out.legacy_company_id,
+        to_addresses: out.recipients,
         booking_id: bookingId,
         business_tour_id: out.business_tour_id,
         match_queue_id: out.match_queue_id,
@@ -200,7 +212,9 @@ async function retry(row: PendingRow, maxAttempts: number): Promise<string> {
           `Last error: ${message}\n\n` +
           `This guest may hold a reservation that is NOT on the manifest. ` +
           `Open /admin/inbound to read the email and book it by hand.`,
-        `PrimeWillCall ALERT: an OTA booking email failed to process (${message.slice(0, 60)}). ` +
+        `PrimeWillCall ALERT: an OTA booking email failed to process (${
+          message.slice(0, 60)
+        }). ` +
           `Check /admin/inbound, the guest may not be on the manifest.`,
       );
     }
@@ -209,7 +223,9 @@ async function retry(row: PendingRow, maxAttempts: number): Promise<string> {
 }
 
 /** The pipeline has gone quiet. Returns true when an alert was raised. */
-async function checkSilence(s: Settings): Promise<{ alerted: boolean; reason?: string }> {
+async function checkSilence(
+  s: Settings,
+): Promise<{ alerted: boolean; reason?: string }> {
   if (!s.alerts_enabled) return { alerted: false, reason: "alerts off" };
   if (inQuietHours(nyHour(), s.quiet_from_hour, s.quiet_to_hour)) {
     return { alerted: false, reason: "quiet hours" };
@@ -224,7 +240,9 @@ async function checkSilence(s: Settings): Promise<{ alerted: boolean; reason?: s
     .order("received_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (!newest?.received_at) return { alerted: false, reason: "no email ever received" };
+  if (!newest?.received_at) {
+    return { alerted: false, reason: "no email ever received" };
+  }
 
   const quietMs = Date.now() - new Date(newest.received_at).getTime();
   const thresholdMs = s.silence_minutes * 60_000;
@@ -261,15 +279,21 @@ async function checkSilence(s: Settings): Promise<{ alerted: boolean; reason?: s
 }
 
 Deno.serve(withSentry("email-inbound-sweep", async (req) => {
-  if (req.method !== "POST" && req.method !== "GET") return json({ error: "POST only" }, 405);
-  if (!CRON_SECRET) return json({ error: "server not configured: set CRON_SECRET" }, 503);
+  if (req.method !== "POST" && req.method !== "GET") {
+    return json({ error: "POST only" }, 405);
+  }
+  if (!CRON_SECRET) {
+    return json({ error: "server not configured: set CRON_SECRET" }, 503);
+  }
   if ((req.headers.get("x-cron-secret") ?? "") !== CRON_SECRET) {
     return json({ error: "unauthorized" }, 401);
   }
 
   const { data: settingsRow } = await sb
     .from("inbound_email_settings")
-    .select("alerts_enabled, silence_minutes, quiet_from_hour, quiet_to_hour, max_attempts, last_silence_alert_at")
+    .select(
+      "alerts_enabled, silence_minutes, quiet_from_hour, quiet_to_hour, max_attempts, last_silence_alert_at",
+    )
     .eq("id", true)
     .maybeSingle();
   const s: Settings = settingsRow ?? {
@@ -283,10 +307,13 @@ Deno.serve(withSentry("email-inbound-sweep", async (req) => {
 
   // 1. Retry what is unfinished. Oldest first: the guest who has been waiting
   // longest is the one most likely to turn up at a desk that expects nobody.
-  const cutoff = new Date(Date.now() - RETRY_AFTER_MINUTES * 60_000).toISOString();
+  const cutoff = new Date(Date.now() - RETRY_AFTER_MINUTES * 60_000)
+    .toISOString();
   const { data: pending } = await sb
     .from("inbound_emails")
-    .select("id, provider_email_id, subject, raw_text, to_addresses, legacy_company_id, attempts")
+    .select(
+      "id, provider_email_id, subject, raw_text, to_addresses, legacy_company_id, attempts",
+    )
     .in("status", ["received", "failed"])
     .lt("attempts", s.max_attempts)
     .or(`last_attempt_at.is.null,last_attempt_at.lt.${cutoff}`)
@@ -302,5 +329,8 @@ Deno.serve(withSentry("email-inbound-sweep", async (req) => {
   // 2. Then ask the question no row can answer.
   const silence = await checkSilence(s);
 
-  return json({ ok: true, retried: pending?.length ?? 0, outcome, silence }, 200);
+  return json(
+    { ok: true, retried: pending?.length ?? 0, outcome, silence },
+    200,
+  );
 }));

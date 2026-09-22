@@ -54,6 +54,9 @@ export type ProcessOutcome = {
   match_queue_id: string | null;
   /** The booking key the sync used, handy in the log when no booking row resolved. */
   legacy_id: string | null;
+  /** The addresses the business decision was made from. Recorded so it can be
+   *  checked against what Make decided, instead of taken on trust. */
+  recipients: string[];
 };
 
 /** fetch with a deadline: a hung dependency must fail the pass, not hold the cron. */
@@ -280,6 +283,7 @@ export async function processInbound(row: InboundRow): Promise<ProcessOutcome> {
       status: "parsed",
       raw_text: text,
       legacy_company_id: company,
+      recipients,
       booking_id: null,
       business_tour_id: businessTourId,
       match_queue_id: matchQueueId,
@@ -332,6 +336,7 @@ export async function processInbound(row: InboundRow): Promise<ProcessOutcome> {
     status: "booked",
     raw_text: text,
     legacy_company_id: company,
+    recipients,
     booking_id: null, // the caller resolves it from legacy_id; it holds the db client
     business_tour_id: businessTourId,
     match_queue_id: matchQueueId,
