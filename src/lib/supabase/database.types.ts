@@ -253,6 +253,7 @@ export type Database = {
             | Database["public"]["Enums"]["booking_status"]
             | null
           xano_booking_id: number | null
+          xano_confirmation_token: string | null
           xano_internal_id: string | null
         }
         Insert: {
@@ -297,6 +298,7 @@ export type Database = {
             | Database["public"]["Enums"]["booking_status"]
             | null
           xano_booking_id?: number | null
+          xano_confirmation_token?: string | null
           xano_internal_id?: string | null
         }
         Update: {
@@ -341,6 +343,7 @@ export type Database = {
             | Database["public"]["Enums"]["booking_status"]
             | null
           xano_booking_id?: number | null
+          xano_confirmation_token?: string | null
           xano_internal_id?: string | null
         }
         Relationships: [

@@ -18,6 +18,9 @@ verify_jwt = false
 [functions.enqueue-review-asks]
 verify_jwt = false
 
+[functions.xano-ticket-tokens]
+verify_jwt = false
+
 [functions.stripe-webhook]
 verify_jwt = false
 
