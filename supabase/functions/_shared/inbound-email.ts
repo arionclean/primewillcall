@@ -16,7 +16,11 @@
 // making a second. That is what lets the sweep be dumb about retrying.
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
+// Reading an inbound email's body needs a full-access Resend key, which is more
+// than every sending path should carry. Keep that key to this one call:
+// RESEND_INBOUND_API_KEY when it exists, the shared sending key otherwise.
+const RESEND_API_KEY = Deno.env.get("RESEND_INBOUND_API_KEY") ??
+  Deno.env.get("RESEND_API_KEY") ?? "";
 const EMAIL_PARSE_SECRET = Deno.env.get("EMAIL_PARSE_SECRET") ?? "";
 const XANO_WEBHOOK_SECRET = Deno.env.get("XANO_WEBHOOK_SECRET") ?? "";
 
@@ -76,7 +80,7 @@ export type ReceivedEmail = {
  * email whether or not our webhook ever succeeded.
  */
 export async function fetchReceivedEmail(providerEmailId: string): Promise<ReceivedEmail> {
-  if (!RESEND_API_KEY) throw new Error("server not configured: set RESEND_API_KEY");
+  if (!RESEND_API_KEY) throw new Error("server not configured: set RESEND_INBOUND_API_KEY");
 
   const res = await fetchWithTimeout(
     `https://api.resend.com/emails/receiving/${encodeURIComponent(providerEmailId)}`,
