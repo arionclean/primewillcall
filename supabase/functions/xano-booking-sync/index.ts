@@ -498,11 +498,17 @@ async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
 
   const ends = new Date(startMs + 90 * 60 * 1000).toISOString();
 
+  // `price` is CENTS, from both senders: Xano's booking.price is an integer cents
+  // field (a $180 sale is 18000 there) and the kiosk tablet posts
+  // Math.round(dollars * 100). This used to multiply by 100 on top, which stored
+  // every kiosk sale a hundred times over ($60 as $6,000). It is only read on a
+  // booking's first insert, so rows already here keep whatever they have and need
+  // their own backfill.
   const price = clean(row.price);
   let totalCents = 0;
   if (price) {
     const f = Number(price);
-    if (Number.isFinite(f)) totalCents = Math.round(f * 100);
+    if (Number.isFinite(f)) totalCents = Math.round(f);
   }
 
   const payload = {
