@@ -266,7 +266,18 @@ async function findOrCreateCustomer(
   return ins!.id as string;
 }
 
-type Result = { legacy_id: string | null; ok: boolean; error?: string };
+/**
+ * What happened to one record. `action` and `booking_id` exist for booking_sync_log:
+ * "refused" is the case that used to leave no trace anywhere (the caller reads the
+ * HTTP 200 and believes the booking exists), so it is the one worth naming.
+ */
+type Result = {
+  legacy_id: string | null;
+  ok: boolean;
+  error?: string;
+  action: "inserted" | "updated" | "echo" | "refused";
+  booking_id?: string;
+};
 
 async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
   // Idempotency / dedup key (stored in legacy_id, which is UNIQUE-indexed).
@@ -289,7 +300,7 @@ async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
     clean(row.unique_id) ??
     (clean(row.id) ? `xano-${clean(row.id)}` : null);
   if (!legacyId) {
-    return { legacy_id: null, ok: false, error: "need booking_reference, unique_id, or id" };
+    return { legacy_id: null, ok: false, action: "refused", error: "need booking_reference, unique_id, or id" };
   }
 
   const starts = startsAtOf(row);
@@ -297,6 +308,7 @@ async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
     return {
       legacy_id: legacyId,
       ok: false,
+      action: "refused",
       error: clean(row.starts_at)
         ? `invalid starts_at: ${clean(row.starts_at)} (send an ISO-8601 UTC instant like 2026-06-30T23:00:00Z, or an epoch like 1782860400000)`
         : "missing start time (send starts_at as an ISO-8601 UTC instant or epoch, or date_timestamp, or date_time as \"Sep 22 2026 11:30 AM\")",
@@ -341,7 +353,7 @@ async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
     if (knownErr) {
       // Falling through would upsert by legacy_id and, for a booking born here,
       // mint a twin. Better to fail the record and let Xano's retry find us.
-      return { legacy_id: legacyId, ok: false, error: `lookup by internal id: ${knownErr.message}` };
+      return { legacy_id: legacyId, ok: false, action: "refused", error: `lookup by internal id: ${knownErr.message}` };
     }
     if (known && bornHere(known.legacy_id)) {
       // The echo of a booking born here. Xano is not its source of truth: take only
@@ -366,8 +378,8 @@ async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
         }
       }
       const { error } = await sb.from("bookings").update(patch).eq("id", known.id);
-      if (error) return { legacy_id: legacyId, ok: false, error: error.message };
-      return { legacy_id: legacyId, ok: true };
+      if (error) return { legacy_id: legacyId, ok: false, action: "refused", error: error.message };
+      return { legacy_id: legacyId, ok: true, action: "echo", booking_id: known.id };
     }
     existing = known;
   }
@@ -377,7 +389,7 @@ async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
       .select(EXISTING_SELECT)
       .eq("legacy_id", legacyId)
       .maybeSingle<Existing>();
-    if (keyErr) return { legacy_id: legacyId, ok: false, error: `lookup by legacy id: ${keyErr.message}` };
+    if (keyErr) return { legacy_id: legacyId, ok: false, action: "refused", error: `lookup by legacy id: ${keyErr.message}` };
     existing = byKey;
   }
 
@@ -387,10 +399,10 @@ async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
   let rec: Rec | null;
   if (btid) {
     rec = m.byId[btid] ?? (await recForBusinessTour(btid));
-    if (!rec) return { legacy_id: legacyId, ok: false, error: "unknown business_tour_id" };
+    if (!rec) return { legacy_id: legacyId, ok: false, action: "refused", error: "unknown business_tour_id" };
   } else {
     rec = resolveTour(row, m);
-    if (!rec) return { legacy_id: legacyId, ok: false, error: "could not resolve tour" };
+    if (!rec) return { legacy_id: legacyId, ok: false, action: "refused", error: "could not resolve tour" };
   }
 
   const name = parseName(row);
@@ -484,8 +496,8 @@ async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
     if (Array.isArray(row.image_url)) patch.groupon_voucher_urls = imageUrls(row.image_url);
 
     const { error } = await sb.from("bookings").update(patch).eq("id", existing.id);
-    if (error) return { legacy_id: legacyId, ok: false, error: error.message };
-    return { legacy_id: legacyId, ok: true };
+    if (error) return { legacy_id: legacyId, ok: false, action: "refused", error: error.message };
+    return { legacy_id: legacyId, ok: true, action: "updated", booking_id: existing.id };
   }
 
   // A booking we have never seen: the full record.
@@ -544,11 +556,13 @@ async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
 
   // Upsert, not insert: two deliveries of a new booking can race, and the second
   // must land on the first one's row.
-  const { error } = await sb
+  const { data: saved, error } = await sb
     .from("bookings")
-    .upsert(payload, { onConflict: "legacy_id" });
-  if (error) return { legacy_id: legacyId, ok: false, error: error.message };
-  return { legacy_id: legacyId, ok: true };
+    .upsert(payload, { onConflict: "legacy_id" })
+    .select("id")
+    .maybeSingle<{ id: string }>();
+  if (error) return { legacy_id: legacyId, ok: false, action: "refused", error: error.message };
+  return { legacy_id: legacyId, ok: true, action: "inserted", booking_id: saved?.id };
 }
 
 /** What we hold for a booking Xano is telling us about. */
@@ -602,6 +616,35 @@ function imageUrls(arr: unknown[]): string[] {
     }
   }
   return urls;
+}
+
+/**
+ * Write what happened to each record into booking_sync_log. Best effort in the strongest
+ * sense: a booking must never be lost because its log row could not be written, so every
+ * failure here is swallowed. One insert for the whole request.
+ *
+ * `source` is who posted it. kiosk-booking (the tablet) forwards under its own header so
+ * a refused kiosk sale is findable without reading payloads.
+ */
+async function logRecords(rows: unknown[], results: Result[], source: string): Promise<void> {
+  try {
+    await sb.from("booking_sync_log").insert(
+      results.map((r, i) => ({
+        source,
+        legacy_id: r.legacy_id,
+        internal_id:
+          clean((rows[i] as Record<string, unknown>)?.internal_id) ??
+          clean((rows[i] as Record<string, unknown>)?.unique_id),
+        ok: r.ok,
+        action: r.action,
+        error: r.error ?? null,
+        booking_id: r.booking_id ?? null,
+        payload: rows[i] ?? {},
+      })),
+    );
+  } catch {
+    // A log is not worth failing a booking over.
+  }
 }
 
 function json(obj: unknown, status: number): Response {
@@ -660,6 +703,9 @@ Deno.serve(withSentry("xano-booking-sync", async (req) => {
     }
   }
   const upserted = results.filter((r) => r.ok).length;
+
+  // Every record, refused or not, with what arrived (see booking_sync_log).
+  await logRecords(rows, results, req.headers.get("x-sync-source") ?? "xano");
 
   // Self-heal the payments ledger: a kiosk Stripe charge can land BEFORE its
   // booking syncs, leaving the charge without customer_name / booking_id. Now

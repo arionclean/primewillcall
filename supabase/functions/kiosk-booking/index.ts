@@ -86,7 +86,13 @@ Deno.serve(withSentry("kiosk-booking", async (req) => {
     // Forward to the sync with its shared secret (kept server-side, never in the app).
     const r = await fetch(SYNC_URL, {
       method: "POST",
-      headers: { "content-type": "application/json", "x-webhook-secret": WEBHOOK_SECRET },
+      headers: {
+        "content-type": "application/json",
+        "x-webhook-secret": WEBHOOK_SECRET,
+        // Names the tablet in booking_sync_log, so a refused kiosk sale can be found
+        // without reading every payload.
+        "x-sync-source": "kiosk",
+      },
       body: JSON.stringify(Array.isArray(parsed) ? normalized : normalized[0]),
     });
     const data = await r.json().catch(() => ({}));
