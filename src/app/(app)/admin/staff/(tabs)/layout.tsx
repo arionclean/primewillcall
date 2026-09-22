@@ -3,11 +3,11 @@ import { getCurrentStaff } from "@/lib/auth";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 /**
- * The Team screen: one title, four tabs. "Accounts" is every login, grouped by
+ * The Team screen: one title, five tabs. "Accounts" is every login, grouped by
  * business, owner only; "People" is the employees who type a PIN; "Hours" is
- * what they clocked on the tablets, owner only; "Activity" is what everyone
- * did, tablets and web. The tabs are routes, so the Activity filters live in
- * its URL.
+ * what they clocked on the tablets, owner only; "Sales" is the money each of
+ * them took, owner only; "Activity" is what everyone did, tablets and web. The
+ * tabs are routes, so the filters live in their URLs.
  */
 export default async function StaffTabsLayout({
   children,
@@ -38,6 +38,7 @@ export default async function StaffTabsLayout({
     ...(isOwner
       ? [{ href: "/admin/staff/hours", label: "Hours", count: onTheClock.count ?? 0 }]
       : []),
+    ...(isOwner ? [{ href: "/admin/staff/sales", label: "Sales" }] : []),
     { href: "/admin/staff/activity", label: "Activity" },
   ];
 
