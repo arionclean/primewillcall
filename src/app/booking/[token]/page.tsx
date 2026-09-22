@@ -65,12 +65,15 @@ const BOOKING_SELECT = `starts_at, status, pax_adult, pax_child, pax_infant,
  * the auth gate never runs, it is absent from the middleware matcher, and data
  * is read server-side with the service role, only ever by an exact id.
  *
- * Two ids open the page. Ours is `public_token`. The second is Xano's own
- * booking code (`xano_internal_id`, the PW- code), so the legacy bked.io ticket
- * link can redirect here carrying the code Bubble already holds, with no token
- * mapping to keep in sync. Xano reuses a PW- code across people now and then
- * (23 of 6,143 at the time of writing), so a code matching more than one
- * booking resolves to nothing rather than risk showing another guest's row.
+ * Three ids open the page, all exact matches on indexed columns:
+ *   - `public_token`, ours, the one in the texts this app sends;
+ *   - `xano_confirmation_token`, the code in the bked.io/booking/<code> links Xano
+ *     still texts for the bookings it creates (filled by the xano-ticket-tokens
+ *     sweep), so those links open here once that domain points at this app;
+ *   - `xano_internal_id`, Xano's PW- code, for anything that carries that instead.
+ * One query, and it must match exactly one booking: Xano reuses a PW- code across
+ * people now and then, and a code matching two rows resolves to nothing rather
+ * than risk showing another guest's row.
  */
 export default async function PublicBookingPage({
   params,
@@ -84,26 +87,18 @@ export default async function PublicBookingPage({
     return <BookingNotFound />;
   }
 
-  const byToken = await admin
+  const safe = token.replace(/[^A-Za-z0-9_-]/g, "");
+  if (safe !== token) {
+    return <BookingNotFound />;
+  }
+
+  const { data: matches } = await admin
     .from("bookings")
     .select(BOOKING_SELECT)
-    .eq("public_token", token)
-    .maybeSingle();
+    .or(`public_token.eq.${safe},xano_confirmation_token.eq.${safe},xano_internal_id.eq.${safe}`)
+    .limit(2);
 
-  let data = byToken.data;
-
-  if (!data) {
-    // Legacy bked.io link: Xano's PW- code. Two rows means the code was reused,
-    // and we would rather show nothing than the wrong guest.
-    const byXanoId = await admin
-      .from("bookings")
-      .select(BOOKING_SELECT)
-      .eq("xano_internal_id", token)
-      .limit(2);
-    if (byXanoId.data?.length === 1) {
-      data = byXanoId.data[0];
-    }
-  }
+  const data = matches?.length === 1 ? matches[0] : null;
 
   if (!data) {
     return <BookingNotFound />;

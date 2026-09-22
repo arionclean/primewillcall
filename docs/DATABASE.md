@@ -200,6 +200,20 @@ keep working here after cutover. The differing lengths mean the two families can
 never collide. No anon RLS: the page reads server-side with the service role, only
 ever by exact token (the /gp pattern).
 
+That copy only happens when the sync CREATES the row. 77% of recent bookings were
+created here first, from the OTA email (`legacy_id` `ota-...`), and Xano mints the
+code after the insert trigger that calls the sync, so the echo never carries it and
+`public_token` stays ours (which our own texts already carry, so it cannot be
+overwritten later). `xano_confirmation_token` (indexed where not null) holds Xano's
+code for those: the `xano-ticket-tokens` sweep (pg_cron, hourly, read-only on Xano,
+at most 200 GETs by `xano_internal_id` per run, stamped only when the returned row's
+`booking_reference` matches ours) fills it for upcoming bookings. `/booking/[token]`
+resolves `public_token`, `xano_confirmation_token` or `xano_internal_id` in one
+query and requires exactly one match, since Xano reuses a PW- code now and then.
+This is what lets `bked.io/booking/<code>` links (a registrar 301 to
+`pro.primewillcall.com`, the Bubble app) keep opening once that subdomain points
+here. Column, sweep and cron all retire with Xano.
+
 `legacy_id` (UNIQUE) is the sync dedup key for imported / synced bookings; native
 in-app bookings leave it null. The `xano-booking-sync` function derives it as
 `ota-<ProductBookingRef>` when an OTA Product booking ref is present (so the SAME
