@@ -109,7 +109,7 @@ export async function fetchReceivedEmail(providerEmailId: string): Promise<Recei
     text,
     subject: body.subject ?? null,
     from: body.from ?? null,
-    recipients: recipientsOf(body),
+    recipients: recipientsOf(body, text),
   };
 }
 
@@ -118,7 +118,7 @@ function recipientsOf(body: {
   to?: string[] | null;
   cc?: string[] | null;
   headers?: Record<string, string> | null;
-}): string[] {
+}, text = ""): string[] {
   const out: string[] = [];
   for (const v of [...(body.to ?? []), ...(body.cc ?? [])]) if (v) out.push(v);
 
@@ -135,7 +135,33 @@ function recipientsOf(body: {
       if (v) out.push(String(v));
     }
   }
+
+  out.push(...recipientsInText(text));
   return out.map((s) => s.toLowerCase());
+}
+
+/**
+ * The addresses written into the body's forwarded header block.
+ *
+ * A mailbox rule forwards the message intact and the real headers survive. A person
+ * forwarding by hand does not: the client builds a NEW message to us and writes the
+ * original "To:" into the body, above the quoted text. Read that block too, or a
+ * hand-forwarded Key West booking is filed under Miami and nothing looks wrong until
+ * the guest reaches the wrong dock. Only To/Cc lines, so the customer's own address
+ * further down is never mistaken for ours.
+ *
+ * Kept separate because a retry works from the stored raw_text with no Resend call,
+ * and it has to reach the same answer as the first pass.
+ */
+export function recipientsInText(text: string): string[] {
+  const out: string[] = [];
+  for (const line of text.slice(0, 4000).split("\n")) {
+    if (!/^\s*(to|cc):/i.test(line)) continue;
+    for (const addr of line.match(/[\w.+-]+@[\w.-]+\.\w+/g) ?? []) {
+      out.push(addr.toLowerCase());
+    }
+  }
+  return out;
 }
 
 /** The Bubble company id behind the recipients. See the note on KEY_WEST_INBOX. */
@@ -188,6 +214,9 @@ export async function processInbound(row: InboundRow): Promise<ProcessOutcome> {
     subject = subject ?? mail.subject;
     if (mail.recipients.length > 0) recipients = mail.recipients;
   }
+  // Whatever the body says it was addressed to counts on every pass, not just the
+  // one that fetched it. See recipientsInText.
+  recipients = [...recipients, ...recipientsInText(text)];
 
   const company = row.legacy_company_id ?? companyFor(recipients);
 

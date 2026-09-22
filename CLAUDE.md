@@ -294,11 +294,19 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   gets a row BEFORE any parsing, `email-inbound-sweep` (pg_cron, 5 min) retries what
   is unfinished, and the same sweep raises the alarm no row can raise, **no email has
   arrived at all** (a dead forwarding rule or MX record), which Make could not see
-  either. `/admin/inbound` is the owner's screen. **Left to do**: create the Resend
-  inbound domain + webhook, set `RESEND_WEBHOOK_SECRET`, deploy the two functions,
-  test on Resend's managed `resend.app` address, then re-point the mailbox forwarding
-  and turn the Make scenario off (they can run side by side, the booking upsert is
-  keyed on the OTA reference). See [`docs/inbound-email.md`](docs/inbound-email.md).
+  either. `/admin/inbound` is the owner's screen. **Live since 2026-09-22**: receiving is on
+  `updates.primewillcall.com` (address `reservations@updates.primewillcall.com`), the
+  webhook and both functions are deployed, and a real forwarded GetYourGuide booking
+  went end to end. That first email also found two things worth knowing: the body
+  fetch needs a **full-access** Resend key, kept separate as `RESEND_INBOUND_API_KEY`
+  so the app's sending key stays restricted; and a hand-forwarded email arrives with
+  its labels emphasised (`*Booking ref.*`), which used to make a real booking parse as
+  nothing and file as "not a reservation". Both fixed, the second with a test case.
+  **Left to do**: re-point the reservations mailbox's forwarding rule at the new
+  address, then turn the Make scenario off. They can run side by side first, which is
+  now proven and not just assumed: the upsert matched Make's existing booking on
+  `legacy_id = ota-<ref>` instead of creating a second guest, and nothing was queued
+  to Xano. See [`docs/inbound-email.md`](docs/inbound-email.md).
   Make also still runs three small things for Xano: `send sms telnyxs` (a 100-second
   delay timer in front of Xano's review SMS), `general notifications` (Pushover) and a
   twice-weekly forecast call. All three are Xano calling Make, so they retire with

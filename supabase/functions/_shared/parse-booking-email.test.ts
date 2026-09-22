@@ -50,3 +50,57 @@ Deno.test("status maps from the subject", () => {
   assertEquals(parseBookingEmail({ ...REAL, subject: "Cancelled booking: x" }).status, "cancelled");
   assertEquals(parseBookingEmail({ ...REAL, subject: "Updated booking: x" }).status, "confirmed");
 });
+
+// The same kind of email, but hand-forwarded through Gmail: the client rebuilt the
+// plain part from Bokun's HTML and wrote every bold label as *Label*. This is the
+// real message that came through the Resend inbound webhook on 2026-09-22, and
+// before the emphasis was stripped it parsed as nothing at all, which the intake
+// then filed as "not a reservation". A booking email that reads as junk is the
+// quietest way to lose a guest, so it gets a case of its own.
+const FORWARDED = {
+  text: `---------- Forwarded message ---------
+From: Bókun Notifications <no-reply@bokun.io>
+Date: Mon, Sep 21, 2026 at 12:08 PM
+Subject: New booking: Tue 22.Sep '26 @ 11:30 (KEY-T147167430) Ext. booking
+ref: GYGMX38XWNMQ
+To: <reservations369@gmail.com>, <reservations@keywestsightseeingtours.com>
+
+The following booking was just created.
+*Booking ref.* GET-104532193
+*Product booking ref.* KEY-T147167430
+*Ext. booking ref* GYGMX38XWNMQ
+*Product* Miami Skyline City Bus Tour: Discover the City's Hidden Treasures
+*Supplier* Key West Sightseeing tours
+*Sold by* GetYourGuide
+*Booking channel* GetYourGuide
+*Customer* Boureghda, Amine
+*Customer email* customer-cw4yszonngp6y6rn@reply.getyourguide.com
+*Customer phone* +33695213567
+*Date* Tue 22.Sep '26 @ 11:30
+*Rate* Standard rate
+*PAX* 1 Adults
+*Created* Mon, September 21 2026 @ 12:08
+`,
+  company: "1712896100693x988159247184035800",
+  subject:
+    "Fwd: New booking: Tue 22.Sep '26 @ 11:30 (KEY-T147167430) Ext. booking ref: GYGMX38XWNMQ",
+};
+
+Deno.test("parses a hand-forwarded notification, bold markers and all", () => {
+  const r = parseBookingEmail(FORWARDED);
+
+  assertEquals(r.bookingReference, "KEY-T147167430");
+  assertEquals(r.bookingRef, "GET-104532193");
+  assertEquals(r.extBookingRef, "GYGMX38XWNMQ");
+  assertEquals(
+    r.productName,
+    "Miami Skyline City Bus Tour: Discover the City's Hidden Treasures",
+  );
+  assertEquals(r.supplier, "Key West Sightseeing tours");
+  assertEquals(r.bookingChannel, "GetYourGuide");
+  assertEquals(r.customerName, "Amine Boureghda");
+  assertEquals(r.adult, 1);
+  assertEquals(r.child, 0);
+  // 11:30 New York on the tour date, stored UTC.
+  assertEquals(r.startsAtUtc, "2026-09-22T15:30:00.000Z");
+});

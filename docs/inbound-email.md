@@ -85,21 +85,34 @@ switch, and the screen says so when it is off.
 
 ## Setup
 
-1. **Domain.** Add an inbound domain in Resend on a **subdomain**
-   (`inbound.primewillcall.com`), not the apex, so normal mail is untouched. Add the
-   MX record Resend gives you. Its priority must be the lowest on that host.
+**Done on 2026-09-22.** The live setup is below; the steps are kept because they are
+what a second business, or a rebuild, would repeat.
+
+1. **Domain.** Receiving is enabled on the existing verified sending domain
+   `updates.primewillcall.com`, giving the inbound address
+   **`reservations@updates.primewillcall.com`**. A subdomain, never the apex: the real
+   mailboxes live on `primewillcall.com` (MX -> Titan) and are not touched. Resend is
+   connected to Cloudflare, so its **Auto configure** writes the MX record
+   (`updates` -> `inbound-smtp.us-east-1.amazonaws.com`, priority 10). That button
+   opens a Cloudflare popup and needs a human click.
 2. **Webhook.** Point a Resend webhook at
    `https://qbnizuhozzwkiitfkjee.supabase.co/functions/v1/email-inbound`, event
    `email.received`. Copy the signing secret.
 3. **Secrets** (Supabase function secrets): `RESEND_WEBHOOK_SECRET` (the `whsec_...`
-   from step 2), plus the ones that already exist: `RESEND_API_KEY`,
-   `EMAIL_PARSE_SECRET`, `XANO_WEBHOOK_SECRET`, `CRON_SECRET`.
+   from step 2) and `RESEND_INBOUND_API_KEY`, plus the ones that already exist:
+   `RESEND_API_KEY`, `EMAIL_PARSE_SECRET`, `XANO_WEBHOOK_SECRET`, `CRON_SECRET`.
+
+   `RESEND_INBOUND_API_KEY` is a **second** Resend key, and it is separate on purpose.
+   `GET /emails/receiving/{id}` needs a full-access key, while the key every sending
+   path in the app carries is "Sending access". Upgrading that shared key would let
+   any sender read all inbound mail and manage the Resend account, so the full-access
+   key exists only for this one call. The inbound fetch reads it first and falls back
+   to `RESEND_API_KEY`.
 4. **Deploy**: `email-inbound`, `email-inbound-sweep`. Both are `verify_jwt = false`
    in `config.toml` (Resend cannot send a Supabase token; the signature is the guard,
    and the sweep uses `x-cron-secret`).
-5. **Test before any DNS change.** Resend hands out a managed address on a
-   `resend.app` subdomain that needs no DNS at all. Send a real forwarded OTA email
-   to it and watch `/admin/inbound`.
+5. **Test with a real forwarded OTA email**, never a synthetic one, and watch
+   `/admin/inbound`. See "What the first real email taught us" below.
 6. **Cut over.** Point the reservations mailbox's forwarding rule at the new address.
    Leave the Make scenario running alongside for a week: the booking upsert is keyed
    on the OTA reference, so both paths land on the same booking and nothing doubles.
@@ -112,11 +125,42 @@ Ported from the Make scenario: if any recipient contains
 company ids, matched against `businesses.legacy_company_id`). A third business is a
 third line in `KEY_WEST_INBOX` / `COMPANY_*` in `_shared/inbound-email.ts`.
 
-**The one thing to test with a real email, not a synthetic one:** the mail arrives
-forwarded, so the envelope recipient is our inbound address and the address that
-decides the business survives only in the headers. `recipientsOf()` reads `to`, `cc`,
-`delivered-to`, `x-forwarded-to` and `x-original-to` for exactly this reason. Get it
-wrong and every email looks like Miami.
+The mail arrives forwarded, so the envelope recipient is our own inbound address and
+the address that decides the business is somewhere else. Two places, and both are
+read, because the two kinds of forward behave differently:
+
+- **A mailbox rule** resends the message intact, so the original `To:` survives as a
+  real header. `recipientsOf()` reads `to`, `cc`, `delivered-to`, `x-forwarded-to`
+  and `x-original-to`.
+- **A person forwarding by hand** does not. The client builds a new message to us and
+  writes the original `To:` into the **body**, above the quoted text.
+  `recipientsInText()` reads that block, and runs on every pass, including a retry
+  that works from the stored `raw_text` and never calls Resend again.
+
+Get this wrong and every email looks like Miami, which is not a crash and not an
+empty screen: it is a Key West guest sitting in the Miami manifest.
+
+## What the first real email taught us
+
+The first real forwarded email (2026-09-22, a GetYourGuide booking on Key West) did
+not go through, and both reasons are worth keeping:
+
+1. **The body fetch 401'd**: the account's Resend key was "Sending access" only. Hence
+   `RESEND_INBOUND_API_KEY`, above.
+2. **The parser read nothing.** Gmail rebuilt the plain part from Bokun's HTML and
+   wrote every bold label as `*Booking ref.*`. The label patterns expect the value
+   right after the label, so the asterisk broke all of them, and an email with no
+   fields is indistinguishable from a newsletter: it landed as `parsed`, the status
+   that means "not a reservation". A real booking quietly filed as junk is the exact
+   failure this pipeline exists to prevent. `parseBookingEmail` now strips emphasis
+   that wraps a label at the start of a line, and that email is a case in
+   `_shared/parse-booking-email.test.ts`.
+
+Then it booked, and the booking it produced was the one Make had already created from
+the same email the day before: the upsert matched on `legacy_id = ota-<ref>` and
+updated that row instead of making a second guest. Nothing reached Xano, because the
+sync's writes carry `x-sync-origin: xano` and the mirror trigger skips them. That is
+the evidence behind "both paths can run side by side" in step 6.
 
 ## When the alarm goes off
 

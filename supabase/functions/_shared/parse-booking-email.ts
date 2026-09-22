@@ -160,7 +160,14 @@ export function parseBookingEmail(input: {
   subject?: string;
   company?: string;
 }): ParsedBooking {
-  const text = input.text ?? "";
+  // Forwarded mail arrives with its labels emphasised. Bókun sends "Booking ref."
+  // in bold, and a mail client that rebuilds the plain part from the HTML writes
+  // that as "*Booking ref.*", which every label pattern below then misses: the
+  // asterisk sits exactly where the value should start. Strip the emphasis where
+  // it wraps a label at the start of a line, so the same email parses whether it
+  // reached us direct or through somebody's forward. Asterisks anywhere else in
+  // the text (a product name, a note) are left alone.
+  const text = (input.text ?? "").replace(/^[ \t]*\*([^*\n]+)\*/gm, "$1");
   const subject = input.subject ?? "";
   const missing: string[] = [];
   const req = (rx: RegExp, label: string): string | null => {
