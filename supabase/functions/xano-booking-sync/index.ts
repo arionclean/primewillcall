@@ -24,6 +24,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { withSentry } from "../_shared/sentry.ts";
 import { xanoGetBookingByInternalId, xanoRowId } from "../_shared/xano-api.ts";
+import { nyDisplayToUtcIso } from "../_shared/ny-time.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -204,10 +205,10 @@ const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}
 function startsAtOf(row: Record<string, unknown>): string | null {
   // The start instant can arrive as: starts_at (ISO instant, the parser's
   // startsAtUtc) OR starts_at as a bare epoch OR date_timestamp (epoch) OR date
-  // (YYYY-MM-DD). The parser already did the NY -> UTC conversion. A human
-  // display string like "Jun 30, 2026, 7:00 PM" is rejected (it would otherwise
-  // be misread as a UTC wall-clock time and store the wrong hour); send the ISO
-  // or the epoch number instead, both of which are unambiguous.
+  // (YYYY-MM-DD) OR date_time (the kiosk tablet's "Sep 22 2026 11:30 AM"). The
+  // parser already did the NY -> UTC conversion; date_time is converted here.
+  // A display string in `starts_at` is still rejected: that field is an instant,
+  // and reading a wall-clock string as UTC would store the wrong hour.
   const direct = clean(row.starts_at);
   if (direct) {
     if (ISO_INSTANT.test(direct)) {
@@ -220,6 +221,11 @@ function startsAtOf(row: Record<string, unknown>): string | null {
   }
   const iso = epochToIso(row.date_timestamp);
   if (iso) return iso;
+  const display = clean(row.date_time);
+  if (display) {
+    const fromDisplay = nyDisplayToUtcIso(display);
+    if (fromDisplay) return fromDisplay;
+  }
   const d = clean(row.date);
   if (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) return `${d}T12:00:00.000Z`;
   return null;
@@ -293,7 +299,7 @@ async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
       ok: false,
       error: clean(row.starts_at)
         ? `invalid starts_at: ${clean(row.starts_at)} (send an ISO-8601 UTC instant like 2026-06-30T23:00:00Z, or an epoch like 1782860400000)`
-        : "missing start time (send starts_at as an ISO-8601 UTC instant or epoch, or date_timestamp)",
+        : "missing start time (send starts_at as an ISO-8601 UTC instant or epoch, or date_timestamp, or date_time as \"Sep 22 2026 11:30 AM\")",
     };
   }
 

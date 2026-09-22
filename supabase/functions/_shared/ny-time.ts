@@ -45,6 +45,41 @@ export function nyLocalToUtcIso(yyyyMmDd: string, hhmm: string): string {
   return new Date(candidate.getTime() - offMin * 60_000).toISOString();
 }
 
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+
+// "Sep 22 2026 11:30 AM" / "Sep 22 2026" (the tablet's own format; also tolerates a
+// comma and a full month name).
+const NY_DISPLAY =
+  /^([a-z]{3})[a-z]*\.?,?\s+(\d{1,2}),?\s+(\d{4})(?:,?\s+(\d{1,2}):(\d{2})\s*(am|pm))?$/i;
+
+/**
+ * The PrimeKiosk tablet's `date_time`: the wall-clock line it prints on the ticket,
+ * and since it writes here directly it is the ONLY start time it sends. Xano used to
+ * turn that string into date_timestamp; nothing does now, so read it here.
+ *
+ * It is a New York wall time, so it is converted through the zone's real offset. That
+ * is the whole point: reading it as UTC would store the hour four or five off, which
+ * is why a display string in `starts_at` stays rejected.
+ */
+export function nyDisplayToUtcIso(s: string): string | null {
+  const m = NY_DISPLAY.exec(s.trim());
+  if (!m) return null;
+  const month = MONTHS.indexOf(m[1].toLowerCase());
+  const day = Number(m[2]);
+  const year = Number(m[3]);
+  if (month < 0 || day < 1 || day > 31) return null;
+  const ymd = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  // No time on the ticket: same placeholder a bare `date` gets.
+  if (!m[4]) return `${ymd}T12:00:00.000Z`;
+  let hour = Number(m[4]);
+  const minute = Number(m[5]);
+  if (hour < 1 || hour > 12 || minute > 59) return null;
+  if (m[6].toLowerCase() === "pm" && hour !== 12) hour += 12;
+  if (m[6].toLowerCase() === "am" && hour === 12) hour = 0;
+  const iso = nyLocalToUtcIso(ymd, `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`);
+  return Number.isNaN(new Date(iso).getTime()) ? null : iso;
+}
+
 /** The New York calendar date of a UTC instant, as YYYY-MM-DD. */
 export function nyDateString(iso: string): string {
   return new Intl.DateTimeFormat("en-CA", {
