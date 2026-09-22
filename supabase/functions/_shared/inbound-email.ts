@@ -57,7 +57,10 @@ export type ProcessOutcome = {
 };
 
 /** fetch with a deadline: a hung dependency must fail the pass, not hold the cron. */
-async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+): Promise<Response> {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), STEP_TIMEOUT_MS);
   try {
@@ -79,15 +82,23 @@ export type ReceivedEmail = {
  * body is a second call, which is also why a retry costs nothing: Resend keeps the
  * email whether or not our webhook ever succeeded.
  */
-export async function fetchReceivedEmail(providerEmailId: string): Promise<ReceivedEmail> {
-  if (!RESEND_API_KEY) throw new Error("server not configured: set RESEND_INBOUND_API_KEY");
+export async function fetchReceivedEmail(
+  providerEmailId: string,
+): Promise<ReceivedEmail> {
+  if (!RESEND_API_KEY) {
+    throw new Error("server not configured: set RESEND_INBOUND_API_KEY");
+  }
 
   const res = await fetchWithTimeout(
-    `https://api.resend.com/emails/receiving/${encodeURIComponent(providerEmailId)}`,
+    `https://api.resend.com/emails/receiving/${
+      encodeURIComponent(providerEmailId)
+    }`,
     { headers: { Authorization: `Bearer ${RESEND_API_KEY}` } },
   );
   if (!res.ok) {
-    throw new Error(`resend receiving ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    throw new Error(
+      `resend receiving ${res.status}: ${(await res.text()).slice(0, 300)}`,
+    );
   }
   const body = await res.json() as {
     text?: string | null;
@@ -96,7 +107,7 @@ export async function fetchReceivedEmail(providerEmailId: string): Promise<Recei
     from?: string | null;
     to?: string[] | null;
     cc?: string[] | null;
-    headers?: Record<string, string> | null;
+    headers?: unknown;
   };
 
   // The parser reads plain text. Most OTA mail carries both parts; when it does not,
@@ -109,64 +120,75 @@ export async function fetchReceivedEmail(providerEmailId: string): Promise<Recei
     text,
     subject: body.subject ?? null,
     from: body.from ?? null,
-    recipients: recipientsOf(body, text),
+    // Only the original To: list decides the business. See companyFor.
+    recipients: originalRecipients(body),
   };
 }
 
-/** Every address the email was aimed at, envelope and headers alike, lowercased. */
-function recipientsOf(body: {
-  to?: string[] | null;
-  cc?: string[] | null;
-  headers?: Record<string, string> | null;
-}, text = ""): string[] {
-  const out: string[] = [];
-  for (const v of [...(body.to ?? []), ...(body.cc ?? [])]) if (v) out.push(v);
+/**
+ * The addresses the email was originally aimed at, in order.
+ *
+ * Make read these off its mailhook as `Recipients[1]` / `Recipients[2]`, which are
+ * the original To: header. Resend's `to` is the ENVELOPE recipient, so after a
+ * forward it is only our own inbound address and the header is the one place the
+ * real destination survives. Read the header when it is there, fall back to `to`.
+ *
+ * `headers` arrives in whatever shape the API chooses: a name -> value map, a list
+ * of `{name, value}` pairs, or the raw block as one string. Reading only one shape
+ * fails silently, with every email looking like the fallback business, so all three
+ * are handled. Order is preserved, because the rule is positional.
+ */
+function originalRecipients(
+  body: { to?: string[] | null; headers?: unknown },
+): string[] {
+  const raw = toHeaderValue(body.headers);
+  const list = raw
+    ? raw.match(/[\w.+-]+@[\w.-]+\.\w+/g) ?? []
+    : (body.to ?? []).filter(Boolean).map(String);
+  return list.map((v) => v.toLowerCase());
+}
 
-  // The mail reaches us FORWARDED from the business mailbox, so the envelope
-  // recipient is our own inbound address and the address that decides the business
-  // survives only in the headers. Miss these and every email looks like Miami.
-  const h = body.headers ?? {};
-  for (const [k, v] of Object.entries(h)) {
-    const key = k.toLowerCase();
-    if (
-      key === "to" || key === "cc" || key === "delivered-to" ||
-      key === "x-forwarded-to" || key === "x-original-to" || key === "x-forwarded-for"
-    ) {
-      if (v) out.push(String(v));
+/** The To: header's value, whatever shape `headers` came in. */
+function toHeaderValue(h: unknown): string | null {
+  if (typeof h === "string") {
+    const line = h.split("\n").find((l) => /^\s*to\s*:/i.test(l));
+    return line ? line.replace(/^\s*to\s*:/i, "") : null;
+  }
+  if (Array.isArray(h)) {
+    for (const entry of h) {
+      if (entry && typeof entry === "object") {
+        const e = entry as Record<string, unknown>;
+        const name = e.name ?? e.key;
+        if (typeof name === "string" && name.trim().toLowerCase() === "to") {
+          return e.value == null ? null : String(e.value);
+        }
+      }
+    }
+    return null;
+  }
+  if (h && typeof h === "object") {
+    for (const [k, v] of Object.entries(h as Record<string, unknown>)) {
+      if (k.trim().toLowerCase() === "to" && v != null) return String(v);
     }
   }
-
-  out.push(...recipientsInText(text));
-  return out.map((s) => s.toLowerCase());
+  return null;
 }
 
 /**
- * The addresses written into the body's forwarded header block.
+ * The Bubble company id behind the recipients, matching the Make scenario exactly:
  *
- * A mailbox rule forwards the message intact and the real headers survive. A person
- * forwarding by hand does not: the client builds a NEW message to us and writes the
- * original "To:" into the body, above the quoted text. Read that block too, or a
- * hand-forwarded Key West booking is filed under Miami and nothing looks wrong until
- * the guest reaches the wrong dock. Only To/Cc lines, so the customer's own address
- * further down is never mistaken for ours.
+ *   if(contains(74.Recipients[1]; KEY_WEST_INBOX) or
+ *      contains(74.Recipients[2]; KEY_WEST_INBOX), KEY_WEST, MIAMI)
  *
- * Kept separate because a retry works from the stored raw_text with no Resend call,
- * and it has to reach the same answer as the first pass.
+ * The FIRST TWO addresses of the original To: header and nothing else. Not cc, not
+ * delivered-to, not the x-forwarded-* headers. The rule is positional, so widening
+ * it silently moves bookings between businesses. See originalRecipients for why the
+ * header, rather than Resend's `to`, is what has to be read.
  */
-export function recipientsInText(text: string): string[] {
-  const out: string[] = [];
-  for (const line of text.slice(0, 4000).split("\n")) {
-    if (!/^\s*(to|cc):/i.test(line)) continue;
-    for (const addr of line.match(/[\w.+-]+@[\w.-]+\.\w+/g) ?? []) {
-      out.push(addr.toLowerCase());
-    }
-  }
-  return out;
-}
-
-/** The Bubble company id behind the recipients. See the note on KEY_WEST_INBOX. */
 export function companyFor(recipients: string[]): string {
-  return recipients.some((r) => r.includes(KEY_WEST_INBOX)) ? COMPANY_KEY_WEST : COMPANY_MIAMI;
+  return recipients.slice(0, 2).some((r) => r.includes(KEY_WEST_INBOX))
+    ? COMPANY_KEY_WEST
+    : COMPANY_MIAMI;
 }
 
 /** Crude tag strip, only ever a fallback for an email with no text part. */
@@ -200,8 +222,12 @@ type ParseResponse = {
  * counts the attempt and decides when to stop. Returns what the row should become.
  */
 export async function processInbound(row: InboundRow): Promise<ProcessOutcome> {
-  if (!EMAIL_PARSE_SECRET) throw new Error("server not configured: set EMAIL_PARSE_SECRET");
-  if (!XANO_WEBHOOK_SECRET) throw new Error("server not configured: set XANO_WEBHOOK_SECRET");
+  if (!EMAIL_PARSE_SECRET) {
+    throw new Error("server not configured: set EMAIL_PARSE_SECRET");
+  }
+  if (!XANO_WEBHOOK_SECRET) {
+    throw new Error("server not configured: set XANO_WEBHOOK_SECRET");
+  }
 
   // 1. The body. Kept on the row after the first pass, so later passes and any
   //    after-the-fact question about what we read cost Resend nothing.
@@ -214,24 +240,26 @@ export async function processInbound(row: InboundRow): Promise<ProcessOutcome> {
     subject = subject ?? mail.subject;
     if (mail.recipients.length > 0) recipients = mail.recipients;
   }
-  // Whatever the body says it was addressed to counts on every pass, not just the
-  // one that fetched it. See recipientsInText.
-  recipients = [...recipients, ...recipientsInText(text)];
 
   const company = row.legacy_company_id ?? companyFor(recipients);
 
   // 2. Parse. POST, not the GET the Make scenario used: an OTA email body is far
   //    past a safe URL length, and Make only got away with it by truncating nothing
   //    it happened to receive.
-  const parseRes = await fetchWithTimeout(`${SUPABASE_URL}/functions/v1/email-booking-parse`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-webhook-secret": EMAIL_PARSE_SECRET,
+  const parseRes = await fetchWithTimeout(
+    `${SUPABASE_URL}/functions/v1/email-booking-parse`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-webhook-secret": EMAIL_PARSE_SECRET,
+      },
+      body: JSON.stringify({ text, subject: subject ?? "", company }),
     },
-    body: JSON.stringify({ text, subject: subject ?? "", company }),
-  });
-  const parseBody = await parseRes.json().catch(() => null) as ParseResponse | null;
+  );
+  const parseBody = await parseRes.json().catch(() => null) as
+    | ParseResponse
+    | null;
   if (!parseRes.ok || !parseBody?.ok) {
     throw new Error(
       `parse ${parseRes.status}: ${parseBody?.error ?? "unreadable response"}`,
@@ -260,29 +288,32 @@ export async function processInbound(row: InboundRow): Promise<ProcessOutcome> {
   }
 
   // 4. Write the booking. Same fields the Make scenario mapped, same endpoint.
-  const syncRes = await fetchWithTimeout(`${SUPABASE_URL}/functions/v1/xano-booking-sync`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-webhook-secret": XANO_WEBHOOK_SECRET,
+  const syncRes = await fetchWithTimeout(
+    `${SUPABASE_URL}/functions/v1/xano-booking-sync`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-webhook-secret": XANO_WEBHOOK_SECRET,
+      },
+      body: JSON.stringify({
+        supplier: booking.supplier ?? null,
+        company: booking.company ?? company,
+        starts_at: booking.startsAtMs ?? null,
+        status: booking.status ?? null,
+        booking_channel: booking.bookingChannel ?? null,
+        customer_name: booking.customerName ?? null,
+        phone: booking.phone ?? null,
+        email: booking.email ?? null,
+        adult: booking.adult ?? 0,
+        child: booking.child ?? 0,
+        infant: booking.infant ?? 0,
+        booking_reference: booking.bookingReference ?? null,
+        checked: false,
+        business_tour_id: businessTourId,
+      }),
     },
-    body: JSON.stringify({
-      supplier: booking.supplier ?? null,
-      company: booking.company ?? company,
-      starts_at: booking.startsAtMs ?? null,
-      status: booking.status ?? null,
-      booking_channel: booking.bookingChannel ?? null,
-      customer_name: booking.customerName ?? null,
-      phone: booking.phone ?? null,
-      email: booking.email ?? null,
-      adult: booking.adult ?? 0,
-      child: booking.child ?? 0,
-      infant: booking.infant ?? 0,
-      booking_reference: booking.bookingReference ?? null,
-      checked: false,
-      business_tour_id: businessTourId,
-    }),
-  });
+  );
   const syncBody = await syncRes.json().catch(() => null) as {
     ok?: boolean;
     error?: string;
@@ -291,7 +322,9 @@ export async function processInbound(row: InboundRow): Promise<ProcessOutcome> {
   const result = syncBody?.results?.[0];
   if (!syncRes.ok || !syncBody?.ok || !result?.ok) {
     throw new Error(
-      `sync ${syncRes.status}: ${result?.error ?? syncBody?.error ?? "unreadable response"}`,
+      `sync ${syncRes.status}: ${
+        result?.error ?? syncBody?.error ?? "unreadable response"
+      }`,
     );
   }
 
