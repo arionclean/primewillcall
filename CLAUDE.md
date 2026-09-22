@@ -309,6 +309,8 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   flipped per kiosk like `card_flow`. Reading from here does not change writing: a
   tablet on 'supabase' still writes to both. Identity on the way out stays Xano's (row
   id, code, product id from `tours.legacy_product_id`) because the writes still need it.
+  A fourth action, `booking`, answers one booking by the id printed on the guest's
+  ticket (`bookings.public_token`), which is what the two scan screens read.
   **Known before flipping a kiosk:** `bookings.total_cents` is 100x too high on 2,312
   kiosk bookings synced from Xano (the sync treats Xano's price as dollars; Xano's
   trigger sends cents below $100), so a tablet reading bookings from here would show
