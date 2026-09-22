@@ -207,7 +207,8 @@ code after the insert trigger that calls the sync, so the echo never carries it 
 overwritten later). `xano_confirmation_token` (indexed where not null) holds Xano's
 code for those: the `xano-ticket-tokens` sweep (pg_cron, hourly, read-only on Xano,
 at most 200 GETs by `xano_internal_id` per run, stamped only when the returned row's
-`booking_reference` matches ours) fills it for upcoming bookings. `/booking/[token]`
+`booking_reference` matches ours) fills it for upcoming bookings born in Xano (a
+booking born here reaches Xano with no phone, so Xano never texted it a link). `/booking/[token]`
 resolves `public_token`, `xano_confirmation_token` or `xano_internal_id` in one
 query and requires exactly one match, since Xano reuses a PW- code now and then.
 This is what lets `bked.io/booking/<code>` links (a registrar 301 to

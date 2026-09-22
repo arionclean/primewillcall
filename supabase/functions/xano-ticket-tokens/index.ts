@@ -14,6 +14,9 @@
 // Scope, deliberately narrow:
 //   * starts_at in the future, not cancelled, not an unpaid checkout: a link for a
 //     tour that already happened is not worth a call;
+//   * born in Xano: legacy_id set and not the ota-GP- prefix. A booking born here
+//     (the /schedule form, /gp) reaches Xano through the mirror with no phone, so
+//     Xano never texted it a link, and our own text already carries public_token;
 //   * xano_internal_id present (that is how the Xano row is found);
 //   * public_token not already Xano's 9-char code (the sync-created 23%);
 //   * at most BATCH rows per run, CONCURRENCY GETs at a time, so the backlog drains
@@ -91,6 +94,8 @@ Deno.serve(withSentry("xano-ticket-tokens", async (req) => {
     .select("id, xano_internal_id, legacy_reference, starts_at, public_token")
     .is("xano_confirmation_token", null)
     .not("xano_internal_id", "is", null)
+    .not("legacy_id", "is", null)
+    .not("legacy_id", "like", "ota-GP-%")
     .gt("starts_at", new Date().toISOString())
     .neq("status", "cancelled")
     .eq("awaiting_payment", false)
