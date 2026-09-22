@@ -1018,6 +1018,120 @@ export type Database = {
           },
         ]
       }
+      inbound_email_settings: {
+        Row: {
+          alerts_enabled: boolean
+          id: boolean
+          last_silence_alert_at: string | null
+          max_attempts: number
+          quiet_from_hour: number
+          quiet_to_hour: number
+          silence_minutes: number
+          updated_at: string
+        }
+        Insert: {
+          alerts_enabled?: boolean
+          id?: boolean
+          last_silence_alert_at?: string | null
+          max_attempts?: number
+          quiet_from_hour?: number
+          quiet_to_hour?: number
+          silence_minutes?: number
+          updated_at?: string
+        }
+        Update: {
+          alerts_enabled?: boolean
+          id?: boolean
+          last_silence_alert_at?: string | null
+          max_attempts?: number
+          quiet_from_hour?: number
+          quiet_to_hour?: number
+          silence_minutes?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      inbound_emails: {
+        Row: {
+          alert_sent_at: string | null
+          attempts: number
+          booking_id: string | null
+          business_tour_id: string | null
+          created_at: string
+          error: string | null
+          from_address: string | null
+          id: string
+          last_attempt_at: string | null
+          legacy_company_id: string | null
+          match_queue_id: string | null
+          provider: string
+          provider_email_id: string
+          raw_text: string | null
+          received_at: string
+          status: string
+          subject: string | null
+          to_addresses: string[]
+          updated_at: string
+        }
+        Insert: {
+          alert_sent_at?: string | null
+          attempts?: number
+          booking_id?: string | null
+          business_tour_id?: string | null
+          created_at?: string
+          error?: string | null
+          from_address?: string | null
+          id?: string
+          last_attempt_at?: string | null
+          legacy_company_id?: string | null
+          match_queue_id?: string | null
+          provider?: string
+          provider_email_id: string
+          raw_text?: string | null
+          received_at?: string
+          status?: string
+          subject?: string | null
+          to_addresses?: string[]
+          updated_at?: string
+        }
+        Update: {
+          alert_sent_at?: string | null
+          attempts?: number
+          booking_id?: string | null
+          business_tour_id?: string | null
+          created_at?: string
+          error?: string | null
+          from_address?: string | null
+          id?: string
+          last_attempt_at?: string | null
+          legacy_company_id?: string | null
+          match_queue_id?: string | null
+          provider?: string
+          provider_email_id?: string
+          raw_text?: string | null
+          received_at?: string
+          status?: string
+          subject?: string | null
+          to_addresses?: string[]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inbound_emails_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inbound_emails_business_tour_id_fkey"
+            columns: ["business_tour_id"]
+            isOneToOne: false
+            referencedRelation: "business_tours"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       kiosk_employees: {
         Row: {
           created_at: string

@@ -353,6 +353,34 @@ policy); owner sees all, manager sees their business. Surfaced on the owner-only
   DEFINER with an internal owner / manager-by-business check.
 - `ignore_email_match(p_queue_id)` — dismiss a queued row. Same auth check.
 
+### inbound_emails
+`id, provider ('resend'), provider_email_id, received_at, from_address, to_addresses[],
+subject, raw_text, legacy_company_id, status ('received' | 'parsed' | 'booked' | 'failed' |
+'ignored'), attempts, last_attempt_at, error, booking_id? -> bookings, business_tour_id? ->
+business_tours, match_queue_id, alert_sent_at, created_at, updated_at`. Unique on
+`(provider, provider_email_id)`.
+
+One row per inbound OTA email, written by `email-inbound` **before** any parsing, so an
+email that reached us can never disappear without a trace. This is the migration of Make's
+execution history, and it is the intake's whole safety net: `status` + `attempts` drive the
+`email-inbound-sweep` cron, which retries anything unfinished (the parse writes nothing
+twice and the booking upsert is keyed on the OTA reference, so a retry is free). `parsed`
+means "read fine, not a reservation" (a bounce, a newsletter), deliberately not a failure.
+Owner-only select; no write policy at all, because every write is a service-role edge
+function and the log is worthless if staff can edit it. In the `supabase_realtime`
+publication for `/admin/inbound`.
+
+### inbound_email_settings
+Single row (`id boolean primary key`). `alerts_enabled, silence_minutes (180),
+quiet_from_hour (22), quiet_to_hour (8), max_attempts (5), last_silence_alert_at,
+updated_at`. Owner select + update.
+
+`silence_minutes` is the one that matters: the sweep compares it against the newest
+`received_at` and alerts when the intake goes quiet, which is the failure no row can report
+(a deleted forwarding rule, an edited MX record). It only fires once an email has ever
+arrived, and sleeps through the quiet hours. See
+[`docs/inbound-email.md`](inbound-email.md).
+
 ## Groupon convenience fee (public /gp page)
 
 `/gp` is a public, unauthenticated page where a Groupon customer uploads a voucher

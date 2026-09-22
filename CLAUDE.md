@@ -90,6 +90,9 @@ src/
                                people), hours/ (owner: the tablets' time clock) and
                                activity/ (the tablets + web log); (owner)/ = new/[id]
         unmatched/             owner-only. OTA email review queue (page + actions)
+        inbound/               owner-only. OTA email intake log: every booking email
+                               that reached us and what became of it, plus the "has
+                               email stopped arriving?" health line
         groupon/               owner-only. per-product Groupon convenience fee config
         payments/              owner + manager. Stripe charges ledger + refunds
     api/
@@ -121,7 +124,8 @@ supabase/functions/            Deno edge functions. Everything public, webhook-d
                                scheduled lives here, NOT in a Next route: stripe-webhook,
                                twilio-inbound-sms, sms-send, sms-sync, gp-voucher-vision,
                                run-booking-automations, dispatch-scheduled-messages,
-                               enqueue-review-asks, email-booking-parse, kiosk-*,
+                               enqueue-review-asks, email-booking-parse, email-inbound,
+                               email-inbound-sweep, kiosk-*,
                                xano-ticket-tokens (hourly: stamps Xano's ticket code
                                on upcoming bookings, read-only on Xano),
                                gp-slots, gp-validate, gp-book, xano-booking-sync,
@@ -280,6 +284,25 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
 
 ## Known gaps / roadmap
 
+- **Inbound OTA email** (built 2026-09-22, not yet cut over): the last Make scenario
+  that matters ("Mailhook-sky trigger") received the OTA reservation emails on a Make
+  mailhook address. Replaced by Resend inbound: `email.received` webhook ->
+  `email-inbound` -> the same `email-booking-parse` + `xano-booking-sync` pair Make
+  called. Resend's webhook is **metadata only**, so the body is a second call
+  (`GET /emails/receiving/{id}`), which is also what makes a retry free. Make's real
+  value was its execution history, so the port is built around that: `inbound_emails`
+  gets a row BEFORE any parsing, `email-inbound-sweep` (pg_cron, 5 min) retries what
+  is unfinished, and the same sweep raises the alarm no row can raise, **no email has
+  arrived at all** (a dead forwarding rule or MX record), which Make could not see
+  either. `/admin/inbound` is the owner's screen. **Left to do**: create the Resend
+  inbound domain + webhook, set `RESEND_WEBHOOK_SECRET`, deploy the two functions,
+  test on Resend's managed `resend.app` address, then re-point the mailbox forwarding
+  and turn the Make scenario off (they can run side by side, the booking upsert is
+  keyed on the OTA reference). See [`docs/inbound-email.md`](docs/inbound-email.md).
+  Make also still runs three small things for Xano: `send sms telnyxs` (a 100-second
+  delay timer in front of Xano's review SMS), `general notifications` (Pushover) and a
+  twice-weekly forecast call. All three are Xano calling Make, so they retire with
+  Xano rather than with this.
 - **Xano mirror** (built 2026-09-08): every booking change made here (new booking,
   time / product / pax / status / note / balance due edit, check-in, void) is copied into Xano
   through an outbox (`xano_mirror_queue`, filled by the `enqueue_xano_mirror`

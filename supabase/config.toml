@@ -120,3 +120,12 @@ verify_jwt = false
 # Throwaway diagnostic, delete when the edge drop-out is understood.
 [functions.zz-probe]
 verify_jwt = false
+
+# The Resend inbound webhook. Resend cannot send a Supabase token, so the guard is
+# the Standard Webhooks signature (RESEND_WEBHOOK_SECRET), checked before anything
+# else in the handler. Its sweep is called by pg_cron with x-cron-secret.
+[functions.email-inbound]
+verify_jwt = false
+
+[functions.email-inbound-sweep]
+verify_jwt = false

@@ -14,6 +14,7 @@ import {
   BarChart3,
   CreditCard,
   Inbox,
+  MailCheck,
   MessageSquare,
   Tag,
   UserCog,
@@ -153,6 +154,15 @@ const SECTIONS: NavSection[] = [
         icon: Inbox,
         roles: ["owner"],
         matchPrefix: "/admin/unmatched",
+      },
+      {
+        // The OTA email intake log. Sits next to Unrecognized because they are the
+        // two screens that answer "did that booking email become a booking?".
+        href: "/admin/inbound",
+        label: "Email intake",
+        icon: MailCheck,
+        roles: ["owner"],
+        matchPrefix: "/admin/inbound",
       },
       {
         href: "/admin/groupon",
