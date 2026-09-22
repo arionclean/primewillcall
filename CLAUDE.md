@@ -87,8 +87,10 @@ src/
           [id]/variants/new/   owner: add a business's copy of a tour
         staff/                 Team. (tabs)/ = accounts/ (owner: every login, grouped by
                                business; where Team opens), people/ (owner + manager: the PIN
-                               people), hours/ (owner: the tablets' time clock) and
-                               activity/ (the tablets + web log); (owner)/ = new/[id]
+                               people), hours/ (owner: the tablets' time clock), sales/
+                               (owner: the money each person took on the tablets, from
+                               the team_sales RPC) and activity/ (the tablets + web
+                               log); (owner)/ = new/[id]
         unmatched/             owner-only. OTA email review queue (page + actions)
         inbound/               owner-only. OTA email intake log: every booking email
                                that reached us and what became of it, plus the "has

@@ -3275,6 +3275,16 @@ export type Database = {
           txn_count: number
         }[]
       }
+      team_sales: {
+        Args: { p_business?: string; p_end: string; p_start: string }
+        Returns: {
+          card_cents: number
+          cash_cents: number
+          employee_id: string
+          employee_name: string
+          sales: number
+        }[]
+      }
       text_array_union: {
         Args: { a: string[]; b: string[] }
         Returns: string[]

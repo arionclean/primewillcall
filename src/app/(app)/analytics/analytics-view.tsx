@@ -17,6 +17,7 @@ import { Card } from "@/components/ui/card";
 import { DateField } from "@/components/ui/date-field";
 import { SEGMENT, SEGMENT_ITEM, SEGMENT_OFF, SEGMENT_ON } from "@/components/ui/segment";
 import { cn } from "@/lib/utils";
+import { downloadCsv } from "@/lib/csv";
 import { BUSINESS_TZ, getLocalDateRange } from "@/lib/dates";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { classifySource } from "@/lib/source-type";
@@ -119,31 +120,6 @@ function isPresetRange(from: string, to: string, today: string): boolean {
 
 function pct(part: number, total: number): number {
   return total > 0 ? Math.round((part / total) * 100) : 0;
-}
-
-function csvCell(value: string | number): string {
-  const s = String(value ?? "");
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
-
-/** Build a CSV in memory and trigger a client-side download (no server round-trip). */
-function downloadCsv(
-  filename: string,
-  header: string[],
-  rows: (string | number)[][],
-) {
-  const lines = [header, ...rows].map((r) => r.map(csvCell).join(","));
-  const blob = new Blob([lines.join("\n")], {
-    type: "text/csv;charset=utf-8;",
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
 }
 
 export function AnalyticsView({

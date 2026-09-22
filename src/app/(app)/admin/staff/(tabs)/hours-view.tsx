@@ -7,12 +7,11 @@ import { Fragment, useActionState, useEffect, useMemo, useState, useTransition }
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { DateField } from "@/components/ui/date-field";
 import { Dialog } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { SEGMENT, SEGMENT_ITEM, SEGMENT_OFF, SEGMENT_ON } from "@/components/ui/segment";
 import { SubmitButton } from "@/components/ui/submit-button";
+import { downloadCsv } from "@/lib/csv";
 import { useLiveRefresh } from "@/lib/realtime/use-live-refresh";
 import { cn } from "@/lib/utils";
 
@@ -22,7 +21,8 @@ import {
   updateShiftAction,
   type HoursActionState,
 } from "./hours-actions";
-import { decimalHours, formatMinutes, hoursPresets } from "./hours-range";
+import { decimalHours, formatMinutes } from "./hours-range";
+import { RangeBar } from "./range-bar";
 
 export type ShiftRow = {
   id: string;
@@ -109,25 +109,6 @@ function kioskLabel(slug: string | null): string {
   return slug.charAt(0).toUpperCase() + slug.slice(1);
 }
 
-function csvCell(value: string | number): string {
-  const s = String(value ?? "");
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
-
-/** Build a CSV in memory and hand it to the browser (no server round-trip). */
-function downloadCsv(filename: string, header: string[], rows: (string | number)[][]) {
-  const lines = [header, ...rows].map((r) => r.map(csvCell).join(","));
-  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
 /** The clock-in photo, or the person's initial when there is none. */
 function PersonPhoto({ shift, size = "size-10" }: { shift: ShiftRow; size?: string }) {
   if (!shift.photoUrl) {
@@ -159,14 +140,6 @@ export function HoursView({
   loadError,
 }: Props) {
   const router = useRouter();
-  const presets = hoursPresets();
-  // The From / To pair is only open when the range on screen is not a preset and
-  // not a single day, the same rule the analytics bar follows.
-  const [custom, setCustom] = useState(
-    () =>
-      filters.from !== filters.to &&
-      !presets.some((p) => p.from === filters.from && p.to === filters.to),
-  );
   const from = filters.from;
   const to = filters.to;
   // Clicking a person opens their shifts underneath, with the exact times.
@@ -220,67 +193,7 @@ export function HoursView({
         </p>
       )}
 
-      {/*
-        One filter bar, the same one Analytics uses: a calendar that picks a
-        single day, the ranges in a segmented control, and Custom to open a
-        From / To pair. The field carries no label; the tab above says what
-        this is.
-      */}
-      <div className="flex flex-wrap items-center gap-2">
-        {custom ? (
-          <div className="inline-flex items-center gap-1.5">
-            <DateField
-              value={from}
-              onChange={(e) => e.target.value && setRange(e.target.value, to)}
-              aria-label="From date"
-              className="h-8 w-[9rem] text-xs"
-            />
-            <span className="text-xs text-muted-foreground">to</span>
-            <DateField
-              value={to}
-              onChange={(e) => e.target.value && setRange(from, e.target.value)}
-              aria-label="To date"
-              className="h-8 w-[9rem] text-xs"
-            />
-          </div>
-        ) : (
-          <DateField
-            value={from === to ? from : ""}
-            onChange={(e) => {
-              const day = e.target.value;
-              if (day) setRange(day, day);
-            }}
-            aria-label="Day"
-            className="h-8 w-[9rem] text-xs"
-          />
-        )}
-
-        <div className={SEGMENT}>
-          {presets.map((p) => (
-            <button
-              key={p.label}
-              type="button"
-              onClick={() => {
-                setCustom(false);
-                setRange(p.from, p.to);
-              }}
-              className={cn(
-                SEGMENT_ITEM,
-                !custom && p.from === from && p.to === to ? SEGMENT_ON : SEGMENT_OFF,
-              )}
-            >
-              {p.label}
-            </button>
-          ))}
-          <button
-            type="button"
-            onClick={() => setCustom(true)}
-            className={cn(SEGMENT_ITEM, custom ? SEGMENT_ON : SEGMENT_OFF)}
-          >
-            Custom
-          </button>
-        </div>
-
+      <RangeBar from={from} to={to} onRange={setRange}>
         <Button
           type="button"
           variant="outline"
@@ -291,7 +204,7 @@ export function HoursView({
         >
           Export CSV
         </Button>
-      </div>
+      </RangeBar>
 
       {/* ── Hours per person ─────────────────────────────────────────────── */}
       <Card>
@@ -469,10 +382,7 @@ export function HoursView({
           {needsReview.from && (
             <button
               type="button"
-              onClick={() => {
-                setCustom(true);
-                setRange(needsReview.from as string, needsReview.to);
-              }}
+              onClick={() => setRange(needsReview.from as string, needsReview.to)}
               className="ml-auto rounded-md border border-amber-300 bg-background px-2.5 py-1 text-xs font-medium text-amber-900 transition hover:bg-amber-100"
             >
               Show them

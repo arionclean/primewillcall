@@ -600,6 +600,17 @@ business's current account.
   `card_refunded` / `cash_refunded` what went back (`refunded` is their sum, kept for older
   callers). The cards show each tender less its own refunds, with "$x refunded" under it:
   refunded cash left the drawer, so the Cash card must match what the desk holds.
+- `team_sales(p_start, p_end, p_business)`: Team -> Sales. One row per person who took
+  money on a tablet (`sales`, `cash_cents`, `card_cents`, each net of refunds; a sale
+  refunded in full stops counting), from the same ledger as `payments_summary`: charges
+  whose `source` is a kiosk slug, and `cash_sales` where `type = 'cash'`, voided left out.
+  Credit comes from the sale, never from `bookings.kiosk_employee_id` (a tablet check-in
+  overwrites that): `cash_sales.employee_id`, and for a charge the `kiosk_sales` row whose
+  unique `ref` is the charge's `booking_ref`. Sales nobody can be credited with are one
+  row with a null `employee_id`, so the rows add up to the tablets' total. Half-open range
+  `[p_start, p_end)`. **Owner only**: an owner check inside the function (a manager can
+  read the ledger for Payments, so no policy would stop them) returns no rows to anyone
+  else. `SECURITY INVOKER`.
 - `payments_feed(p_start, p_end, p_business, p_source, p_q, p_limit, p_offset)` — one page of
   the merged card + cash feed, newest first, with the whole-range row count in `total_count`
   (a `count(*) over ()` computed before the LIMIT). The union, sort, paging and count all

@@ -77,6 +77,11 @@ still working shows an "On the clock" badge and a running total in the table.
   the oldest one.
 - **Export CSV** for payroll: date, person, in, out, decimal hours, tablet, note.
 
+The same hours feed **Per hour** on Team -> Sales: each person's tablet sales for the
+range divided by the hours they clocked in it (see
+[`kiosk-employees.md`](kiosk-employees.md)). The range bar is shared by the two tabs
+(`range-bar.tsx`).
+
 ### Fixing things
 
 - **Edit** sets the times of a shift (one date, two clock times; an end at or before the

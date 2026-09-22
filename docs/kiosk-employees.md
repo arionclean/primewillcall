@@ -49,9 +49,9 @@ which iPad; the employee PIN says who.
 
 ## The admin page: Team
 
-Four tabs (Accounts, People, Hours, Activity; Team opens on Accounts for the owner, on
-People for a manager), the model a new owner learns in one sentence: a **person** works
-here and types a PIN; an **account** is a login.
+Five tabs (Accounts, People, Hours, Sales, Activity; Team opens on Accounts for the
+owner, on People for a manager), the model a new owner learns in one sentence: a
+**person** works here and types a PIN; an **account** is a login.
 
 - **People** (`/admin/staff/people`, owner and any business manager; a manager changes
   things only with the `can_manage_team` switch, otherwise the list is read-only): the employees who type a
@@ -63,6 +63,20 @@ here and types a PIN; an **account** is a login.
 - **Hours** (`/admin/staff/hours`, owner only): when those people clocked in and out on
   the tablets, and the hours that add up to. Its own feature, described in
   [`time-clock.md`](time-clock.md).
+- **Sales** (`/admin/staff/sales`, owner only: the tab, the page and the `team_sales`
+  function, which returns no rows for anyone else, since a manager can read the
+  ledger underneath for Payments): what each person took on the tablets over a range (this week by
+  default, the same range bar as Hours): sales, cash, card and the total, each net
+  of refunds, voided cash left out, highest first. The `team_sales` RPC sums it in
+  Postgres from the Payments ledger, so the Total row is exactly what Payments shows
+  for the tablets. A sale counts for the PIN typed when it was made: `cash_sales.employee_id`,
+  and for a card charge the tablet's own sale (`kiosk_sales.employee_id`, matched by the
+  KS code the charge carries as `booking_ref`). Never the booking's
+  `kiosk_employee_id`: checking a guest in on a tablet overwrites it. Sales with no PIN
+  (before PINs, a tablet with `pin_on_sale` off, a person since removed) show as one
+  "Not credited to anyone" row. **Hours** and **Per hour** come from the time clock,
+  and people who clocked in but sold nothing show at $0; a business filter hides the
+  hours, because the clock is not kept per business. Live, and Export CSV.
 - **Activity** (`/admin/staff/activity`, owner and manager): the log, described below.
   Its Person filter lists the people (by PIN) and the accounts (by login) under two
   headings.
