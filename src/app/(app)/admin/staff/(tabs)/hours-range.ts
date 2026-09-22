@@ -1,10 +1,10 @@
 import { nyDateISO, shiftDayISO } from "@/lib/dashboard/queries";
 
 /**
- * The ranges the Hours screen offers, and the words it puts on a duration.
- * Shared by the page (which needs the default range before rendering) and the
- * view (which changes it), so the two can never disagree about what "This week"
- * means. Every date here is a New York day, like every other screen.
+ * The ranges the Hours and Sales tabs offer, and the words they put on a
+ * duration. Shared by the pages (which need the default range before rendering)
+ * and the range bar (which changes it), so they can never disagree about what
+ * "This week" means. Every date here is a New York day, like every other screen.
  */
 
 /** Monday of the week `iso` falls in. Payroll weeks here start on Monday. */
@@ -19,7 +19,7 @@ export function weekStartISO(iso: string): string {
  * analytics bar: each one is a finished range, so the active one is simply the
  * one whose dates match the URL.
  */
-export function hoursPresets(today: string = nyDateISO()): { label: string; from: string; to: string }[] {
+export function rangePresets(today: string = nyDateISO()): { label: string; from: string; to: string }[] {
   const thisMonday = weekStartISO(today);
   const lastMonday = shiftDayISO(thisMonday, -7);
   const firstOfMonth = `${today.slice(0, 8)}01`;
@@ -34,7 +34,7 @@ export function hoursPresets(today: string = nyDateISO()): { label: string; from
   ];
 }
 
-/** What the screen opens on: today, the question a desk asks most. */
+/** What Hours opens on: today, the question a desk asks most. */
 export function defaultRange(today: string = nyDateISO()): { from: string; to: string } {
   return { from: today, to: today };
 }
