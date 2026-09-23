@@ -26,7 +26,8 @@
 //      the ~90k genuinely Xano-synced bookings, which Xano's own rateAsk campaign
 //      still handles. This is what stops double SMS. The mirrored ones are safe
 //      because they reach Xano with phone "null", and a Xano booking with no phone
-//      triggers nothing there (confirmed by the owner).
+//      triggers nothing there (confirmed by the owner). Plus the OTA bookings the
+//      Mailroom created (bookings.inbound_email_id), which Xano never sees.
 //   3. review_ask_lookback_hours - bounded window, so switching this on can
 //      never back-text every booking in history.
 //   4. checked_in_at IS NOT NULL - only guests who actually turned up.
@@ -127,7 +128,14 @@ Deno.serve(withSentry("enqueue-review-asks", async (req) => {
     // ourselves in gp-xano-mirror.ts and Xano never produces it, so it is a safe mark
     // of "ours". Those bookings are mirrored with phone "null", which is what stops
     // Xano's own funnel from texting the same guest.
-    .or(`legacy_id.is.null,legacy_id.like.${GP_MIRROR_PREFIX}%`)
+    //
+    // The third mark is the Mailroom's: an OTA booking it created carries the email
+    // it came from (inbound_email_id, set on insert only). Since Make stopped posting
+    // OTA email into Xano (2026-09-23), Xano never hears of those guests, so this
+    // funnel is the only one that can ask them.
+    .or(
+      `legacy_id.is.null,legacy_id.like.${GP_MIRROR_PREFIX}%,inbound_email_id.not.is.null`,
+    )
     .gte("ends_at", endedAfter)
     .lte("ends_at", endedBefore)
     // Brake 4. Only guests who actually turned up.

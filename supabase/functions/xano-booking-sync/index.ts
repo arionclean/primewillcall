@@ -49,6 +49,10 @@ const clean = (v: unknown): string | null => {
   return s === "" || s.toLowerCase() === "null" ? null : s;
 };
 
+const isUuid = (v: unknown): v is string =>
+  typeof v === "string" &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+
 const toInt = (v: unknown): number => {
   const n = Number(v);
   return Number.isFinite(n) ? Math.max(0, Math.trunc(n)) : 0;
@@ -548,6 +552,13 @@ async function ingest(row: Record<string, unknown>, m: Maps): Promise<Result> {
     booked_at: epochToIso(row.created_at),
     ...xanoIds,
     ...(confirmationToken ? { public_token: confirmationToken } : {}),
+    // The Mailroom email this booking was created from. Only ever on this, the
+    // insert path: it is what marks an OTA booking as ours to text (the automations
+    // trigger and the review funnel read it), so an update must never add it to a
+    // booking Xano already texted.
+    ...(isUuid(row.inbound_email_id)
+      ? { inbound_email_id: row.inbound_email_id }
+      : {}),
     ...(typeof row.peek === "boolean" ? { peek: row.peek } : {}),
     ...(Array.isArray(row.image_url)
       ? { groupon_voucher_urls: imageUrls(row.image_url) }

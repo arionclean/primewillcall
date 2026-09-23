@@ -237,6 +237,16 @@ from every echo; the mirrors stamp the internal id BEFORE calling Xano. A bookin
 born here therefore keeps `legacy_id` null (every "is this ours" rule reads that)
 and is still recognised when Xano echoes it back. See "Xano mirror" below.
 
+`inbound_email_id` (-> `inbound_emails`, since 2026-09-23) is the second "ours" mark:
+the Mailroom email a booking was **created** from. The sync sets it on insert only, when
+the Mailroom calls it, never on an update. An OTA booking keeps its `ota-<ref>` key (that
+is what makes an amended email land on the one row), so without this mark the messaging
+rules would read it as Xano's; since Make stopped posting OTA email into Xano, nobody
+else texts those guests. `trg_native_booking_automations` fires for
+`legacy_id IS NULL AND status <> 'pending'` **or** `inbound_email_id IS NOT NULL AND
+status = 'confirmed' AND starts_at > now()`, and `enqueue-review-asks` takes it. Partial
+index `bookings_inbound_email_idx`. See [`docs/mailroom.md`](mailroom.md).
+
 ### Xano mirror (bookings -> Xano)
 
 The reverse of `xano-booking-sync`: every booking change made in this app is copied
@@ -354,21 +364,35 @@ policy); owner sees all, manager sees their business. Surfaced on the owner-only
 - `ignore_email_match(p_queue_id)` — dismiss a queued row. Same auth check.
 
 ### inbound_emails
-`id, provider ('resend'), provider_email_id, received_at, from_address, to_addresses[],
-subject, raw_text, legacy_company_id, status ('received' | 'parsed' | 'booked' | 'failed' |
-'ignored'), attempts, last_attempt_at, error, booking_id? -> bookings, business_tour_id? ->
-business_tours, match_queue_id, alert_sent_at, created_at, updated_at`. Unique on
-`(provider, provider_email_id)`.
+The Mailroom's log. `id, provider ('resend'), provider_email_id, received_at,
+from_address, to_addresses[], subject, raw_text, legacy_company_id, status ('received' |
+'parsed' | 'booked' | 'failed' | 'ignored'), attempts, last_attempt_at, error, booking_id?
+-> bookings, business_tour_id? -> business_tours, match_queue_id, steps (jsonb), warnings
+(text[]), alert_sent_at, ignored_at, ignored_by? -> staff, created_at, updated_at`. Unique
+on `(provider, provider_email_id)`.
 
 One row per inbound OTA email, written by `email-inbound` **before** any parsing, so an
 email that reached us can never disappear without a trace. This is the migration of Make's
 execution history, and it is the intake's whole safety net: `status` + `attempts` drive the
-`email-inbound-sweep` cron, which retries anything unfinished (the parse writes nothing
-twice and the booking upsert is keyed on the OTA reference, so a retry is free). `parsed`
-means "read fine, not a reservation" (a bounce, a newsletter), deliberately not a failure.
-Owner-only select; no write policy at all, because every write is a service-role edge
-function and the log is worthless if staff can edit it. In the `supabase_realtime`
-publication for `/admin/inbound`.
+`email-inbound-sweep` cron, which retries anything still `received` (the parse writes
+nothing twice and the booking upsert is keyed on the OTA reference, so a retry is free).
+`parsed` means "read fine, not a reservation" (a bounce, a newsletter), deliberately not a
+failure. `failed` means a person owns it (out of attempts, or an email that looks like a
+booking but reads as nothing); only `mailroom_retry` sends it round again. `steps` is what
+the latest pass did (fetch, read, book: outcome, timing, what it read or answered), kept
+when a pass fails. `warnings` holds codes for details a booked email lacked
+(`no_guest_count`, `guest_count_mismatch`, both alerted; `no_guest_name`, `no_channel`,
+screen only). Owner-only select; no write policy at all, because every write is a
+service-role edge function or one of the owner functions below, and the log is worthless
+if staff can edit it. In the `supabase_realtime` publication for `/admin/mailroom`.
+
+Functions: `mailroom_claim_pending(limit, max_attempts, retry_after_minutes)` and
+`mailroom_claim_alerts()` (service role only; the sweep's retries under `FOR UPDATE SKIP
+LOCKED`, and every row a person has not been told about, stamped `alert_sent_at` in the
+same statement); `mailroom_summary()` (SECURITY INVOKER, the screen's health line over the
+whole log); `mailroom_retry(id)` and `mailroom_set_aside(id)` (SECURITY DEFINER with an
+owner check inside; they change only the processing state, never the email, and Retry
+kicks a sweep run through `pg_net`).
 
 ### inbound_email_settings
 Single row (`id boolean primary key`). `alerts_enabled, silence_minutes (180),
@@ -379,7 +403,7 @@ updated_at`. Owner select + update.
 `received_at` and alerts when the intake goes quiet, which is the failure no row can report
 (a deleted forwarding rule, an edited MX record). It only fires once an email has ever
 arrived, and sleeps through the quiet hours. See
-[`docs/inbound-email.md`](inbound-email.md).
+[`docs/mailroom.md`](mailroom.md).
 
 ## Groupon convenience fee (public /gp page)
 

@@ -46,6 +46,51 @@ export async function reportError(
   await Sentry.flush(2000);
 }
 
+/**
+ * A heartbeat for a scheduled job, checked from OUTSIDE this platform.
+ *
+ * Every alarm a job raises lives inside the job, so a job that stops running (its
+ * pg_cron entry gone, pg_net stuck, a rotated secret answering 401, the project down)
+ * goes quiet and takes its alarms with it. Sentry's cron monitor expects a check-in
+ * on the job's schedule and opens an issue when they stop or fail: the one watcher
+ * that does not depend on the thing it watches. The monitor is created by the first
+ * check-in (the config below), so there is nothing to set up in Sentry by hand.
+ *
+ * `run` counts as a failed check-in only when it throws. Off without SENTRY_DSN.
+ */
+export async function withCronMonitor<T>(
+  slug: string,
+  crontab: string,
+  run: () => Promise<T>,
+): Promise<T> {
+  if (!dsn) return run();
+  ensureInit();
+  const checkInId = Sentry.captureCheckIn(
+    { monitorSlug: slug, status: "in_progress" },
+    {
+      schedule: { type: "crontab", value: crontab },
+      timezone: "UTC",
+      // A tick may start a few minutes late (pg_cron and a cold start) without it
+      // counting as missed, and one missed tick alone is not an outage: two in a row
+      // are, so a single slow run never pages anyone.
+      checkinMargin: 5,
+      maxRuntime: 5,
+      failureIssueThreshold: 2,
+      recoveryThreshold: 1,
+    },
+  );
+  try {
+    const result = await run();
+    Sentry.captureCheckIn({ checkInId, monitorSlug: slug, status: "ok" });
+    return result;
+  } catch (error) {
+    Sentry.captureCheckIn({ checkInId, monitorSlug: slug, status: "error" });
+    throw error;
+  } finally {
+    await Sentry.flush(2000);
+  }
+}
+
 export function withSentry(fn: string, handler: Handler): Handler {
   if (!dsn) return handler;
   return async (req: Request): Promise<Response> => {
