@@ -27,7 +27,8 @@
 //      still handles. This is what stops double SMS. The mirrored ones are safe
 //      because they reach Xano with phone "null", and a Xano booking with no phone
 //      triggers nothing there (confirmed by the owner). Plus the OTA bookings the
-//      Mailroom created (bookings.inbound_email_id), which Xano never sees.
+//      Mailroom created (bookings.inbound_email_id), which Xano never sees. Plus,
+//      once the Xano mirror is switched off, every guest checked in after that.
 //   3. review_ask_lookback_hours - bounded window, so switching this on can
 //      never back-text every booking in history.
 //   4. checked_in_at IS NOT NULL - only guests who actually turned up.
@@ -113,6 +114,25 @@ Deno.serve(withSentry("enqueue-review-asks", async (req) => {
   const endedAfter = new Date(nowMs - (settings.review_ask_lookback_hours ?? 48) * HOUR).toISOString();
   const endedBefore = new Date(nowMs).toISOString();
 
+  // Brake 2 (the marks are explained at the query). The fourth mark comes from the
+  // Xano mirror's switch: Xano's funnel only ever hears of a check-in through that
+  // mirror, so every guest checked in after it stopped (its updated_at) is asked by
+  // nobody else. A guest checked in before it stopped stays Xano's: the ask is
+  // already queued there.
+  const { data: mirror } = await db
+    .from("xano_mirror_settings")
+    .select("enabled, updated_at")
+    .eq("id", true)
+    .maybeSingle();
+  const owned = [
+    "legacy_id.is.null",
+    `legacy_id.like.${GP_MIRROR_PREFIX}%`,
+    "inbound_email_id.not.is.null",
+  ];
+  if (mirror && !mirror.enabled && mirror.updated_at) {
+    owned.push(`checked_in_at.gte.${new Date(mirror.updated_at).toISOString()}`);
+  }
+
   const { data: candidates, error: candErr } = await db
     .from("bookings")
     .select(
@@ -133,9 +153,9 @@ Deno.serve(withSentry("enqueue-review-asks", async (req) => {
     // it came from (inbound_email_id, set on insert only). Since Make stopped posting
     // OTA email into Xano (2026-09-23), Xano never hears of those guests, so this
     // funnel is the only one that can ask them.
-    .or(
-      `legacy_id.is.null,legacy_id.like.${GP_MIRROR_PREFIX}%,inbound_email_id.not.is.null`,
-    )
+    //
+    // The fourth, added above when the mirror is off: checked in after it stopped.
+    .or(owned.join(","))
     .gte("ends_at", endedAfter)
     .lte("ends_at", endedBefore)
     // Brake 4. Only guests who actually turned up.

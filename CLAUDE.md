@@ -327,7 +327,9 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   internal id is stamped in `bookings.xano_internal_id` before Xano is called, so
   the echo is matched to its row and, for a booking born here, applies only the
   iPad check-in and Peek. `legacy_id` stays null on bookings born here on purpose:
-  every ownership rule reads it. Switch: `xano_mirror_settings.enabled`. Nothing in
+  every ownership rule reads it. Switch: `xano_mirror_settings.enabled`, **off since
+  2026-09-23** (the Xano shutdown, with the /gp and kiosk card copies and the cash and
+  ticket-code sweeps; the review funnel asks every guest checked in since). Nothing in
   the app shows the queue (the owner's choice); read it by SQL. See
   [`docs/xano-mirror.md`](docs/xano-mirror.md).
   **The tablet's own edits** (2026-09-09): a check-in, its undo, and "balance paid at

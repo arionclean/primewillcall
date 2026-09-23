@@ -7,7 +7,9 @@ Ported from Xano, rebuilt on the queue this app already has.
 on 2026-09-02. The sweep runs every 15 minutes and only takes bookings this system
 owns (born here, or /gp, which reach Xano without a phone, so Xano's own funnel
 never texts the same guest; and since 2026-09-23 the OTA bookings the Mailroom
-created, `bookings.inbound_email_id`, which Xano never sees at all). "Why it must stay off" below is the history of that
+created, `bookings.inbound_email_id`, which Xano never sees at all; and every guest
+checked in after the Xano mirror was switched off, 2026-09-23 17:37 UTC, since Xano's
+funnel only heard of check-ins through that mirror). "Why it must stay off" below is the history of that
 decision.
 
 ## The flow
@@ -88,8 +90,9 @@ double-text today:
 ## The five brakes
 
 1. `review_automation_enabled` (default **false**).
-2. `legacy_id IS NULL` (plus `ota-GP-%` and the Mailroom's `inbound_email_id IS NOT
-   NULL`) - never touches the ~90k Xano-synced bookings.
+2. `legacy_id IS NULL` (plus `ota-GP-%`, the Mailroom's `inbound_email_id IS NOT
+   NULL`, and, while `xano_mirror_settings.enabled` is false, `checked_in_at` at or
+   after its `updated_at`) - never touches a guest Xano's own funnel already asked.
 3. `review_ask_lookback_hours` (48) - bounded window, so switching on can never
    back-text every booking in history.
 4. `checked_in_at IS NOT NULL`, so no-shows are never asked. Check-in is real:
