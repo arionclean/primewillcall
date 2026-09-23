@@ -83,9 +83,9 @@ all converge on one row and one booking.
   made: `no_guest_count` and `guest_count_mismatch` (both alerted once),
   `no_guest_name` (the booking lands as "Guest") and `no_channel` (screen only). Make
   refused to book those and pushed an alert; the Mailroom books what it can, because
-  a guest on the manifest with a gap beats no guest. The name alone misses on about
-  one email in ten (6 of the first 65 landed as "Guest"), which is why it does not
-  text anyone: an alarm that fires several times a day gets muted.
+  a guest on the manifest with a gap beats no guest. A missing name stays screen-only:
+  the 6 of the first 65 bookings that landed as "Guest" turned out to be a reader bug
+  (see "What the first real email taught us", point 3), not emails without a name.
 - `raw_text` keeps what the reader actually saw, so a wrong booking can be explained
   later without asking Resend for an email it may no longer hold. It is kept even
   when a later step fails.
@@ -227,6 +227,15 @@ not go through, and both reasons are worth keeping:
    like a booking now goes `failed` and alerts (`looksLikeBooking`, tested in
    `_shared/inbound-email.test.ts` against the first 66 real emails: all 65 bookings
    look like one, the Gmail forwarding confirmation does not).
+3. **A line wrap inside a label.** Plain-text email wraps long lines, and in 9 of the
+   first 65 emails the wrap landed inside "Customer email" (`Customer\nemail`). Every
+   label pattern spelled its words with one space, so those emails lost the guest's
+   name and email together, and 6 bookings went on the manifest as "Guest". The name
+   was in every one of them. Fixed 2026-09-23: `parseBookingEmail` collapses all
+   whitespace before reading (nothing in it reads line breaks), which read all 65 names
+   and emails with no other field changing; a case in
+   `_shared/parse-booking-email.test.ts`. The 6 guests were renamed from their stored
+   emails the same day.
 
 ## When the alarm goes off
 

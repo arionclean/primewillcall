@@ -104,3 +104,24 @@ Deno.test("parses a hand-forwarded notification, bold markers and all", () => {
   // 11:30 New York on the tour date, stored UTC.
   assertEquals(r.startsAtUtc, "2026-09-22T15:30:00.000Z");
 });
+
+Deno.test("a line wrap inside a label still reads the guest", () => {
+  // Plain-text mail wraps long lines. In 9 of the first 65 Mailroom emails the wrap
+  // landed inside "Customer email", which lost the guest's name and email together
+  // (6 of those bookings went on the manifest as "Guest").
+  const wrapped = {
+    ...REAL,
+    text: REAL.text
+      .replace("Customer email", "Customer\nemail")
+      .replace("Booking channel", "Booking\r\nchannel"),
+  };
+  const r = parseBookingEmail(wrapped);
+
+  assertEquals(r.customerName, "MaryBeth Borda");
+  assertEquals(
+    r.email,
+    "S-9f6f1626f2d94dba8f67e4d4e95bcde6+1408575445-14xi7e1pc6ira@expmessaging.tripadvisor.com",
+  );
+  assertEquals(r.bookingChannel, "Viator.com");
+  assertEquals(r.diagnostics.missing, []);
+});
