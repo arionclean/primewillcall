@@ -225,3 +225,13 @@ When Xano is retired: set `enabled = false`, unschedule the `xano-mirror-dispatc
 cron job, and delete the function, `_shared/xano-mirror.ts`, `_shared/xano-api.ts`
 (after `gp-xano-mirror.ts` goes), the trigger and the queue. Keep the two columns:
 they are the record of where each booking lived.
+
+**First half done 2026-09-23 17:37 UTC** (migration `20260923173753_xano_feeds_off`):
+`enabled = false`; the `xano-mirror-dispatch`, `xano-ticket-tokens` and
+`kiosk-cash-sweep` cron jobs unscheduled; the secrets `GP_XANO_MIRROR` and
+`KIOSK_V2_XANO_MIRROR` set to `false`. `XANO_SMS_FORWARD_URL` is still unset (so the
+inbound SMS copy is on) until Xano itself is off, so replies to the review asks Xano
+already sent still reach it; set it to `""` then. The code, trigger and queue are
+still here. Do not switch `enabled` back on casually: `enqueue-review-asks` reads
+this row, and from its `updated_at` on it asks every guest checked in, because Xano's
+own funnel only heard of check-ins through this mirror.
