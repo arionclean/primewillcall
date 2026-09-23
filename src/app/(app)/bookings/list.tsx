@@ -372,6 +372,9 @@ function maskPhone(raw: string): string {
 }
 
 function formatPhone(raw: string): string {
+  // A foreign number shows as stored: "+4791234567" (Norway) is ten digits too,
+  // and masked like a US number it would send staff dialing a stranger.
+  if (raw.startsWith("+") && !raw.startsWith("+1")) return raw;
   const digits = raw.replace(/\D/g, "");
   if (digits.length === 10) {
     return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
@@ -2312,7 +2315,9 @@ function EditBookingModal({
 
   const busy = saving || voiding || restoring;
 
-  function readPhoneDigits(): string {
+  // US digits, or a foreign number with its "+" (the phone box keeps it: without
+  // it a ten-digit foreign number reads as a US one).
+  function readPhone(): string {
     const form = formRef.current;
     if (!form) return "";
     const field = form.elements.namedItem("customer_phone") as
@@ -2321,7 +2326,7 @@ function EditBookingModal({
       | null;
     const value =
       field && "value" in field ? (field as { value?: string }).value : "";
-    return String(value ?? "").replace(/\D/g, "");
+    return String(value ?? "").replace(/[^\d+]/g, "");
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -2419,7 +2424,7 @@ function EditBookingModal({
     }
 
     const trimmedName = fullName.trim();
-    const phoneDigits = readPhoneDigits();
+    const phone = readPhone();
     const trimmedEmail = email.trim();
     let nextCustomerId = booking.customer_id;
     let nextCustomer = booking.customer;
@@ -2430,7 +2435,7 @@ function EditBookingModal({
         .update({
           full_name: trimmedName,
           email: trimmedEmail || null,
-          phone: phoneDigits || null,
+          phone: phone || null,
         })
         .eq("id", booking.customer_id);
       if (custError) {
@@ -2442,7 +2447,7 @@ function EditBookingModal({
         id: booking.customer_id,
         full_name: trimmedName,
         email: trimmedEmail || null,
-        phone: phoneDigits || null,
+        phone: phone || null,
       };
     } else if (trimmedName) {
       const { data: inserted, error: insertError } = await supabase
@@ -2451,7 +2456,7 @@ function EditBookingModal({
           business_id: booking.business_id,
           full_name: trimmedName,
           email: trimmedEmail || null,
-          phone: phoneDigits || null,
+          phone: phone || null,
         })
         .select("id, full_name, phone, email")
         .single();

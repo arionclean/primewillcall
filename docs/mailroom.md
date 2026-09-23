@@ -60,6 +60,15 @@ ours:
 An email that **updates** a booking created earlier never sets the mark, so a booking
 Xano already texted (everything from before the switch) is never texted twice.
 
+**Foreign numbers keep their `+`** (`storablePhone`, since 2026-09-23). Until then the
+reader kept digits only, and a ten-digit foreign number ("+47 912 34 567", Norway;
+Denmark and Singapore are the same length) became ten bare digits, which read as a
+US number: the guest's confirmation would have gone to whoever holds that US number.
+None had arrived yet. With the plus, a foreign number takes the non-US trigger, whose
+WhatsApp rules are switched off, so a foreign guest gets no text, as under Xano (its
+trigger texted US numbers only). US numbers store exactly as before: in the first 89
+emails every one came as "+1", "US+1" or with no plus at all.
+
 ## The log: `inbound_emails`
 
 One row per email, written **before** any parsing. Unique on

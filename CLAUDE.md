@@ -24,7 +24,10 @@ Realtime). Supabase project id: `qbnizuhozzwkiitfkjee`.
 3. **`SUPABASE_SERVICE_ROLE_KEY` is server-only.** It bypasses RLS. Never import the
    admin client into a client component, never log it, never put it in the browser.
 4. **Phone fields use a mask.** Display US phones as `(XXX) XXX-XXXX` while typing,
-   store digits only. Use `PhoneInput` from `@/components/ui/phone-input`.
+   store digits only. Use `PhoneInput` from `@/components/ui/phone-input`. A foreign
+   number keeps its leading `+` (`storablePhone` in `_shared/phone.ts`): it is the only
+   thing that marks it foreign, and a ten-digit one (Norway, Denmark, Singapore)
+   without it reads as a US number whose texts reach a stranger.
 5. **Scope by RLS, not by client filtering.** Queries run as the signed-in user; the
    database decides what they can see. Do not rely on hiding rows in the UI for
    security (hiding in the UI is fine for ergonomics, but the policy is the guarantee).

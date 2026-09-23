@@ -12,6 +12,8 @@
 // also surface `paxTotal` (the number after "PAX") and a `paxMismatch`
 // diagnostic so a human/AI can reconcile when the totals disagree.
 
+import { storablePhone } from "./phone.ts";
+
 const BUSINESS_TZ = "America/New_York";
 
 export type ParsedBooking = {
@@ -29,7 +31,7 @@ export type ParsedBooking = {
   Lname: string | null;
   email: string | null;
   correctEmail: boolean;
-  phone: string | null; // digits only (project phone-mask rule)
+  phone: string | null; // digits only, a foreign number keeps its "+" (storablePhone)
   phoneRaw: string | null;
   rate: string | null;
   adult: number;
@@ -248,7 +250,7 @@ export function parseBookingEmail(input: {
       }).format(new Date(startsAtUtc))
     : null;
   const { customerName, Fname, Lname } = splitName(customerRaw);
-  const phone = phoneRaw ? phoneRaw.replace(/\D/g, "") || null : null;
+  const phone = storablePhone(phoneRaw);
 
   return {
     company: input.company ? input.company.trim() || null : null,

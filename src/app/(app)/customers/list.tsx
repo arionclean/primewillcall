@@ -28,6 +28,8 @@ const SELECT =
 /** Format stored phone digits as (XXX) XXX-XXXX; fall back to the raw value. */
 export function formatPhone(raw: string | null): string {
   if (!raw) return "-";
+  // A foreign number shows as stored: "+4791234567" (Norway) is ten digits too.
+  if (raw.startsWith("+") && !raw.startsWith("+1")) return raw;
   const d = raw.replace(/\D/g, "");
   if (d.length === 10) return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
   if (d.length === 11 && d[0] === "1")

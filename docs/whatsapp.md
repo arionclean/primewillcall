@@ -81,8 +81,10 @@ internal plumbing in front of staff in a customer conversation.
 
 ## Not live yet
 
-1. **No automation uses WhatsApp yet.** The `WhatsApp booking confirmation` rule
-   exists and matches every product, but is switched off until Meta approves
+1. **No automation uses WhatsApp yet.** The `WhatsApp booking confirmation` and
+   `WhatsApp message` rules exist and match every product, but are switched off
+   (again on 2026-09-23, when the Mailroom started keeping the `+` on foreign numbers,
+   which is what routes a booking to the non-US trigger) until Meta approves
    `booking_confirmation_general`. Only `key_west_confirmation` is approved today, and
    its text is fixed Key West copy, so it cannot serve as the general confirmation.
 
