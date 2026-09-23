@@ -90,9 +90,14 @@ source, not just whichever page remembered to call it. Everything funnels throug
 queue and one sender, and that sender enforces a hard spend cap.
 
 1. A booking row is inserted. An `AFTER INSERT` trigger on `bookings`,
-   `WHEN (NEW.legacy_id IS NULL)`, runs `on_native_booking_created()`. The `legacy_id IS
-   NULL` clause means it fires only for **Supabase-native** bookings and **never** for the
-   ~90k Xano-synced rows (which still have Xano do their texting). It also no-ops unless
+   `trg_native_booking_automations`, runs `on_native_booking_created()` for two kinds of
+   booking: **Supabase-native** ones (`legacy_id IS NULL AND status <> 'pending'`), and,
+   since 2026-09-23, **OTA bookings the Mailroom created** (`inbound_email_id IS NOT NULL
+   AND status = 'confirmed' AND starts_at > now()`). It **never** fires for the ~90k
+   Xano-synced rows, which Xano texted. The Mailroom's bookings keep an `ota-<ref>` key, so
+   they need their own mark: until Make was switched off, Make also posted each OTA email
+   into Xano and Xano texted the guest; now nobody else does (see
+   [`docs/mailroom.md`](mailroom.md), "The guest's texts"). It also no-ops unless
    `messaging_settings.automations_enabled` is true.
 2. The trigger `pg_net`-POSTs the booking id to the **`run-booking-automations`** edge
    function (enqueue only, never calls Twilio). It matches the active rules for the

@@ -25,6 +25,14 @@ Not covered: work inside Postgres (pg_cron jobs, triggers). Those log to their o
 tables; if one needs alerting, a scheduled edge function that reads the failures and
 calls `reportError` is the pattern.
 
+**Cron monitors.** A scheduled function whose silence matters wraps its run in
+`withCronMonitor(slug, crontab, run)`: a check-in per run, and Sentry opens an issue when
+two in a row are missed or fail. The monitor is created by the first check-in, so there
+is nothing to set up in Sentry. Used by the Mailroom's sweep (`mailroom-sweep`, every 5
+minutes), whose own alarms cannot report the sweep itself stopping. Keep the auth
+check outside the monitor: a run refused for a bad secret must look like a missed
+check-in, not a healthy one.
+
 ## Privacy
 
 `sendDefaultPii` is off everywhere and session replay is not enabled on purpose:

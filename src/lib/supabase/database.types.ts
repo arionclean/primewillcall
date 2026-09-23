@@ -14,6 +14,60 @@ export type Database = {
   }
   public: {
     Tables: {
+      _time_clock_test_backup_20260921: {
+        Row: {
+          auto_closed_at: string | null
+          clock_in_at: string | null
+          clock_in_kiosk_id: string | null
+          clock_in_kiosk_slug: string | null
+          clock_out_at: string | null
+          clock_out_kiosk_id: string | null
+          clock_out_kiosk_slug: string | null
+          created_at: string | null
+          edited_at: string | null
+          employee_id: string | null
+          employee_name: string | null
+          id: string | null
+          photo_path: string | null
+          reviewed_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          auto_closed_at?: string | null
+          clock_in_at?: string | null
+          clock_in_kiosk_id?: string | null
+          clock_in_kiosk_slug?: string | null
+          clock_out_at?: string | null
+          clock_out_kiosk_id?: string | null
+          clock_out_kiosk_slug?: string | null
+          created_at?: string | null
+          edited_at?: string | null
+          employee_id?: string | null
+          employee_name?: string | null
+          id?: string | null
+          photo_path?: string | null
+          reviewed_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          auto_closed_at?: string | null
+          clock_in_at?: string | null
+          clock_in_kiosk_id?: string | null
+          clock_in_kiosk_slug?: string | null
+          clock_out_at?: string | null
+          clock_out_kiosk_id?: string | null
+          clock_out_kiosk_slug?: string | null
+          created_at?: string | null
+          edited_at?: string | null
+          employee_id?: string | null
+          employee_name?: string | null
+          id?: string | null
+          photo_path?: string | null
+          reviewed_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       analytics_daily: {
         Row: {
           basis: string
@@ -210,6 +264,45 @@ export type Database = {
         }
         Relationships: []
       }
+      booking_sync_log: {
+        Row: {
+          action: string
+          at: string
+          booking_id: string | null
+          error: string | null
+          id: number
+          internal_id: string | null
+          legacy_id: string | null
+          ok: boolean
+          payload: Json
+          source: string
+        }
+        Insert: {
+          action: string
+          at?: string
+          booking_id?: string | null
+          error?: string | null
+          id?: number
+          internal_id?: string | null
+          legacy_id?: string | null
+          ok: boolean
+          payload: Json
+          source?: string
+        }
+        Update: {
+          action?: string
+          at?: string
+          booking_id?: string | null
+          error?: string | null
+          id?: number
+          internal_id?: string | null
+          legacy_id?: string | null
+          ok?: boolean
+          payload?: Json
+          source?: string
+        }
+        Relationships: []
+      }
       bookings: {
         Row: {
           awaiting_payment: boolean
@@ -228,6 +321,7 @@ export type Database = {
           groupon_voucher_codes: string[]
           groupon_voucher_urls: string[]
           id: string
+          inbound_email_id: string | null
           kiosk_employee_id: string | null
           kiosk_id: string | null
           legacy_id: string | null
@@ -273,6 +367,7 @@ export type Database = {
           groupon_voucher_codes?: string[]
           groupon_voucher_urls?: string[]
           id?: string
+          inbound_email_id?: string | null
           kiosk_employee_id?: string | null
           kiosk_id?: string | null
           legacy_id?: string | null
@@ -318,6 +413,7 @@ export type Database = {
           groupon_voucher_codes?: string[]
           groupon_voucher_urls?: string[]
           id?: string
+          inbound_email_id?: string | null
           kiosk_employee_id?: string | null
           kiosk_id?: string | null
           legacy_id?: string | null
@@ -380,6 +476,13 @@ export type Database = {
             columns: ["customer_id"]
             isOneToOne: false
             referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bookings_inbound_email_id_fkey"
+            columns: ["inbound_email_id"]
+            isOneToOne: false
+            referencedRelation: "inbound_emails"
             referencedColumns: ["id"]
           },
           {
@@ -1061,6 +1164,8 @@ export type Database = {
           error: string | null
           from_address: string | null
           id: string
+          ignored_at: string | null
+          ignored_by: string | null
           last_attempt_at: string | null
           legacy_company_id: string | null
           match_queue_id: string | null
@@ -1069,9 +1174,11 @@ export type Database = {
           raw_text: string | null
           received_at: string
           status: string
+          steps: Json
           subject: string | null
           to_addresses: string[]
           updated_at: string
+          warnings: string[]
         }
         Insert: {
           alert_sent_at?: string | null
@@ -1082,6 +1189,8 @@ export type Database = {
           error?: string | null
           from_address?: string | null
           id?: string
+          ignored_at?: string | null
+          ignored_by?: string | null
           last_attempt_at?: string | null
           legacy_company_id?: string | null
           match_queue_id?: string | null
@@ -1090,9 +1199,11 @@ export type Database = {
           raw_text?: string | null
           received_at?: string
           status?: string
+          steps?: Json
           subject?: string | null
           to_addresses?: string[]
           updated_at?: string
+          warnings?: string[]
         }
         Update: {
           alert_sent_at?: string | null
@@ -1103,6 +1214,8 @@ export type Database = {
           error?: string | null
           from_address?: string | null
           id?: string
+          ignored_at?: string | null
+          ignored_by?: string | null
           last_attempt_at?: string | null
           legacy_company_id?: string | null
           match_queue_id?: string | null
@@ -1111,9 +1224,11 @@ export type Database = {
           raw_text?: string | null
           received_at?: string
           status?: string
+          steps?: Json
           subject?: string | null
           to_addresses?: string[]
           updated_at?: string
+          warnings?: string[]
         }
         Relationships: [
           {
@@ -1128,6 +1243,157 @@ export type Database = {
             columns: ["business_tour_id"]
             isOneToOne: false
             referencedRelation: "business_tours"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inbound_emails_ignored_by_fkey"
+            columns: ["ignored_by"]
+            isOneToOne: false
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      kiosk_closings: {
+        Row: {
+          app_build: string | null
+          business_date: string
+          business_id: string | null
+          card_cents: number
+          card_count: number
+          cash_cents: number | null
+          cash_cents_corrected: number | null
+          cash_count: number
+          closed_at: string
+          closed_by_name: string | null
+          commission_cents: number | null
+          commission_cents_corrected: number | null
+          corrected_at: string | null
+          corrected_by: string | null
+          correction_note: string | null
+          created_at: string
+          date_label: string | null
+          device_id: string | null
+          emailed: boolean
+          emailed_to: string | null
+          employee_id: string | null
+          entered_manually: boolean
+          id: string
+          kiosk_id: string
+          kiosk_slug: string
+          printed_at: string | null
+          products: Json
+          reviewed_at: string | null
+          reviewed_by: string | null
+          sales_count: number
+          total_cash_cents: number | null
+          total_cents: number
+          updated_at: string
+        }
+        Insert: {
+          app_build?: string | null
+          business_date: string
+          business_id?: string | null
+          card_cents?: number
+          card_count?: number
+          cash_cents?: number | null
+          cash_cents_corrected?: number | null
+          cash_count?: number
+          closed_at?: string
+          closed_by_name?: string | null
+          commission_cents?: number | null
+          commission_cents_corrected?: number | null
+          corrected_at?: string | null
+          corrected_by?: string | null
+          correction_note?: string | null
+          created_at?: string
+          date_label?: string | null
+          device_id?: string | null
+          emailed?: boolean
+          emailed_to?: string | null
+          employee_id?: string | null
+          entered_manually?: boolean
+          id?: string
+          kiosk_id: string
+          kiosk_slug: string
+          printed_at?: string | null
+          products?: Json
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          sales_count?: number
+          total_cash_cents?: number | null
+          total_cents?: number
+          updated_at?: string
+        }
+        Update: {
+          app_build?: string | null
+          business_date?: string
+          business_id?: string | null
+          card_cents?: number
+          card_count?: number
+          cash_cents?: number | null
+          cash_cents_corrected?: number | null
+          cash_count?: number
+          closed_at?: string
+          closed_by_name?: string | null
+          commission_cents?: number | null
+          commission_cents_corrected?: number | null
+          corrected_at?: string | null
+          corrected_by?: string | null
+          correction_note?: string | null
+          created_at?: string
+          date_label?: string | null
+          device_id?: string | null
+          emailed?: boolean
+          emailed_to?: string | null
+          employee_id?: string | null
+          entered_manually?: boolean
+          id?: string
+          kiosk_id?: string
+          kiosk_slug?: string
+          printed_at?: string | null
+          products?: Json
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          sales_count?: number
+          total_cash_cents?: number | null
+          total_cents?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kiosk_closings_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kiosk_closings_corrected_by_fkey"
+            columns: ["corrected_by"]
+            isOneToOne: false
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kiosk_closings_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "kiosk_employees"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kiosk_closings_kiosk_id_fkey"
+            columns: ["kiosk_id"]
+            isOneToOne: false
+            referencedRelation: "kiosks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kiosk_closings_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "staff"
             referencedColumns: ["id"]
           },
         ]
@@ -3061,9 +3327,84 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      kiosk_cash_reconciliation: {
+        Args: { p_business?: string; p_from: string; p_to: string }
+        Returns: {
+          after_close_cents: number
+          after_close_count: number
+          business_date: string
+          business_id: string
+          business_name: string
+          closed: boolean
+          closed_at: string
+          closed_by_name: string
+          closing_id: string
+          commission_cents: number
+          commission_cents_corrected: number
+          corrected_at: string
+          correction_note: string
+          counted_cash_cents: number
+          counted_cash_cents_corrected: number
+          diff_cents: number
+          effective_commission_cents: number
+          effective_counted_cash_cents: number
+          entered_manually: boolean
+          kiosk_id: string
+          kiosk_slug: string
+          reported_card_cents: number
+          reviewed_at: string
+          reviewed_by_name: string
+          system_card_cents: number
+          system_card_count: number
+          system_card_gross_cents: number
+          system_cash_cents: number
+          system_cash_count: number
+          to_collect_cents: number
+        }[]
+      }
       kiosk_pin_in_use: {
         Args: { p_except?: string; p_pin: string }
         Returns: boolean
+      }
+      mailroom_claim_alerts: {
+        Args: never
+        Returns: {
+          error: string
+          id: string
+          received_at: string
+          status: string
+          subject: string
+          warnings: string[]
+        }[]
+      }
+      mailroom_claim_pending: {
+        Args: {
+          p_limit: number
+          p_max_attempts: number
+          p_retry_after_minutes: number
+        }
+        Returns: {
+          attempts: number
+          id: string
+          legacy_company_id: string
+          provider_email_id: string
+          raw_text: string
+          received_at: string
+          subject: string
+          to_addresses: string[]
+        }[]
+      }
+      mailroom_retry: { Args: { p_email_id: string }; Returns: string }
+      mailroom_set_aside: { Args: { p_email_id: string }; Returns: string }
+      mailroom_summary: {
+        Args: never
+        Returns: {
+          booked_today: number
+          failed: number
+          last_received_at: string
+          warnings_week: number
+          working: number
+        }[]
       }
       match_ota_tour: {
         Args: {
@@ -3206,8 +3547,35 @@ export type Database = {
           cash_count: number
           cash_refunded: number
           cash_total: number
+          commission: number
           refunded: number
         }[]
+      }
+      prune_booking_sync_log: { Args: never; Returns: number }
+      record_kiosk_closing: {
+        Args: {
+          p_app_build: string
+          p_business_date: string
+          p_business_id: string
+          p_card_cents: number
+          p_card_count: number
+          p_cash_cents: number
+          p_cash_count: number
+          p_closed_by_name: string
+          p_commission_cents: number
+          p_date_label: string
+          p_device_id: string
+          p_emailed: boolean
+          p_emailed_to: string
+          p_employee_id: string
+          p_kiosk_id: string
+          p_kiosk_slug: string
+          p_printed_at: string
+          p_products: Json
+          p_sales_count: number
+          p_total_cents: number
+        }
+        Returns: string
       }
       request_employee: {
         Args: never

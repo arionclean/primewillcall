@@ -92,9 +92,10 @@ src/
                                the team_sales RPC) and activity/ (the tablets + web
                                log); (owner)/ = new/[id]
         unmatched/             owner-only. OTA email review queue (page + actions)
-        inbound/               owner-only. OTA email intake log: every booking email
-                               that reached us and what became of it, plus the "has
-                               email stopped arriving?" health line
+        mailroom/              the Mailroom. Owner-only INTERNAL tool, linked from nowhere
+                               (no sidebar entry; its alerts carry the link): every OTA
+                               booking email, what each step did with it, Retry / Set
+                               aside, and the "has email stopped arriving?" health line
         groupon/               owner-only. per-product Groupon convenience fee config
         payments/              owner + manager. Stripe charges ledger + refunds
     api/
@@ -126,15 +127,16 @@ supabase/functions/            Deno edge functions. Everything public, webhook-d
                                scheduled lives here, NOT in a Next route: stripe-webhook,
                                twilio-inbound-sms, sms-send, sms-sync, gp-voucher-vision,
                                run-booking-automations, dispatch-scheduled-messages,
-                               enqueue-review-asks, email-booking-parse, email-inbound,
-                               email-inbound-sweep, kiosk-*,
+                               enqueue-review-asks, email-booking-parse, email-inbound +
+                               email-inbound-sweep (the Mailroom), kiosk-*,
                                xano-ticket-tokens (hourly: stamps Xano's ticket code
                                on upcoming bookings, read-only on Xano),
                                gp-slots, gp-validate, gp-book, xano-booking-sync,
                                xano-mirror-dispatch, whatsapp-send, whatsapp-templates.
                                `_shared/` holds the modules they share (sms.ts,
                                whatsapp.ts, staff-auth.ts, gp.ts, ny-time.ts,
-                               parse-booking-email.ts, xano-api.ts, xano-mirror.ts).
+                               parse-booking-email.ts, inbound-email.ts (the Mailroom's
+                               pass), xano-api.ts, xano-mirror.ts).
 supabase/config.toml           per-function `verify_jwt`. Not optional: the CLI defaults a
                                function to JWT ON, which breaks any caller that cannot send
                                a Supabase token (pg_cron sends only `x-cron-secret`, Twilio
@@ -286,29 +288,30 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
 
 ## Known gaps / roadmap
 
-- **Inbound OTA email** (built 2026-09-22, not yet cut over): the last Make scenario
-  that matters ("Mailhook-sky trigger") received the OTA reservation emails on a Make
-  mailhook address. Replaced by Resend inbound: `email.received` webhook ->
-  `email-inbound` -> the same `email-booking-parse` + `xano-booking-sync` pair Make
-  called. Resend's webhook is **metadata only**, so the body is a second call
-  (`GET /emails/receiving/{id}`), which is also what makes a retry free. Make's real
-  value was its execution history, so the port is built around that: `inbound_emails`
-  gets a row BEFORE any parsing, `email-inbound-sweep` (pg_cron, 5 min) retries what
-  is unfinished, and the same sweep raises the alarm no row can raise, **no email has
-  arrived at all** (a dead forwarding rule or MX record), which Make could not see
-  either. `/admin/inbound` is the owner's screen. **Live since 2026-09-22**: receiving is on
-  `updates.primewillcall.com` (address `reservations@updates.primewillcall.com`), the
-  webhook and both functions are deployed, and a real forwarded GetYourGuide booking
-  went end to end. That first email also found two things worth knowing: the body
-  fetch needs a **full-access** Resend key, kept separate as `RESEND_INBOUND_API_KEY`
-  so the app's sending key stays restricted; and a hand-forwarded email arrives with
-  its labels emphasised (`*Booking ref.*`), which used to make a real booking parse as
-  nothing and file as "not a reservation". Both fixed, the second with a test case.
-  **Left to do**: re-point the reservations mailbox's forwarding rule at the new
-  address, then turn the Make scenario off. They can run side by side first, which is
-  now proven and not just assumed: the upsert matched Make's existing booking on
-  `legacy_id = ota-<ref>` instead of creating a second guest, and nothing was queued
-  to Xano. See [`docs/inbound-email.md`](docs/inbound-email.md).
+- **The Mailroom** (inbound OTA booking email; built 2026-09-22, the only intake since
+  **2026-09-23 11:50 UTC**, when the Make scenario "Mailhook-sky trigger" was switched
+  off). Resend inbound on `updates.primewillcall.com` (address
+  `reservations@updates.primewillcall.com`): `email.received` webhook -> `email-inbound`
+  -> fetch the body (`GET /emails/receiving/{id}`; the webhook is **metadata only**,
+  which is also what makes a retry free) -> `email-booking-parse` -> `xano-booking-sync`.
+  The pass is `runPass` in `_shared/inbound-email.ts`, shared by the webhook and
+  `email-inbound-sweep` (pg_cron, 5 min). Make's real value was its execution history,
+  so the Mailroom is built around seeing: `inbound_emails` gets a row BEFORE any
+  parsing, and each pass records what every step did (`steps`: outcome, timing, what
+  the read extracted, created or updated). The sweep retries what is unfinished, tells
+  the owner once per problem (a failed email, or a booking with a wrong head count) by
+  text and email through `mailroom_claim_alerts`, and raises the alarm no row can
+  raise, **no email has arrived at all**. The sweep itself checks in with a Sentry cron
+  monitor (`mailroom-sweep`), so the one failure its own alarms cannot report, the
+  sweep stopping, is watched from outside. An email that looks like a booking but
+  reads as nothing goes straight to `failed` (the first real email failed exactly like
+  that, filed as "not a booking"). **Guest texts**: the bookings it creates keep their
+  `ota-<ref>` key, so the Mailroom marks them `bookings.inbound_email_id` (insert only)
+  and the confirmation trigger and review funnel treat those as ours; Xano texted them
+  while Make still posted each email there. `/admin/mailroom` is the owner's
+  **internal** screen, linked from nowhere in the app (the owner's call): the alerts
+  carry the link. Retry and Set aside are owner-checked database functions. See
+  [`docs/mailroom.md`](docs/mailroom.md).
   Make also still runs three small things for Xano: `send sms telnyxs` (a 100-second
   delay timer in front of Xano's review SMS), `general notifications` (Pushover) and a
   twice-weekly forecast call. All three are Xano calling Make, so they retire with
@@ -395,7 +398,8 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   booking and nobody is double-messaged. There is no "any phone" trigger on purpose.
   "US" is the +1 country code, so Canada and the Caribbean count as US. The engine is
   **all in Supabase**:
-  the `on_native_booking_created` trigger calls the `run-booking-automations` edge function,
+  the `on_native_booking_created` trigger (bookings born here, plus the OTA bookings the
+  Mailroom created, `inbound_email_id`) calls the `run-booking-automations` edge function,
   which only ever ENQUEUES into `scheduled_messages`; `dispatch-scheduled-messages`
   (pg_cron) is the single thing that calls Twilio and it enforces the global hourly cap.
   `messaging_settings.automations_enabled` is ON. Full model + go-live checklist in
@@ -452,7 +456,8 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   switch, `messaging_settings.review_automation_enabled` (default false, now on), because
   `automations_enabled` is already true and Xano still runs the same funnel plus
   still receives every inbound SMS via the webhook mirror. No double text in
-  practice: the sweep only takes bookings born here, which reach Xano without a phone. Five brakes, go-live checklist and known gaps in
+  practice: the sweep only takes bookings born here, which reach Xano without a phone,
+  and the Mailroom's OTA bookings, which never reach Xano at all. Five brakes, go-live checklist and known gaps in
   [`docs/review-automation.md`](docs/review-automation.md). The `/reviews`
   management section (the other half of the Xano feature) is deliberately not built.
 - **Groupon `/gp`** (public voucher redemption) is built: upload -> vision match -> details

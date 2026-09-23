@@ -1,4 +1,5 @@
-// Inbound OTA booking email -> booking. The Resend `email.received` webhook.
+// The Mailroom's front door: inbound OTA booking email -> booking. The Resend
+// `email.received` webhook.
 //
 // This replaces the Make "Mailhook-sky trigger" scenario, which was the last thing
 // standing between an OTA reservation email and this platform. Make's value was
@@ -11,9 +12,10 @@
 //   1. Verify the signature (Standard Webhooks / Svix, as Resend sends it).
 //   2. Record the row. Unique on the provider's email id, so Resend's own retries
 //      and our sweep all converge on one row and one booking.
-//   3. Try a full pass (body -> parse -> booking). A failure here is left on the row
-//      for email-inbound-sweep to retry, and the caller still gets a 200: the email
-//      is safely ours, and asking Resend to redeliver would only race the sweep.
+//   3. Try a full pass (body -> parse -> booking), the same runPass the sweep uses.
+//      A failure here is left on the row for email-inbound-sweep to retry, and the
+//      caller still gets a 200: the email is safely ours, and asking Resend to
+//      redeliver would only race the sweep.
 //
 // Auth: the signature is the guard, so this is deployed with JWT verification off
 // (Resend cannot send a Supabase token). Set RESEND_WEBHOOK_SECRET or it refuses
@@ -21,7 +23,7 @@
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { withSentry } from "../_shared/sentry.ts";
-import { processInbound } from "../_shared/inbound-email.ts";
+import { runPass } from "../_shared/inbound-email.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -125,62 +127,6 @@ type ResendEvent = {
   };
 };
 
-/** Run a pass and write the result onto the row. Never throws. */
-async function runPass(row: {
-  id: string;
-  provider_email_id: string;
-  subject: string | null;
-  raw_text: string | null;
-  to_addresses: string[] | null;
-  legacy_company_id: string | null;
-  attempts: number;
-}): Promise<string> {
-  try {
-    const out = await processInbound(row);
-
-    // The sync answers with the booking key it upserted on; turn it into the row id
-    // so the screen can link straight to the guest.
-    let bookingId: string | null = null;
-    if (out.legacy_id) {
-      const { data } = await sb
-        .from("bookings")
-        .select("id")
-        .eq("legacy_id", out.legacy_id)
-        .maybeSingle();
-      bookingId = (data?.id as string | undefined) ?? null;
-    }
-
-    await sb
-      .from("inbound_emails")
-      .update({
-        status: out.status,
-        raw_text: out.raw_text,
-        legacy_company_id: out.legacy_company_id,
-        to_addresses: out.recipients,
-        booking_id: bookingId,
-        business_tour_id: out.business_tour_id,
-        match_queue_id: out.match_queue_id,
-        attempts: row.attempts + 1,
-        last_attempt_at: new Date().toISOString(),
-        error: null,
-      })
-      .eq("id", row.id);
-    return out.status;
-  } catch (e) {
-    // Stays 'received'. The sweep owns the retry and the giving-up, so that the
-    // decision lives in one place instead of two.
-    await sb
-      .from("inbound_emails")
-      .update({
-        attempts: row.attempts + 1,
-        last_attempt_at: new Date().toISOString(),
-        error: e instanceof Error ? e.message : String(e),
-      })
-      .eq("id", row.id);
-    return "received";
-  }
-}
-
 Deno.serve(withSentry("email-inbound", async (req) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
   if (!WEBHOOK_SECRET) {
@@ -233,6 +179,10 @@ Deno.serve(withSentry("email-inbound", async (req) => {
     // email to the fallback business before the real headers are ever read. The
     // first pass resolves it from the fetched To: header. See companyFor.
     legacy_company_id: null,
+    // The first pass starts now. The sweep leaves a row alone for five minutes after
+    // its last attempt, so stamping this keeps it from running a second pass on an
+    // email this one is still reading.
+    last_attempt_at: new Date().toISOString(),
   });
   if (insertError && insertError.code !== "23505") {
     // The log itself failed. This is the one error worth making Resend retry, since
@@ -253,10 +203,11 @@ Deno.serve(withSentry("email-inbound", async (req) => {
     .single();
   if (!row) return json({ error: "row vanished after insert" }, 500);
 
-  // Already finished on an earlier delivery: acknowledge and touch nothing.
+  // Already finished on an earlier delivery, or handed to a person (failed): the
+  // Mailroom's Retry is the way back in. Acknowledge and touch nothing.
   if (
     row.status === "booked" || row.status === "parsed" ||
-    row.status === "ignored"
+    row.status === "ignored" || row.status === "failed"
   ) {
     return json(
       { ok: true, id: row.id, status: row.status, duplicate: true },
@@ -264,6 +215,7 @@ Deno.serve(withSentry("email-inbound", async (req) => {
     );
   }
 
-  const status = await runPass(row);
+  // The first pass never gives up by itself (null): the sweep owns the retries.
+  const status = await runPass(sb, row, null);
   return json({ ok: true, id: row.id, status }, 200);
 }));
