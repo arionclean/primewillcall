@@ -167,7 +167,17 @@ export function parseBookingEmail(input: {
   // it wraps a label at the start of a line, so the same email parses whether it
   // reached us direct or through somebody's forward. Asterisks anywhere else in
   // the text (a product name, a note) are left alone.
-  const text = (input.text ?? "").replace(/^[ \t]*\*([^*\n]+)\*/gm, "$1");
+  //
+  // Then collapse every run of whitespace to one space. A plain-text email wraps
+  // long lines, and a wrap can land INSIDE a two-word label: "Customer\nemail".
+  // Every label pattern below spells its words with a single space, so one such
+  // wrap lost the guest's name and email together (9 of the first 65 Mailroom
+  // emails, 6 of them booked as "Guest"). Nothing below reads line breaks, so
+  // collapsing them only makes each label and value read the same wherever the
+  // sender wrapped the line.
+  const text = (input.text ?? "")
+    .replace(/^[ \t]*\*([^*\n]+)\*/gm, "$1")
+    .replace(/\s+/g, " ");
   const subject = input.subject ?? "";
   const missing: string[] = [];
   const req = (rx: RegExp, label: string): string | null => {
