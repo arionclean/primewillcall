@@ -97,3 +97,29 @@ export function toE164(input: string | null | undefined): string | null {
   return classified?.isUs ? classified.e164 : null;
 }
 
+/**
+ * A phone as `customers.phone` stores it: digits only, except that a number
+ * naming a foreign country code keeps its "+".
+ *
+ * For a US number nothing changes: "+1 305 555 1234", "US+1 (305) 555-1234" and
+ * "(305) 555-1234" all store as digits, exactly as before. A foreign number
+ * needs its plus, because once the punctuation is gone the plus is the only
+ * thing that says "foreign". "+47 912 34 567" (Norway) is ten digits without
+ * it, `classifyPhone` reads ten bare digits as a US number, and the guest's
+ * confirmation would be texted to a stranger.
+ *
+ * The first "+" is the one that counts, wherever it sits: the OTAs write
+ * "+393408501316" and also "ES+34 612 34 56 78". A plus followed by anything
+ * but a 1 is read as a foreign country code. In the first 89 Mailroom emails
+ * every US number came as "+1", "US+1" or with no plus at all.
+ */
+export function storablePhone(input: string | null | undefined): string | null {
+  const raw = input ?? "";
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) return null;
+  const plus = raw.indexOf("+");
+  if (plus === -1) return digits;
+  const international = raw.slice(plus + 1).replace(/\D/g, "");
+  return international && !international.startsWith("1") ? `+${international}` : digits;
+}
+

@@ -125,3 +125,16 @@ Deno.test("a line wrap inside a label still reads the guest", () => {
   assertEquals(r.bookingChannel, "Viator.com");
   assertEquals(r.diagnostics.missing, []);
 });
+
+Deno.test("a foreign phone keeps its plus", () => {
+  // "NO+47 912 34 567" is ten digits once the punctuation goes, the length of a
+  // US number, so without the plus a Norwegian guest's texts would go to a stranger.
+  const norway = {
+    ...REAL,
+    text: REAL.text.replace("US+1 (414) 708-7727", "NO+47 912 34 567"),
+  };
+  assertEquals(parseBookingEmail(norway).phone, "+4791234567");
+  assertEquals(parseBookingEmail(FORWARDED).phone, "+33695213567");
+  // A US number is untouched.
+  assertEquals(parseBookingEmail(REAL).phone, "14147087727");
+});

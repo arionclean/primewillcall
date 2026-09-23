@@ -76,6 +76,8 @@ function localDateOf(iso: string): string {
 
 function formatPhone(raw: string | null): string {
   if (!raw) return "";
+  // A foreign number shows as stored: "+4791234567" (Norway) is ten digits too.
+  if (raw.startsWith("+") && !raw.startsWith("+1")) return raw;
   const digits = raw.replace(/\D/g, "");
   if (digits.length === 10) {
     return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;

@@ -24,6 +24,8 @@ export function normalizeUsPhone(input: string | null | undefined): string | nul
 
 /** Display an E.164 US number as (XXX) XXX-XXXX; pass anything else through. */
 export function formatUsPhoneDisplay(value: string): string {
+  // A foreign number is not a US one even at ten digits: "+4791234567" is Norway.
+  if (value.startsWith("+") && !value.startsWith("+1")) return value;
   const digits = value.replace(/\D/g, "");
   const local = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
   if (local.length !== 10) {
