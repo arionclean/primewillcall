@@ -100,7 +100,10 @@ src/
                                booking email, what each step did with it, Retry / Set
                                aside, and the "has email stopped arriving?" health line
         groupon/               owner-only. per-product Groupon convenience fee config
-        payments/              owner + manager. Stripe charges ledger + refunds
+        payments/              owner + manager. (tabs)/ = Sales (the card + cash ledger,
+                               refunds) and cash/ (Cash close: each kiosk night's cash
+                               against the system; the owner types the commission and
+                               cash received in the row and completes the night)
     api/
       auth/signout/            POST sign out
       bookings/[id]/check-in/  POST mark checked in
