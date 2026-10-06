@@ -14,12 +14,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { formatCents, formatCentsExact } from "@/lib/dashboard/queries";
 import {
-  formatCents,
-  formatCentsExact,
-  nyDateISO,
-  shiftDayISO,
-} from "@/lib/dashboard/queries";
+  RANGE_PRESETS,
+  detectPreset,
+  presetRange,
+  type PresetKey,
+} from "@/lib/payments/date-range";
 import { useLiveRefresh } from "@/lib/realtime/use-live-refresh";
 import type { Database } from "@/lib/supabase/database.types";
 import {
@@ -163,52 +164,6 @@ type PaymentsViewProps = {
 };
 
 const NY_TZ = "America/New_York";
-
-// Date-range presets, computed in business time (America/New_York). "Custom"
-// reveals the From/To inputs; every other choice applies its range directly.
-const RANGE_PRESETS = [
-  { key: "today", label: "Today" },
-  { key: "yesterday", label: "Yesterday" },
-  { key: "7d", label: "Last 7 days" },
-  { key: "30d", label: "Last 30 days" },
-  { key: "month", label: "This month" },
-  { key: "lastMonth", label: "Last month" },
-] as const;
-
-type PresetKey = (typeof RANGE_PRESETS)[number]["key"] | "custom";
-
-function presetRange(key: PresetKey): { from: string; to: string } | null {
-  const today = nyDateISO();
-  switch (key) {
-    case "today":
-      return { from: today, to: today };
-    case "yesterday": {
-      const y = shiftDayISO(today, -1);
-      return { from: y, to: y };
-    }
-    case "7d":
-      return { from: shiftDayISO(today, -6), to: today };
-    case "30d":
-      return { from: shiftDayISO(today, -29), to: today };
-    case "month":
-      return { from: `${today.slice(0, 8)}01`, to: today };
-    case "lastMonth": {
-      const firstOfThis = `${today.slice(0, 8)}01`;
-      const lastOfPrev = shiftDayISO(firstOfThis, -1);
-      return { from: `${lastOfPrev.slice(0, 8)}01`, to: lastOfPrev };
-    }
-    default:
-      return null;
-  }
-}
-
-function detectPreset(from: string, to: string): PresetKey {
-  for (const p of RANGE_PRESETS) {
-    const range = presetRange(p.key);
-    if (range && range.from === from && range.to === to) return p.key;
-  }
-  return "custom";
-}
 
 function formatDateTime(iso: string | null): string {
   if (!iso) return "-";
@@ -547,10 +502,6 @@ export function PaymentsView({
 
   return (
     <div>
-      <header className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Payments</h1>
-      </header>
-
       <SummaryCards summary={summary} />
 
       <div className="mt-6 mb-4 flex flex-wrap items-end gap-3">
