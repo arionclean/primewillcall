@@ -33,13 +33,15 @@ import { cn } from "@/lib/utils";
 import { FileChip } from "./evidence";
 
 /**
- * The answer to a dispute that is still waiting for one. Three ways out, the same
- * as Stripe's dashboard:
+ * The answer to a dispute that is still waiting for one. The same ways out as
+ * Stripe's dashboard:
  *   - fight it: fill the evidence (saved as a draft as often as you like) and
  *     send it to the bank once;
- *   - accept it: the guest keeps the money;
+ *   - accept it (chargebacks only): the guest keeps the money. Closing an inquiry
+ *     does nothing on Stripe, so an inquiry never offers it;
  *   - refund instead: only while it is an inquiry and the payment can still be
- *     refunded, through the Sales tab's refund (same passcode, same ledger).
+ *     refunded, through the Sales tab's refund (same passcode, same ledger). A
+ *     refund closes the inquiry.
  *
  * The fields the bank needs for this kind of dispute come first; every other
  * field Stripe takes is one click away under "More evidence". Empty fields arrive
@@ -76,6 +78,10 @@ export function EvidenceForm({
   const [fileErrors, setFileErrors] = useState<Partial<Record<FileField, string>>>({});
   const [touched, setTouched] = useState(false);
   const [confirm, setConfirm] = useState<Confirm>(null);
+  // One write to Stripe at a time: a draft save still in flight must not race a
+  // submission (or an accept) sent from the dialog.
+  const [busy, setBusy] = useState(false);
+  const [refunded, setRefunded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -91,12 +97,27 @@ export function EvidenceForm({
     FILE_FIELD_KEYS.some((k) => (files[k]?.id ?? null) !== (evidence.files[k]?.id ?? null));
 
   // Leaving with edits the owner typed would lose them; a pre-filled draft alone
-  // is not worth a warning.
+  // is not worth a warning. Closing or reloading the tab is caught by the browser;
+  // a click on a link inside the app (a tab, the sidebar, "All disputes") is a
+  // client-side navigation the browser never asks about, so it is caught here.
   useEffect(() => {
     if (!touched || !dirty) return;
     const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    const onLinkClick = (e: MouseEvent) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const link = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
+      if (!link || link.target === "_blank" || link.origin !== window.location.origin) return;
+      if (!window.confirm("Your answer has changes that are not saved. Leave this page anyway?")) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
     window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
+    document.addEventListener("click", onLinkClick, true);
+    return () => {
+      window.removeEventListener("beforeunload", warn);
+      document.removeEventListener("click", onLinkClick, true);
+    };
   }, [touched, dirty]);
 
   const totalFileBytes = FILE_FIELD_KEYS.reduce((s, k) => s + (files[k]?.size ?? 0), 0);
@@ -154,13 +175,15 @@ export function EvidenceForm({
   const tooLong = TEXT_FIELD_KEYS.find((k) => (text[k] ?? "").length > MAX_TEXT_FIELD);
 
   async function save(submit: boolean) {
+    if (busy) return false;
     setError(null);
+    setBusy(true);
     const { data, error: saveError } = await invokeStripeDisputes<SaveResult>({
       action: "save",
       dispute_id: dispute.id,
       evidence: payload(),
       submit,
-    });
+    }).finally(() => setBusy(false));
     if (saveError || !data) {
       setError(saveError ?? "Stripe did not confirm the save. Try again.");
       return false;
@@ -173,8 +196,13 @@ export function EvidenceForm({
   }
 
   async function accept() {
+    if (busy) return;
     setError(null);
-    const { error: acceptError } = await invokeStripeDisputes<SaveResult>({ action: "accept", dispute_id: dispute.id });
+    setBusy(true);
+    const { error: acceptError } = await invokeStripeDisputes<SaveResult>({
+      action: "accept",
+      dispute_id: dispute.id,
+    }).finally(() => setBusy(false));
     if (acceptError) {
       setError(acceptError);
       return;
@@ -186,7 +214,7 @@ export function EvidenceForm({
 
   const recommendedSpecs = EVIDENCE_FIELDS.filter((f) => recommended.has(f.key));
   const moreSpecs = EVIDENCE_FIELDS.filter((f) => !recommended.has(f.key));
-  const refundable = dispute.isChargeRefundable && detail.transactionId != null;
+  const refundable = dispute.isChargeRefundable && detail.transactionId != null && !refunded;
   const factsMissing = facts.trim() !== "" && !(text.uncategorized_text ?? "").includes(facts.trim());
 
   const renderField = (spec: FieldSpec) =>
@@ -263,11 +291,13 @@ export function EvidenceForm({
       <div className="sticky bottom-0 z-10 -mx-1 rounded-xl border bg-background/95 px-4 py-3 shadow-sm backdrop-blur">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" variant="ghost" size="sm" onClick={() => setConfirm("accept")}>
-              Accept the dispute
-            </Button>
+            {!dispute.isInquiry && (
+              <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => setConfirm("accept")}>
+                Accept the dispute
+              </Button>
+            )}
             {refundable && (
-              <Button type="button" variant="ghost" size="sm" onClick={() => setConfirm("refund")}>
+              <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => setConfirm("refund")}>
                 Refund instead
               </Button>
             )}
@@ -284,7 +314,7 @@ export function EvidenceForm({
             </form>
             <Button
               type="button"
-              disabled={!hasAnything || anyUploading || filesTooBig || Boolean(tooLong)}
+              disabled={busy || !hasAnything || anyUploading || filesTooBig || Boolean(tooLong)}
               onClick={() => {
                 setError(null);
                 setConfirm("submit");
@@ -318,7 +348,7 @@ export function EvidenceForm({
         </Dialog>
       )}
 
-      {confirm === "accept" && (
+      {confirm === "accept" && !dispute.isInquiry && (
         <Dialog
           title="Accept this dispute?"
           description="The dispute closes and cannot be reopened."
@@ -348,6 +378,8 @@ export function EvidenceForm({
           onClose={() => setConfirm(null)}
           onDone={async () => {
             setConfirm(null);
+            setRefunded(true);
+            setNotice("Refund sent. Stripe closes the inquiry within a minute.");
             await onChanged();
           }}
         />

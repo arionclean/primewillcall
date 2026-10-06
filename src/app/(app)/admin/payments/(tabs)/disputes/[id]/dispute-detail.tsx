@@ -3,7 +3,7 @@
 import { AlertTriangle, ArrowLeft, Clock } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -60,9 +60,20 @@ export function DisputeDetailView({ header }: { header: DisputeHeader }) {
   }, [load, header.status]);
   useLiveRefresh(`stripe-dispute-${header.id}`, [{ table: "stripe_disputes" }]);
 
+  // Stripe settles some changes a moment later (a refund closes an inquiry within
+  // seconds), so look again shortly after, as well as right away.
+  const followUp = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (followUp.current) clearTimeout(followUp.current);
+  }, []);
+
   const afterChange = useCallback(async () => {
     await load();
     router.refresh(); // the list's copy, the tab's count and the header follow
+    if (followUp.current) clearTimeout(followUp.current);
+    followUp.current = setTimeout(() => {
+      void load().then(() => router.refresh());
+    }, 8000);
   }, [load, router]);
 
   const status = detail?.dispute.status ?? header.status;

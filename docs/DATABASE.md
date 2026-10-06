@@ -786,6 +786,22 @@ payouts or disputes); no write policies, the functions write with the service ro
   card-present disputes). All of it runs in the `stripe-disputes` edge function (JWT on,
   owner only; `sync` also takes the service role), which writes `audit_log` for every save,
   submission and acceptance. Closed disputes show what was sent, read-only.
+  **The rules that guard the one submission** live in `_shared/dispute-evidence.ts`:
+  `submit` is always sent explicitly (Stripe's default for it is TRUE, so an update that
+  leaves it out goes to the bank), only known fields are sent, Stripe's limits are checked
+  first, and the status is re-read from Stripe right before any write (409 if it is no
+  longer waiting). Once Stripe accepts a change, our copy and the activity log are
+  best-effort: a failure there never turns a submission into an error on screen. Inquiries
+  (`warning_needs_response`) cannot be accepted: Stripe leaves them as they are when closed,
+  so the screen offers an answer or a refund, and a refund closes them (`warning_closed`).
+  Tests: `deno test --node-modules-dir=none --allow-read
+  supabase/functions/_shared/dispute-evidence.test.ts` (rules, and that the screen's field
+  list matches the server's); `dispute-evidence.sandbox.test.ts` runs the whole answer in
+  Stripe TEST mode (disputed payment, file upload and read-back, draft, clearing a field,
+  one submission and a refused second one, accept, inquiry refund) and refuses to run
+  without a test key: `STRIPE_SECRET_KEY=<sk_test_...> STRIPE_SANDBOX_ACCOUNT=<test acct>
+  deno test --node-modules-dir=none --allow-env --allow-net --allow-read <file>`. Passed on
+  2026-10-06 against test account `acct_1Q7lm92al3z20Yx8`.
 - **Move a sale to another kiosk** (`moveSaleSource` in `admin/payments/actions.ts`): a
   tablet sometimes rings up a sale that belongs to another kiosk, so owner and the
   business's own manager can re-tag it. No money moves, so there is no passcode. It writes

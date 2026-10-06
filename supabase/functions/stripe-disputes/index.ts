@@ -13,7 +13,12 @@
 //   file     The bytes of an evidence file, so the owner can open what was sent.
 //   save     Store the evidence on the dispute; with `submit` it goes to the
 //            bank. Stripe takes one submission, so the screen confirms first.
-//   accept   Give up the dispute: the guest keeps the money.
+//            The rules (fields, limits, the explicit `submit`) live in
+//            _shared/dispute-evidence.ts, with unit and sandbox tests.
+//   accept   Give up the dispute: the guest keeps the money. Chargebacks only:
+//            closing an inquiry is a no-op on Stripe (it stays
+//            warning_needs_response; checked in the sandbox test), and Stripe's
+//            own dashboard offers an answer or a refund for those, never this.
 //
 // A refund instead (only possible while the bank is still asking, the "inquiry"
 // stage) goes through the payments function's refund_card, which owns the refund
@@ -40,57 +45,23 @@ import {
   stripeErrorMessage,
   uploadDisputeEvidenceFile,
 } from "../_shared/stripe.ts";
-import { ANSWERABLE_STATUSES, upsertDisputes } from "../_shared/stripe-disputes.ts";
+import { upsertDisputes } from "../_shared/stripe-disputes.ts";
+import {
+  ANSWERABLE_STATUSES,
+  cleanEvidence,
+  DISPUTE_ID_RE,
+  evidenceUpdate,
+  FILE_FIELDS,
+  FILE_ID_RE,
+  FILE_TYPES,
+  type FileField,
+  hasEvidence,
+  MAX_FILE_BYTES,
+  TEXT_FIELDS,
+  type TextField,
+} from "../_shared/dispute-evidence.ts";
 
 type Action = "sync" | "detail" | "upload" | "file" | "save" | "accept";
-
-// ── Evidence fields ──────────────────────────────────────────────────────────
-// Every field Stripe takes on a dispute except the shipping ones (tours do not
-// ship) and Visa's enhanced evidence (needs prior undisputed payments from the
-// same card, which a tour desk does not have).
-
-const TEXT_FIELDS = [
-  "access_activity_log",
-  "billing_address",
-  "cancellation_policy_disclosure",
-  "cancellation_rebuttal",
-  "customer_email_address",
-  "customer_name",
-  "customer_purchase_ip",
-  "duplicate_charge_explanation",
-  "duplicate_charge_id",
-  "product_description",
-  "refund_policy_disclosure",
-  "refund_refusal_explanation",
-  "service_date",
-  "uncategorized_text",
-] as const;
-
-const FILE_FIELDS = [
-  "cancellation_policy",
-  "customer_communication",
-  "customer_signature",
-  "duplicate_charge_documentation",
-  "receipt",
-  "refund_policy",
-  "service_documentation",
-  "uncategorized_file",
-] as const;
-
-type TextField = (typeof TEXT_FIELDS)[number];
-type FileField = (typeof FILE_FIELDS)[number];
-
-const TEXT_SET: ReadonlySet<string> = new Set(TEXT_FIELDS);
-const FILE_SET: ReadonlySet<string> = new Set(FILE_FIELDS);
-
-/** Stripe's own limits on dispute evidence. */
-const MAX_TEXT_FIELD = 20_000;
-const MAX_TEXT_TOTAL = 150_000;
-const MAX_FILE_BYTES = Math.floor(4.5 * 1024 * 1024);
-const FILE_TYPES: ReadonlySet<string> = new Set(["application/pdf", "image/png", "image/jpeg"]);
-
-const DISPUTE_ID_RE = /^(du|dp)_[A-Za-z0-9]+$/;
-const FILE_ID_RE = /^file_[A-Za-z0-9]+$/;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -100,16 +71,55 @@ interface DisputeRow {
   connected_account_id: string;
   transaction_id: string | null;
   booking_id: string | null;
+  status: string;
 }
 
 async function loadRow(disputeId: string): Promise<DisputeRow | null> {
   if (!DISPUTE_ID_RE.test(disputeId)) return null;
   const { data } = await db
     .from("stripe_disputes")
-    .select("stripe_dispute_id, business_id, connected_account_id, transaction_id, booking_id")
+    .select("stripe_dispute_id, business_id, connected_account_id, transaction_id, booking_id, status")
     .eq("stripe_dispute_id", disputeId)
     .maybeSingle();
   return (data as DisputeRow | null) ?? null;
+}
+
+const ALREADY_ANSWERED =
+  "This dispute was already answered or closed, so nothing was sent. Reload to see where it stands.";
+
+/**
+ * Bookkeeping after Stripe has accepted a change: our copy of the dispute and the
+ * activity log. It must never turn a change Stripe made into an error on screen
+ * (the owner would try again, and a submission cannot be repeated), so a failure
+ * here is logged and the answer stays a success. The next sync or webhook brings
+ * our copy back in line.
+ */
+async function afterStripeChange(
+  req: Request,
+  staff: Staff,
+  row: DisputeRow,
+  dispute: Stripe.Dispute,
+  action: string,
+  extra: { changed?: string[]; payload?: Record<string, unknown> },
+): Promise<void> {
+  try {
+    await upsertDisputes(db, [{ dispute, accountId: row.connected_account_id, businessId: row.business_id }]);
+  } catch (err) {
+    console.error(`[stripe-disputes] ${action}: Stripe accepted it but our copy did not update:`, err);
+  }
+  try {
+    await logStaffAction(db, {
+      staffId: staff.id,
+      businessId: row.business_id,
+      employee: await employeeFromRequest(db, req),
+      entity: "stripe_disputes",
+      entityId: row.stripe_dispute_id,
+      action,
+      ...extra,
+    });
+  } catch (err) {
+    console.error(`[stripe-disputes] ${action}: Stripe accepted it but the activity log did not:`, err);
+  }
 }
 
 /**
@@ -215,8 +225,13 @@ async function detail(stripe: Stripe, row: DisputeRow): Promise<Response> {
     console.error("[stripe-disputes] retrieve failed:", err);
     return json({ error: stripeErrorMessage(err) }, 502);
   }
-  // The list's copy follows whatever Stripe says now.
-  await upsertDisputes(db, [{ dispute, accountId: row.connected_account_id, businessId: row.business_id }]);
+  // The list's copy follows whatever Stripe says now. A failed write only leaves
+  // the list a little behind; the page still shows the live dispute.
+  try {
+    await upsertDisputes(db, [{ dispute, accountId: row.connected_account_id, businessId: row.business_id }]);
+  } catch (err) {
+    console.error("[stripe-disputes] detail: our copy did not update:", err);
+  }
 
   const evidence = dispute.evidence as unknown as Record<string, unknown>;
   const text = Object.fromEntries(
@@ -420,6 +435,7 @@ async function upload(req: Request): Promise<Response> {
   }
   const row = await loadRow(String(form.get("dispute_id") ?? ""));
   if (!row) return json({ error: "Dispute not found." }, 404);
+  if (!ANSWERABLE_STATUSES.has(row.status)) return json({ error: ALREADY_ANSWERED }, 409);
 
   const file = form.get("file");
   if (!(file instanceof File)) return json({ error: "Choose a file to upload." }, 400);
@@ -472,33 +488,6 @@ async function file(stripe: Stripe, row: DisputeRow, fileId: string): Promise<Re
 
 // ── save / accept ────────────────────────────────────────────────────────────
 
-/** Check the evidence the screen sent; returns Stripe's evidence object or an error. */
-function cleanEvidence(input: unknown): { evidence: Record<string, string> } | { error: string } {
-  if (!input || typeof input !== "object") return { error: "Nothing to save." };
-  const evidence: Record<string, string> = {};
-  let total = 0;
-  for (const [key, raw] of Object.entries(input as Record<string, unknown>)) {
-    if (typeof raw !== "string") return { error: `${key} must be text.` };
-    if (TEXT_SET.has(key)) {
-      const value = raw.trim();
-      if (value.length > MAX_TEXT_FIELD) {
-        return { error: "One of the answers is longer than Stripe allows (20,000 characters)." };
-      }
-      total += value.length;
-      evidence[key] = value;
-    } else if (FILE_SET.has(key)) {
-      if (raw !== "" && !FILE_ID_RE.test(raw)) return { error: "One of the files is not valid. Upload it again." };
-      evidence[key] = raw;
-    } else {
-      return { error: `Unknown evidence field: ${key}` };
-    }
-  }
-  if (total > MAX_TEXT_TOTAL) {
-    return { error: "The answers add up to more text than Stripe allows (150,000 characters)." };
-  }
-  return { evidence };
-}
-
 async function save(
   stripe: Stripe,
   req: Request,
@@ -509,61 +498,46 @@ async function save(
 ): Promise<Response> {
   const cleaned = cleanEvidence(input);
   if ("error" in cleaned) return json({ error: cleaned.error }, 400);
-  if (submit && !Object.values(cleaned.evidence).some((v) => v !== "")) {
+  if (submit && !hasEvidence(cleaned.evidence)) {
     return json({ error: "Add an explanation or a document before sending it to the bank." }, 400);
   }
 
   const opts = { stripeAccount: row.connected_account_id };
+  let updated: Stripe.Dispute;
   try {
+    // Fresh from Stripe, not our copy: the copy can lag a submission made a
+    // moment ago in another tab.
     const current = await stripe.disputes.retrieve(row.stripe_dispute_id, {}, opts);
-    if (!ANSWERABLE_STATUSES.has(current.status)) {
-      return json({ error: "This dispute is no longer waiting for an answer. Reload to see where it stands." }, 409);
-    }
-    const updated = await stripe.disputes.update(
-      row.stripe_dispute_id,
-      { evidence: cleaned.evidence, submit, metadata: { pwc_last_saved_by: staff.id } },
-      opts,
-    );
-    await upsertDisputes(db, [{ dispute: updated, accountId: row.connected_account_id, businessId: row.business_id }]);
-    await logStaffAction(db, {
-      staffId: staff.id,
-      businessId: row.business_id,
-      employee: await employeeFromRequest(db, req),
-      entity: "stripe_disputes",
-      entityId: row.stripe_dispute_id,
-      action: submit ? "evidence_submitted" : "evidence_saved",
-      changed: Object.keys(cleaned.evidence).filter((k) => cleaned.evidence[k] !== ""),
-    });
-    return json({ ok: true, status: updated.status });
+    if (!ANSWERABLE_STATUSES.has(current.status)) return json({ error: ALREADY_ANSWERED }, 409);
+    updated = await stripe.disputes.update(row.stripe_dispute_id, evidenceUpdate(cleaned.evidence, submit, staff.id), opts);
   } catch (err) {
     console.error("[stripe-disputes] save failed:", err);
     return json({ error: stripeErrorMessage(err) }, 502);
   }
+
+  await afterStripeChange(req, staff, row, updated, submit ? "evidence_submitted" : "evidence_saved", {
+    changed: Object.keys(cleaned.evidence).filter((k) => cleaned.evidence[k] !== ""),
+  });
+  return json({ ok: true, status: updated.status, submitted: submit });
 }
 
 async function accept(stripe: Stripe, req: Request, staff: Staff, row: DisputeRow): Promise<Response> {
   const opts = { stripeAccount: row.connected_account_id };
+  let closed: Stripe.Dispute;
   try {
     const current = await stripe.disputes.retrieve(row.stripe_dispute_id, {}, opts);
-    if (!ANSWERABLE_STATUSES.has(current.status)) {
-      return json({ error: "This dispute is no longer waiting for an answer. Reload to see where it stands." }, 409);
+    if (!ANSWERABLE_STATUSES.has(current.status)) return json({ error: ALREADY_ANSWERED }, 409);
+    if (current.status !== "needs_response") {
+      return json({ error: "An inquiry cannot be accepted. Answer it, or refund the guest." }, 409);
     }
-    const closed = await stripe.disputes.close(row.stripe_dispute_id, {}, opts);
-    await upsertDisputes(db, [{ dispute: closed, accountId: row.connected_account_id, businessId: row.business_id }]);
-    await logStaffAction(db, {
-      staffId: staff.id,
-      businessId: row.business_id,
-      employee: await employeeFromRequest(db, req),
-      entity: "stripe_disputes",
-      entityId: row.stripe_dispute_id,
-      action: "accepted",
-      payload: { amount_cents: closed.amount },
-    });
-    return json({ ok: true, status: closed.status });
+    closed = await stripe.disputes.close(row.stripe_dispute_id, {}, opts);
   } catch (err) {
     console.error("[stripe-disputes] accept failed:", err);
     return json({ error: stripeErrorMessage(err) }, 502);
   }
+
+  await afterStripeChange(req, staff, row, closed, "accepted", { payload: { amount_cents: closed.amount } });
+  return json({ ok: true, status: closed.status });
 }
 
 // ── Entry ────────────────────────────────────────────────────────────────────

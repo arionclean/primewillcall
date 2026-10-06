@@ -11,12 +11,6 @@
 import type Stripe from "npm:stripe@22.3.0";
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 
-/** The two statuses where the bank is still waiting for an answer. */
-export const ANSWERABLE_STATUSES: ReadonlySet<string> = new Set([
-  "needs_response",
-  "warning_needs_response",
-]);
-
 export function chargeIdOf(charge: string | Stripe.Charge | null | undefined): string | null {
   if (!charge) return null;
   return typeof charge === "string" ? charge : charge.id;
