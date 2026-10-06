@@ -157,3 +157,13 @@ verify_jwt = false
 
 [functions.email-inbound-sweep]
 verify_jwt = false
+
+# The owner's Payouts tab (/admin/payments/payouts). Called from the browser with the
+# owner's own token; reads Stripe, never writes to it.
+[functions.stripe-reports]
+verify_jwt = true
+
+# The owner's Disputes tab (/admin/payments/disputes). Called from the browser with the
+# owner's own token; answers disputes on the business's Stripe account.
+[functions.stripe-disputes]
+verify_jwt = true

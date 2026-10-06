@@ -125,3 +125,37 @@ export function stripeErrorMessage(err: unknown): string {
   }
   return raw ?? "Stripe request failed.";
 }
+
+// ── Files ────────────────────────────────────────────────────────────────────
+// Dispute evidence files go through Stripe's Files host directly with fetch: a
+// multipart upload through the SDK depends on Node streams, and Deno's FormData
+// does the same job natively. Both calls act on the connected account, because
+// the dispute (a direct charge) lives there and its evidence must too.
+
+const STRIPE_FILES_API = "https://files.stripe.com/v1";
+
+function filesHeaders(accountId: string): HeadersInit {
+  return { Authorization: `Bearer ${STRIPE_SECRET_KEY}`, "Stripe-Account": accountId };
+}
+
+/** Upload one dispute evidence file to a connected account. Throws Stripe's message. */
+export async function uploadDisputeEvidenceFile(accountId: string, file: File): Promise<Stripe.File> {
+  const form = new FormData();
+  form.append("purpose", "dispute_evidence");
+  form.append("file", file, file.name);
+  const res = await fetch(`${STRIPE_FILES_API}/files`, {
+    method: "POST",
+    headers: filesHeaders(accountId),
+    body: form,
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(body?.error?.message ?? `Stripe did not take the file (${res.status}).`);
+  return body as Stripe.File;
+}
+
+/** The bytes of a file on a connected account, as Stripe's raw response. */
+export function downloadStripeFile(accountId: string, fileId: string): Promise<Response> {
+  return fetch(`${STRIPE_FILES_API}/files/${encodeURIComponent(fileId)}/contents`, {
+    headers: filesHeaders(accountId),
+  });
+}

@@ -2298,6 +2298,109 @@ export type Database = {
           },
         ]
       }
+      stripe_disputes: {
+        Row: {
+          amount: number
+          booking_id: string | null
+          bucket: string | null
+          business_id: string | null
+          card_brand: string | null
+          charge_id: string | null
+          connected_account_id: string
+          created_at: string
+          currency: string
+          customer_name: string | null
+          evidence_due_by: string | null
+          evidence_past_due: boolean
+          has_evidence: boolean
+          id: string
+          is_charge_refundable: boolean
+          livemode: boolean
+          network_reason_code: string | null
+          reason: string
+          status: string
+          stripe_created: string
+          stripe_dispute_id: string
+          submission_count: number
+          transaction_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          booking_id?: string | null
+          bucket?: never
+          business_id?: string | null
+          card_brand?: string | null
+          charge_id?: string | null
+          connected_account_id: string
+          created_at?: string
+          currency?: string
+          customer_name?: string | null
+          evidence_due_by?: string | null
+          evidence_past_due?: boolean
+          has_evidence?: boolean
+          id?: string
+          is_charge_refundable?: boolean
+          livemode?: boolean
+          network_reason_code?: string | null
+          reason: string
+          status: string
+          stripe_created: string
+          stripe_dispute_id: string
+          submission_count?: number
+          transaction_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          booking_id?: string | null
+          bucket?: never
+          business_id?: string | null
+          card_brand?: string | null
+          charge_id?: string | null
+          connected_account_id?: string
+          created_at?: string
+          currency?: string
+          customer_name?: string | null
+          evidence_due_by?: string | null
+          evidence_past_due?: boolean
+          has_evidence?: boolean
+          id?: string
+          is_charge_refundable?: boolean
+          livemode?: boolean
+          network_reason_code?: string | null
+          reason?: string
+          status?: string
+          stripe_created?: string
+          stripe_dispute_id?: string
+          submission_count?: number
+          transaction_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stripe_disputes_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stripe_disputes_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stripe_disputes_transaction_id_fkey"
+            columns: ["transaction_id"]
+            isOneToOne: false
+            referencedRelation: "stripe_transactions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       stripe_events: {
         Row: {
           account: string | null
@@ -2330,6 +2433,83 @@ export type Database = {
           type?: string
         }
         Relationships: []
+      }
+      stripe_payouts: {
+        Row: {
+          amount: number
+          arrival_date: string
+          automatic: boolean
+          bank_last4: string | null
+          bank_name: string | null
+          business_id: string | null
+          connected_account_id: string
+          created_at: string
+          currency: string
+          destination_id: string | null
+          failure_code: string | null
+          failure_message: string | null
+          id: string
+          livemode: boolean
+          method: string | null
+          statement_descriptor: string | null
+          status: string
+          stripe_created: string
+          stripe_payout_id: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          arrival_date: string
+          automatic?: boolean
+          bank_last4?: string | null
+          bank_name?: string | null
+          business_id?: string | null
+          connected_account_id: string
+          created_at?: string
+          currency?: string
+          destination_id?: string | null
+          failure_code?: string | null
+          failure_message?: string | null
+          id?: string
+          livemode?: boolean
+          method?: string | null
+          statement_descriptor?: string | null
+          status: string
+          stripe_created: string
+          stripe_payout_id: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          arrival_date?: string
+          automatic?: boolean
+          bank_last4?: string | null
+          bank_name?: string | null
+          business_id?: string | null
+          connected_account_id?: string
+          created_at?: string
+          currency?: string
+          destination_id?: string | null
+          failure_code?: string | null
+          failure_message?: string | null
+          id?: string
+          livemode?: boolean
+          method?: string | null
+          statement_descriptor?: string | null
+          status?: string
+          stripe_created?: string
+          stripe_payout_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stripe_payouts_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       stripe_refunds: {
         Row: {
@@ -3631,6 +3811,14 @@ export type Database = {
       source_label: {
         Args: { b: Database["public"]["Tables"]["bookings"]["Row"] }
         Returns: string
+      }
+      stripe_disputes_summary: {
+        Args: { p_business?: string }
+        Returns: {
+          amount: number
+          bucket: string
+          disputes: number
+        }[]
       }
       stripe_payments_summary: {
         Args: { p_end: string; p_start: string }
