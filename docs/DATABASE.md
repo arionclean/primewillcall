@@ -321,6 +321,38 @@ login (`staff.pin_required`), read from the `x-employee-id` request header. Read
 manager their business's rows and their own; check-in their own. See
 docs/kiosk-employees.md "The web app".
 
+### kiosk_closings (the end-of-night close)
+`id uuid pk, kiosk_id, kiosk_slug, business_id, business_date date, date_label?,
+sales_count, card_count, cash_count, total_cents, card_cents, cash_cents,
+commission_cents?, commission_cents_corrected?, corrected_at?, corrected_by?,
+correction_note?, total_cash_cents (generated), closed_by_name?, employee_id?,
+products jsonb, app_build?, device_id?, emailed, emailed_to?, printed_at?, closed_at,
+created_at, updated_at` — one row per kiosk per business day. Written by the
+`kiosk-closing-report` edge function through `record_kiosk_closing()`, before the email
+is attempted: the close is the record, the email is a copy of it.
+
+The commission staff type at the desk is money that leaves the till, so it needs a row
+that can be totalled and corrected. Two columns, never one: `commission_cents` is what
+the tablet reported and is never edited in place, `commission_cents_corrected` holds an
+owner's fix with `corrected_at` / `corrected_by` / `correction_note`, and
+`total_cash_cents` (cash less the effective commission) is generated, never typed. It
+can go negative when a commission exceeds the night's cash, which is worth seeing.
+
+`business_date` is the day the tablet says it is reporting, parsed from its date label,
+not the clock when it posted: kiosk3 closes after 8pm ET and kiosk1 sometimes past
+midnight, and both belong to the day they sold on. `UNIQUE (kiosk_id, business_date)` is
+what makes a reprint or a re-send correct that night's row instead of adding a second,
+so counting closings counts nights. A re-send clears an existing correction only when
+the tablet's commission actually changed; reprinting the same figures leaves the fix
+alone.
+
+RLS: owner all, `business_manager` SELECT on their own business. No staff INSERT policy
+(the tablet writes through the service role) and only the owner may correct a row.
+`kiosk_events` still gets its `closing_report` line per attempt; that is the activity
+feed, this is the ledger. Backfilled from those events for 2026-09-09 onward, where the
+card/cash sale COUNTS and the product breakdown were not recorded and stay at their
+defaults.
+
 ### Legacy / unused
 `kiosk_tours` remains from the original schema but nothing in the app reads it. Slated for
 removal once confirmed dead. Do not build on it. (`kiosks` is no longer dead: it now maps

@@ -28,6 +28,7 @@ import {
   paidPayload,
   resolveEmployee,
   resolveKiosk,
+  runAfterReply,
   serviceClient,
   stripeConfigured,
   stripeRetrievePaymentIntent,
@@ -43,6 +44,12 @@ interface CompleteBody {
   app_build?: string;
   device_id?: string;
   employee_id?: string;
+  /**
+   * Sent by a build that can finish a sale without its Xano copy in the reply. Only
+   * with this AND the kiosk's sale_settle switch on 'deferred' is the copy run after
+   * the reply; an old build on a switched kiosk gets today's path byte for byte.
+   */
+  fast_settle?: boolean;
 }
 
 Deno.serve(withSentry("kiosk-sale-complete", async (req) => {
@@ -107,10 +114,28 @@ Deno.serve(withSentry("kiosk-sale-complete", async (req) => {
   const r = await stripeRetrievePaymentIntent(sale.payment_intent_id, sale.stripe_account_id);
   if (!r.ok) return json({ error: "stripe_error", message: r.error }, 502);
 
+  // Whether the Xano copy may run after the reply. The switch is read with its own
+  // query, never through resolveKiosk's shared select: that select feeds thirteen
+  // functions, and a column it cannot read would take every one of them down. The
+  // query only happens for a build that asked, and any failure means 'inline'.
+  let deferMirror = false;
+  if (body.fast_settle === true) {
+    const { data: sw } = await sb
+      .from("kiosks")
+      .select("sale_settle")
+      .eq("id", kiosk.id)
+      .maybeSingle<{ sale_settle: string | null }>();
+    deferMirror = sw?.sale_settle === "deferred";
+  }
+
   if (r.pi.status === "succeeded") {
-    const { sale: done, already } = await completeSale(sb, sale, "tablet", r.pi);
+    const { sale: done, already, mirror } = await completeSale(sb, sale, "tablet", r.pi, { deferMirror });
     const acked = await ackSale(sb, done);
-    return json(paidPayload(acked, { already }), 200);
+    const reply = json(paidPayload(acked, { already }), 200);
+    // Deferred: the guest is told paid now; the Xano copy runs once the reply is out,
+    // and kiosk-sale-sweep retries it for a day if this isolate dies first.
+    if (mirror) await runAfterReply("kiosk-sale-complete xano mirror", mirror);
+    return reply;
   }
   if (r.pi.status === "canceled") return json({ ok: true, status: "canceled", ref }, 200);
   return json(

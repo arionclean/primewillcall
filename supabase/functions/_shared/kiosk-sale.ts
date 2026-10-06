@@ -14,6 +14,7 @@
 
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { nyLocalToUtcIso } from "./ny-time.ts";
+import { xanoGetBookingByInternalId, xanoRowId } from "./xano-api.ts";
 
 // ── environment ───────────────────────────────────────────────────────────────
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
@@ -33,9 +34,11 @@ export const XANO_CASH_SALES_URL = "https://xmhi-aj9d-cnsb.n7.xano.io/api:_o9979
 const XANO_TIMEOUT_MS = 8_000;
 
 export const REUSE_WINDOW_MS = 5 * 60_000;
-/** Inside this window a matching amount is enough: the tablet just crashed and came back. */
-export const REUSE_NO_NAME_WINDOW_MS = 2 * 60_000;
 export const SWEEP_MIN_AGE_MS = 60_000;
+/** A Xano copy that has held its claim this long died mid-way and may be taken over. */
+export const MIRROR_CLAIM_TTL_MS = 2 * 60_000;
+/** What the tablet stores when staff type no name. Never enough to match a payment on. */
+const GENERIC_FIRST_NAMES = new Set(["walkin", "guest"]);
 export const ABANDON_AFTER_MS = 30 * 60_000;
 
 export function serviceClient(): SupabaseClient {
@@ -407,12 +410,14 @@ export interface ReuseCandidate {
  * Whether a sale started right after an unacknowledged captured payment on the same
  * kiosk is that payment's retry. Always required: same amount, the earlier sale was
  * never acknowledged by a tablet (acknowledged means a tablet showed it as paid, which
- * happens within seconds whenever the tablet is alive), and it is under five minutes
- * old. Under two minutes that is enough: the tablet crashed and came back, and staff are
- * re-entering the same customer, name typos included. Between two and five minutes the
- * first name has to match too, with prefix tolerance ("Rachel" / "Rachelle"), or the
- * earlier sale had no real name. A different customer paying the same amount in that
- * gap would then be under-collected once, never double charged.
+ * happens within seconds whenever the tablet is alive), it is under five minutes old,
+ * and the first name matches, with prefix tolerance ("Rachel" / "Rachelle"). A sale
+ * with no real name on either side is never a match: the tablet stores "Walk-in" or
+ * "Guest" when staff type nothing, and that would make any stranger at the same
+ * price a match. The one case this turns away that the old rule took is a crash
+ * retry re-entered under a different name; kiosk-sale-start logs every refusal so
+ * that shows up, and the person is charged once more rather than a stranger's card
+ * being spent on their booking.
  */
 export function canReuseSale(
   candidate: ReuseCandidate,
@@ -424,10 +429,17 @@ export function canReuseSale(
   if (candidate.amount_cents !== incoming.amountCents) return false;
   const age = now - new Date(candidate.created_at).getTime();
   if (!(age >= 0 && age <= REUSE_WINDOW_MS)) return false;
-  if (age <= REUSE_NO_NAME_WINDOW_MS) return true;
+  // The first name must match at every age. It used to be waived for the first two
+  // minutes, and waived for all five when the earlier sale carried no real name, so
+  // a stranger paying the same price a minute later could walk off with the previous
+  // guest's payment. Kiosk tickets are a fixed price list: in one week, 20 pairs of
+  // different guests paid the same price on the same kiosk within two minutes, and
+  // no two same-name guests did. A refusal is logged by kiosk-sale-start, so a real
+  // crash retry that this turns away is visible rather than silent.
   const prev = normalizeFirstName(candidate.customer_name);
   const next = normalizeFirstName(incoming.customerName);
-  if (!prev || prev === "walkin" || prev === "guest") return true;
+  if (!prev || !next) return false;
+  if (GENERIC_FIRST_NAMES.has(prev) || GENERIC_FIRST_NAMES.has(next)) return false;
   if (prev === next) return true;
   const shorter = Math.min(prev.length, next.length);
   return shorter >= 3 && (prev.startsWith(next) || next.startsWith(prev));
@@ -492,6 +504,10 @@ export interface SaleRow {
   xano_payment_qr: string | null;
   xano_mirrored_at: string | null;
   xano_error: string | null;
+  /** Who is copying this sale to Xano right now (see mirrorAndRecord). */
+  xano_mirror_claimed_at: string | null;
+  /** The Xano booking POST was started; with no xano_booking_id, a copy may exist. */
+  xano_booking_attempted_at: string | null;
   paid_at: string | null;
   completed_at: string | null;
   completed_by: string | null;
@@ -505,8 +521,8 @@ export interface SaleRow {
 export const SALE_COLUMNS =
   "id, ref, kiosk_id, kiosk_slug, business_id, type, amount_cents, product, customer_name, status, " +
   "payment_intent_id, stripe_account_id, booking_id, cash_sale_id, xano_payload, xano_booking_id, " +
-  "xano_payment_qr, xano_mirrored_at, xano_error, paid_at, completed_at, completed_by, tablet_acked_at, " +
-  "app_build, device_id, employee_id, created_at";
+  "xano_payment_qr, xano_mirrored_at, xano_error, xano_mirror_claimed_at, xano_booking_attempted_at, " +
+  "paid_at, completed_at, completed_by, tablet_acked_at, app_build, device_id, employee_id, created_at";
 
 export async function getSaleByRef(sb: SupabaseClient, ref: string): Promise<SaleRow | null> {
   const { data } = await sb.from("kiosk_sales").select(SALE_COLUMNS).eq("ref", ref).maybeSingle<SaleRow>();
@@ -561,7 +577,20 @@ export async function createPendingBooking(
   try {
     res = await fetch(`${SUPABASE_URL}/functions/v1/xano-booking-sync`, {
       method: "POST",
-      headers: { "content-type": "application/json", "x-webhook-secret": XANO_WEBHOOK_SECRET },
+      // Run the sync next to the database (us-west-2) instead of wherever this
+      // isolate happens to be. The same function measures p50 1,562 ms invoked
+      // from us-east-2 and 3,340 ms from us-east-1: the ingest makes six or seven
+      // PostgREST round trips, and from the east coast every one of them crosses
+      // the country. Latency only, nothing about the sync's behaviour changes.
+      // A pinned request is NOT re-routed if the region is down, which costs
+      // nothing here: the database only lives in us-west-2, so a call that cannot
+      // reach it cannot do its job anyway, and it fails the way it fails today
+      // (caught below -> booking_failed -> no Stripe object was created yet).
+      headers: {
+        "content-type": "application/json",
+        "x-webhook-secret": XANO_WEBHOOK_SECRET,
+        "x-region": "us-west-2",
+      },
       body: JSON.stringify(record),
       signal: AbortSignal.timeout(15_000),
     });
@@ -662,24 +691,71 @@ async function postXanoCashSale(sale: SaleRow, xanoBookingId: string): Promise<{
  * Resumable: a sale that already has its Xano booking only retries the cash_sales post,
  * so a retry can never create a second Xano booking. `xano_mirrored_at` is set only when
  * both posts succeeded, which is what the sweep keys its retries on.
+ *
+ * Exclusive: the caller claims the sale with one guarded UPDATE before it posts
+ * anything. Without that, the tablet's kiosk-sale-complete and the once-a-minute
+ * sweep ran this side by side and both posted; six sales in one week reached Xano
+ * twice, every one of them in the first seconds of a minute. A claim older than
+ * MIRROR_CLAIM_TTL_MS belongs to a copy that died mid-way (the isolate was torn down)
+ * and may be taken over. The row the claim returns is the freshest one, so a booking
+ * id an earlier attempt saved is reused rather than posted again.
  */
 export async function mirrorAndRecord(sb: SupabaseClient, sale: SaleRow): Promise<SaleRow> {
   if (!xanoMirrorEnabled() || sale.xano_mirrored_at) return sale;
 
-  let bookingId = sale.xano_booking_id;
-  let paymentQr = sale.xano_payment_qr;
+  const nowIso = new Date().toISOString();
+  const staleBefore = new Date(Date.now() - MIRROR_CLAIM_TTL_MS).toISOString();
+  const { data: claimed } = await sb
+    .from("kiosk_sales")
+    .update({ xano_mirror_claimed_at: nowIso })
+    .eq("id", sale.id)
+    .is("xano_mirrored_at", null)
+    .or(`xano_mirror_claimed_at.is.null,xano_mirror_claimed_at.lt.${staleBefore}`)
+    .select(SALE_COLUMNS)
+    .maybeSingle<SaleRow>();
+  // Someone else holds the claim, or the copy landed since the caller last looked.
+  if (!claimed) return (await getSaleByRef(sb, sale.ref)) ?? sale;
+  const current = claimed;
+
+  let bookingId = current.xano_booking_id;
+  let paymentQr = current.xano_payment_qr;
   let error: string | null = null;
-  if (!bookingId) {
-    const b = await postXanoBooking(sale);
+
+  if (!bookingId && current.xano_booking_attempted_at) {
+    // An earlier attempt got as far as posting the booking and never saved Xano's
+    // answer. Ask Xano (read-only) before posting again. If Xano cannot answer, stop
+    // here rather than risk a second booking; the sweep retries next minute.
+    const found = await xanoGetBookingByInternalId(current.ref);
+    if (!found.ok) {
+      error = `xano lookup before retry: ${found.error}`;
+    } else if (found.value) {
+      const id = xanoRowId(found.value);
+      if (id) {
+        bookingId = String(id);
+        const qr = (found.value as Record<string, unknown>).payment_qr;
+        if (typeof qr === "string" && qr) paymentQr = qr;
+      }
+    }
+  }
+
+  if (!bookingId && !error) {
+    await sb.from("kiosk_sales").update({ xano_booking_attempted_at: nowIso }).eq("id", current.id);
+    const b = await postXanoBooking(current);
     if (!b.ok) {
       error = b.error;
     } else {
       bookingId = b.id;
       paymentQr = b.paymentQr ?? paymentQr;
+      // Save the id the moment it exists, before the cash_sales post. A crash between
+      // the two must leave the id behind, or the retry would post a second booking.
+      await sb
+        .from("kiosk_sales")
+        .update({ xano_booking_id: bookingId, xano_payment_qr: paymentQr })
+        .eq("id", current.id);
     }
   }
   if (bookingId && !error) {
-    const c = await postXanoCashSale(sale, bookingId);
+    const c = await postXanoCashSale(current, bookingId);
     error = c.error;
   }
 
@@ -687,19 +763,22 @@ export async function mirrorAndRecord(sb: SupabaseClient, sale: SaleRow): Promis
     xano_error: error,
     xano_mirrored_at: error ? null : new Date().toISOString(),
   };
+  // A clean failure gives the claim back so the sweep can retry at once. A crash
+  // never reaches this line, and that claim expires on its own.
+  if (error) patch.xano_mirror_claimed_at = null;
   if (bookingId) patch.xano_booking_id = bookingId;
   if (paymentQr) patch.xano_payment_qr = paymentQr;
-  const { data } = await sb.from("kiosk_sales").update(patch).eq("id", sale.id).select(SALE_COLUMNS).maybeSingle<SaleRow>();
+  const { data } = await sb.from("kiosk_sales").update(patch).eq("id", current.id).select(SALE_COLUMNS).maybeSingle<SaleRow>();
   await logEvent(sb, {
-    kioskId: sale.kiosk_id,
-    kioskSlug: sale.kiosk_slug,
-    businessId: sale.business_id,
-    ref: sale.ref,
+    kioskId: current.kiosk_id,
+    kioskSlug: current.kiosk_slug,
+    businessId: current.business_id,
+    ref: current.ref,
     event: error ? "xano_mirror_failed" : "xano_mirrored",
     level: error ? "error" : "info",
     payload: { xano_booking_id: bookingId, error },
   });
-  return data ?? sale;
+  return data ?? current;
 }
 
 // ── completion ────────────────────────────────────────────────────────────────
@@ -712,7 +791,8 @@ export async function completeSale(
   sale: SaleRow,
   by: "tablet" | "sweep" | "reuse",
   pi: StripePaymentIntent,
-): Promise<{ sale: SaleRow; already: boolean }> {
+  opts: { deferMirror?: boolean } = {},
+): Promise<{ sale: SaleRow; already: boolean; mirror?: () => Promise<SaleRow> }> {
   const now = new Date().toISOString();
   const { data: claimed } = await sb
     .from("kiosk_sales")
@@ -779,7 +859,16 @@ export async function completeSale(
     if (data) current = data;
   }
 
-  current = await mirrorAndRecord(sb, current);
+  // The Xano copy: inline, so the guest waits for it (today's path), or handed back
+  // to the caller to run after the reply, when the kiosk is switched to 'deferred'.
+  // Either way it goes through mirrorAndRecord's claim, so the sweep cannot double it.
+  let mirror: (() => Promise<SaleRow>) | undefined;
+  if (opts.deferMirror) {
+    const snapshot = current;
+    mirror = () => mirrorAndRecord(sb, snapshot);
+  } else {
+    current = await mirrorAndRecord(sb, current);
+  }
 
   // Attach the customer's name and booking to the Stripe charge in the ledger.
   try {
@@ -796,7 +885,7 @@ export async function completeSale(
     event: "sale_completed",
     payload: { by, payment_intent: pi.id, amount: current.amount_cents, xano_booking_id: current.xano_booking_id },
   });
-  return { sale: current, already: false };
+  return { sale: current, already: false, mirror };
 }
 
 /** Stamp that a tablet has shown the paid outcome for this sale (so it can never be reused). */
@@ -825,5 +914,60 @@ export async function abandonSale(sb: SupabaseClient, sale: SaleRow, reason: str
     event: "sale_abandoned",
     level: "warn",
     payload: { reason, payment_intent: sale.payment_intent_id },
+  });
+}
+
+// ── after the reply ───────────────────────────────────────────────────────────
+/**
+ * Run `work` after the response has gone out, when the runtime allows it.
+ * Supabase's runtime keeps the isolate alive for a promise handed to
+ * EdgeRuntime.waitUntil. Where that is missing (a test, a plain Deno serve), the
+ * work is awaited right here, so a caller that awaits this function never drops a
+ * write. Do not copy kiosk-pin-verify's older helper: its fallback returns the
+ * promise instead of awaiting it, and its callers discard the return value.
+ */
+export async function runAfterReply(label: string, work: () => Promise<unknown>): Promise<void> {
+  const runtime = (globalThis as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } })
+    .EdgeRuntime;
+  const settled = work().catch((e) => console.error(`${label}: deferred work failed`, e));
+  if (runtime?.waitUntil) {
+    runtime.waitUntil(settled);
+    return;
+  }
+  await settled;
+}
+
+// ── a card payment on a sale that also has a QR page ──────────────────────────
+/**
+ * Close the sale's Checkout page once the sale has been paid through its card
+ * request instead. Staff open the QR page, cancel it on the tablet and take the card
+ * on the same sale (18 of the first 189 paid sales did that); nothing told Stripe, so
+ * the page stayed payable for a day, and a guest who had scanned it could pay it as
+ * well: a second charge for one sale. Runs AFTER the money is recorded and never
+ * fails the sale; a page Stripe will not close is logged for a person.
+ */
+export async function closeCheckoutSessionAfterCardPayment(
+  sb: SupabaseClient,
+  sale: SaleRow,
+  paidIntentId: string,
+): Promise<void> {
+  const stored = (sale.xano_payload as Record<string, unknown> | null) ?? {};
+  const sessionId = typeof stored.__checkout_session === "string" ? stored.__checkout_session : null;
+  if (!sessionId || !sale.stripe_account_id) return;
+  const base = { kioskId: sale.kiosk_id, kioskSlug: sale.kiosk_slug, businessId: sale.business_id, ref: sale.ref };
+  const r = await stripeRetrieveCheckoutSession(sessionId, sale.stripe_account_id);
+  if (!r.ok) {
+    await logEvent(sb, { ...base, event: "checkout_close_failed", level: "warn", payload: { session: sessionId, error: r.error } });
+    return;
+  }
+  // The page is how this sale was paid, or it is already closed: nothing to do.
+  if (r.session.payment_intent === paidIntentId) return;
+  if (r.session.status !== "open") return;
+  const closed = await stripeExpireCheckoutSession(sessionId, sale.stripe_account_id);
+  await logEvent(sb, {
+    ...base,
+    event: closed ? "checkout_closed_after_card" : "checkout_close_failed",
+    level: closed ? "info" : "warn",
+    payload: { session: sessionId, paid_intent: paidIntentId, session_status: r.session.status },
   });
 }

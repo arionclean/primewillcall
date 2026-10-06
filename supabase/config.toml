@@ -72,6 +72,19 @@ verify_jwt = true
 [functions.gp-book]
 verify_jwt = true
 
+# Deployed with the gateway check on, which is also the CLI default, so these entries
+# change nothing; they are here so this file names every function. stripe-connect and
+# payments are called from the browser with the staff member's own JWT (CLAUDE.md,
+# Payments); gp-shadow-compare is the shadow test's endpoint (docs/gp-shadow-test.md).
+[functions.stripe-connect]
+verify_jwt = true
+
+[functions.payments]
+verify_jwt = true
+
+[functions.gp-shadow-compare]
+verify_jwt = true
+
 # Kiosk card flow v2 (docs/kiosk-card-flow-v2.md). The tablet sends only the anon key,
 # like the other kiosk functions; kiosk-sale-sweep is pg_cron with x-cron-secret.
 [functions.kiosk-config]
@@ -84,6 +97,11 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.kiosk-sale-sweep]
+verify_jwt = false
+
+# pg_cron with x-cron-secret, like kiosk-sale-sweep. Imports the cash sales the
+# tablet delivered to Xano and never delivered here.
+[functions.kiosk-cash-sweep]
 verify_jwt = false
 
 [functions.kiosk-log]
@@ -111,6 +129,16 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.kiosk-booking]
+verify_jwt = false
+
+# Kiosk card flow v1 (the tablets still on kiosks.card_flow = 'v1'): the Terminal
+# connection token and the card_present PaymentIntent. Public like the Xano endpoints
+# they replaced; the tablet sends no Supabase token. Deployed with JWT off since
+# 2026-07-12.
+[functions.kiosk-connection-token]
+verify_jwt = false
+
+[functions.kiosk-payment-intent]
 verify_jwt = false
 
 # Called by the bookings capacity triggers with x-cron-secret, not a user token.
