@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ChevronDown, ChevronRight, Landmark, Loader2 } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, ExternalLink, Landmark, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useCallback, useEffect, useState, useTransition } from "react";
@@ -17,6 +17,7 @@ import {
   saleSourceLabel,
   STRIPE_CONNECT_PRICING_URL,
   STRIPE_PRICING_URL,
+  stripeAccountUrl,
   type BusinessOverview,
   type Overview,
   type PayoutDetail,
@@ -236,8 +237,8 @@ function BusinessCard({ business: b }: { business: BusinessOverview }) {
   const total = balance + (next?.onTheWay ? next.amount : 0);
   const later = next ? total - next.amount : 0;
   return (
-    <Card>
-      <CardContent className="space-y-4 py-5">
+    <Card className="h-full">
+      <CardContent className="flex h-full flex-col gap-4 py-5">
         <div className="flex items-start justify-between gap-3">
           <h3 className="font-semibold leading-tight">{b.name}</h3>
           {b.health && (
@@ -311,6 +312,17 @@ function BusinessCard({ business: b }: { business: BusinessOverview }) {
             </div>
           </>
         )}
+
+        {/* The business's account in Prime's own Stripe dashboard, in a new tab. */}
+        <a
+          href={stripeAccountUrl(b.accountId)}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-auto inline-flex items-center gap-1 self-start text-xs text-muted-foreground/60 hover:text-muted-foreground"
+        >
+          Open in Stripe
+          <ExternalLink className="size-3" aria-hidden />
+        </a>
       </CardContent>
     </Card>
   );
