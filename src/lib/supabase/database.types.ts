@@ -3812,8 +3812,16 @@ export type Database = {
         Args: { b: Database["public"]["Tables"]["bookings"]["Row"] }
         Returns: string
       }
+      stripe_dispute_rate: {
+        Args: { p_business?: string; p_days?: number }
+        Returns: {
+          disputes: number
+          payments: number
+          since: string
+        }[]
+      }
       stripe_disputes_summary: {
-        Args: { p_business?: string }
+        Args: { p_business?: string; p_since?: string }
         Returns: {
           amount: number
           bucket: string

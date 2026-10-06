@@ -38,9 +38,15 @@ export type DisputeListRow = {
   created: string;
 };
 
+/** Disputes opened in a window against card payments in it; `since` is where it starts. */
+export type DisputeRate = { disputes: number; payments: number; since: string };
+
 type Props = {
   disputes: DisputeListRow[];
   summary: Partial<Record<DisputeBucket, { count: number; amount: number }>>;
+  rate: DisputeRate | null;
+  /** The period every count on the tab covers (disputes waiting for an answer always show). */
+  periodDays: number;
   filter: DisputeFilter;
   business: string | null;
   businesses: { id: string; name: string }[];
@@ -58,18 +64,38 @@ const FILTERS: { value: DisputeFilter; label: string }[] = [
   { value: "all", label: "All" },
 ];
 
-const EMPTY: Record<DisputeFilter, string> = {
-  needs_response: "Nothing needs an answer right now.",
-  under_review: "No disputes are waiting on a bank.",
-  won: "No disputes won yet.",
-  lost: "No disputes lost.",
-  closed: "No other closed disputes.",
-  all: "No disputes. When a guest asks their bank for the money back, it shows up here.",
-};
+function emptyText(filter: DisputeFilter, days: number): string {
+  const period = `in the last ${days} days`;
+  switch (filter) {
+    case "needs_response":
+      return "Nothing needs an answer right now.";
+    case "under_review":
+      return `No disputes waiting on a bank ${period}.`;
+    case "won":
+      return `No disputes won ${period}.`;
+    case "lost":
+      return `No disputes lost ${period}.`;
+    case "closed":
+      return `No other closed disputes ${period}.`;
+    default:
+      return `No disputes ${period}. When a guest asks their bank for the money back, it shows up here.`;
+  }
+}
 
 type SyncState = { state: "checking" } | { state: "done"; at: Date } | { state: "error"; message: string };
 
-export function DisputesView({ disputes, summary, filter, business, businesses, page, perPage, total }: Props) {
+export function DisputesView({
+  disputes,
+  summary,
+  rate,
+  periodDays,
+  filter,
+  business,
+  businesses,
+  page,
+  perPage,
+  total,
+}: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
@@ -115,7 +141,8 @@ export function DisputesView({ disputes, summary, filter, business, businesses, 
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <RateCard rate={rate} periodDays={periodDays} />
         {cards.map((c) => {
           const s = summary[c.bucket] ?? { count: 0, amount: 0 };
           const active = filter === c.bucket;
@@ -169,12 +196,17 @@ export function DisputesView({ disputes, summary, filter, business, businesses, 
             </Select>
           )}
         </div>
-        <SyncStatus sync={sync} onRetry={() => void runSync()} />
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="text-xs font-medium text-muted-foreground">Last {periodDays} days</p>
+          <SyncStatus sync={sync} onRetry={() => void runSync()} />
+        </div>
       </div>
 
       {disputes.length === 0 ? (
         <Card>
-          <CardContent className="py-10 text-center text-sm text-muted-foreground">{EMPTY[filter]}</CardContent>
+          <CardContent className="py-10 text-center text-sm text-muted-foreground">
+            {emptyText(filter, periodDays)}
+          </CardContent>
         </Card>
       ) : (
         <div className="overflow-x-auto rounded-md border">
@@ -231,6 +263,40 @@ export function DisputesView({ disputes, summary, filter, business, businesses, 
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Stripe asks accounts to keep disputes under this share of their card payments. */
+const STRIPE_LIMIT = 0.0075;
+
+/**
+ * What share of card payments turned into disputes. Card networks and Stripe judge
+ * an account by this number month by month, and Stripe steps in above 0.75%.
+ */
+function RateCard({ rate, periodDays }: { rate: DisputeRate | null; periodDays: number }) {
+  // The window starts later than the period only while our ledger is younger than it.
+  const clipped = rate != null && Date.now() - new Date(rate.since).getTime() < (periodDays - 1) * 86_400_000;
+  const share = rate && rate.payments > 0 ? rate.disputes / rate.payments : null;
+  const tone =
+    share == null
+      ? ""
+      : share >= STRIPE_LIMIT
+        ? "text-red-700 dark:text-red-300"
+        : share >= STRIPE_LIMIT * 0.66
+          ? "text-amber-700 dark:text-amber-300"
+          : "text-emerald-700 dark:text-emerald-300";
+  return (
+    <div className="col-span-2 rounded-xl border bg-card px-4 py-4 shadow-sm lg:col-span-1">
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Dispute rate</p>
+      <p className={cn("mt-1 text-xl font-semibold tracking-tight", tone)}>
+        {share == null ? "None yet" : `${(share * 100).toFixed(2)}%`}
+      </p>
+      <p className="text-xs text-muted-foreground">
+        {rate
+          ? `${rate.disputes.toLocaleString()} of ${rate.payments.toLocaleString()} card payments${clipped ? ` since ${formatNyDate(rate.since)}` : ""}`
+          : "No card payments to compare"}
+      </p>
     </div>
   );
 }

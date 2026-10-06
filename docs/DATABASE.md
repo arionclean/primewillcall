@@ -763,8 +763,14 @@ payouts or disputes); no write policies, the functions write with the service ro
   `us-west-2`, next to the database: from the default region the ledger lookups crossed the
   country and opening a payout took about a second longer.
 - **Disputes** (`/admin/payments/disputes`, owner only; the tab's pill counts the ones
-  waiting for an answer): summary cards (needs an answer, waiting on the bank, won, lost,
-  from `stripe_disputes_summary()`, SECURITY INVOKER), a status filter and a business
+  waiting for an answer). Everything on the tab counts the last 30 days (the owner's call,
+  2026-10-06: card networks and Stripe judge the rate month by month), except disputes
+  still waiting for an answer, which always show. The dispute rate is disputes opened in
+  the period over card payments in the same days (`stripe_dispute_rate(p_business,
+  p_days)`; the window never starts before the first charge in our ledger, 2026-07-12, so
+  both counts cover the same days; green under two thirds of Stripe's 0.75% limit, amber
+  near it, red over it), then summary cards (needs an answer, waiting on the bank, won,
+  lost, from `stripe_disputes_summary(p_business, p_since)`; both SECURITY INVOKER), a status filter and a business
   filter, and the list (soonest deadline first when filtered to "needs an answer"). Each
   dispute opens at `/admin/payments/disputes/<du_...>`: where it stands and the deadline,
   the money taken and the fee, the payment (card, wallet, how it was read at the desk, the
