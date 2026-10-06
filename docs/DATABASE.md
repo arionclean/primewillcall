@@ -725,10 +725,11 @@ payouts or disputes); no write policies, the functions write with the service ro
   (flip booking to `confirmed`, set `paid_at` + `stripe_payment_intent_id`), `charge.*`
   (upsert the ledger), `charge.dispute.*`, `payout.*` (upsert `stripe_payouts`; the payout is
   re-read from Stripe, not taken from the event, so an out-of-order `payout.updated` cannot
-  turn a paid payout back into "in transit"), and `account.updated`. The `payout.*` events
-  arrive only once they are ticked on the Connect endpoint in Stripe's dashboard
-  (`payout.created`, `payout.updated`, `payout.paid`, `payout.failed`, `payout.canceled`);
-  until then the Payouts tab's own sync keeps the list current.
+  turn a paid payout back into "in transit"), and `account.updated`. The Connect endpoint
+  (`we_1TsTkvFK2DDqkJsmzF6KSCak`) has listened to `payout.created/updated/paid/failed/
+  canceled` and `charge.dispute.funds_withdrawn/funds_reinstated` since 2026-10-06, next to
+  the dispute and charge events it already had; the Payouts and Disputes tabs also sync
+  on open, so a missed event only delays a row.
   On `checkout.session.completed` it also **emails the Stripe receipt** by setting
   `receipt_email` on the charge (the address Checkout collected) and copies that address
   onto the booking's customer when the row has none. Stripe does not send a receipt on its

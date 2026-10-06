@@ -668,8 +668,8 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   the payout history (`stripe_payouts`, backfilled to 2024). Opening a payout lists the
   sales, refunds, disputes and fees inside it, matched to our bookings. Every Stripe read
   goes through `stripe-reports`, which also re-syncs each account's latest payouts on every
-  open. **Left to do**: tick the `payout.*` events on the Connect webhook endpoint in
-  Stripe's dashboard and deploy `stripe-webhook`, so a payout lands without the tab being
+  open. The `payout.*` events are ticked on the Connect endpoint and `stripe-webhook`
+  saves them (deployed 2026-10-06 23:33 UTC), so a payout lands without the tab being
   opened. See "Payouts" in [`docs/DATABASE.md`](docs/DATABASE.md).
   **Disputes tab** (built 2026-10-06, owner only): `/admin/payments/disputes` lists every
   dispute (`stripe_disputes`, synced from Stripe on every open and by the webhook), and each
@@ -677,8 +677,9 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   (fields recommended for the dispute's reason first, file uploads, drafts, one confirmed
   submission), accept, and refund instead while it is an inquiry. Empty fields are drafted
   from our records (check-in, tour, guest). Runs in the `stripe-disputes` function; every
-  action is in `audit_log`. **Left to do**: deploy `stripe-webhook` so a new dispute lands
-  without the tab being opened. See "Disputes" in [`docs/DATABASE.md`](docs/DATABASE.md).
+  action is in `audit_log`. `stripe-webhook` saves every `charge.dispute.*` event
+  (deployed 2026-10-06), so a new dispute lands without the tab being opened. See
+  "Disputes" in [`docs/DATABASE.md`](docs/DATABASE.md).
   **Account shape**: accounts are created with controller properties
   (`connectControllerParams()`), never `type: "express"` (the shorthand puts Stripe's
   Connect fees, $2 per active account + 0.25% of payout volume, on PRIME). The business
