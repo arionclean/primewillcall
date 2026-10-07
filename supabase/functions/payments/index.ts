@@ -1,4 +1,5 @@
-// The /admin/payments money actions plus the booking payment link. Supabase-native
+// The /admin/payments money actions plus the booking payment link and a fresh
+// receipt link (Stripe's saved ones expire after 30 days). Supabase-native
 // replacement for the Vercel server actions in
 // src/app/(app)/admin/payments/actions.ts and the route at
 // src/app/(app)/bookings/[id]/payment-link/route.ts.
@@ -30,7 +31,13 @@ import { withSentry } from "../_shared/sentry.ts";
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const REFUND_PIN = Deno.env.get("REFUND_PIN") ?? "";
 
-type Action = "refund_card" | "refund_cash" | "void_cash" | "move_sale" | "payment_link";
+type Action =
+  | "refund_card"
+  | "refund_cash"
+  | "void_cash"
+  | "move_sale"
+  | "payment_link"
+  | "receipt";
 
 interface Payload {
   action?: Action;
@@ -117,8 +124,9 @@ Deno.serve(withSentry("payments", async (req) => {
   if (!action || !id) return json({ error: "action and id are required" }, 400);
 
   // The passcode gates everything that moves money or moves whose numbers it
-  // counts toward. The payment link creates no charge, so it is not gated.
-  if (action !== "payment_link") {
+  // counts toward. The payment link creates no charge and the receipt only reads
+  // one, so neither is gated.
+  if (action !== "payment_link" && action !== "receipt") {
     // The owner's per-manager switch (Team > Permissions > "Refund, void and move sales").
     if (staff.role === "business_manager" && !staff.can_manage_sales) {
       return json({ error: "Not authorized." }, 403);
@@ -491,6 +499,43 @@ Deno.serve(withSentry("payments", async (req) => {
       } catch (err) {
         console.error("[payments] payment link failed:", err);
         return json({ error: stripeErrorMessage(err) }, 502);
+      }
+    }
+
+    /**
+     * A working link to a charge's Stripe receipt. Stripe's receipt links stop
+     * working 30 days after they are issued, so the one the webhook saved goes
+     * stale; retrieving the charge again hands back a fresh one. Read only, on
+     * the account the charge settled on, like a refund.
+     */
+    case "receipt": {
+      const stripe = getStripe();
+      if (!stripe) return json({ error: "Payments are not configured yet." }, 503);
+
+      const { data: txn } = await db
+        .from("stripe_transactions")
+        .select("stripe_id, object_type, connected_account_id, business_id")
+        .eq("id", id)
+        .maybeSingle();
+      if (!txn) return json({ error: "Transaction not found." }, 404);
+      if (!ownsBusiness(staff, txn.business_id)) {
+        return json({ error: "Not authorized." }, 403);
+      }
+      if (txn.object_type !== "charge") {
+        return json({ error: "This payment has no receipt." }, 400);
+      }
+
+      try {
+        const charge = await stripe.charges.retrieve(
+          txn.stripe_id,
+          {},
+          txn.connected_account_id ? { stripeAccount: txn.connected_account_id } : undefined,
+        );
+        if (!charge.receipt_url) return json({ error: "Stripe has no receipt for this payment." }, 404);
+        return json({ url: charge.receipt_url });
+      } catch (err) {
+        console.error("[payments] receipt lookup failed:", err);
+        return json({ error: "Could not open the receipt. Try again." }, 502);
       }
     }
 
