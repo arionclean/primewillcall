@@ -103,7 +103,10 @@ src/
         payments/              owner + manager. (tabs)/ = Sales (the card + cash ledger,
                                refunds) and cash/ (Cash close: each kiosk night's cash
                                against the system; the owner types the commission and
-                               cash received in the row and completes the night)
+                               cash received in the row and completes the night). Owner
+                               only: payouts/ (balances, payouts, account health, read
+                               live from Stripe via stripe-reports) and disputes/ (every
+                               dispute, answered from here via stripe-disputes)
     api/
       auth/signout/            POST sign out
       bookings/[id]/check-in/  POST mark checked in
@@ -138,11 +141,15 @@ supabase/functions/            Deno edge functions. Everything public, webhook-d
                                xano-ticket-tokens (hourly: stamps Xano's ticket code
                                on upcoming bookings, read-only on Xano),
                                gp-slots, gp-validate, gp-book, xano-booking-sync,
-                               xano-mirror-dispatch, whatsapp-send, whatsapp-templates.
+                               xano-mirror-dispatch, whatsapp-send, whatsapp-templates,
+                               stripe-reports (the owner's Payouts tab; reads Stripe only),
+                               stripe-disputes (the owner's Disputes tab; answers disputes).
                                `_shared/` holds the modules they share (sms.ts,
                                whatsapp.ts, staff-auth.ts, gp.ts, ny-time.ts,
                                parse-booking-email.ts, inbound-email.ts (the Mailroom's
-                               pass), xano-api.ts, xano-mirror.ts).
+                               pass), xano-api.ts, xano-mirror.ts, stripe-payouts.ts,
+                               stripe-disputes.ts, browser-cors.ts (preflight for the
+                               functions the staff app calls from the browser)).
 supabase/config.toml           per-function `verify_jwt`. Not optional: the CLI defaults a
                                function to JWT ON, which breaks any caller that cannot send
                                a Supabase token (pg_cron sends only `x-cron-secret`, Twilio
@@ -633,10 +640,12 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   `stripe_transactions` / `stripe_refunds` /
   `stripe_events`; and the public `/gp` Groupon checkout now creates a real Checkout Session
   (with a graceful manual-collection fallback when a business is not yet onboarded). Shared
-  **Stripe runs entirely in Supabase.** Four functions: `stripe-webhook` (Stripe calls it),
+  **Stripe runs entirely in Supabase.** Six functions: `stripe-webhook` (Stripe calls it),
   `gp-book` (public checkout), `stripe-connect` (connected-account management, from the
-  Payments panel), and `payments` (card + cash refunds, move-sale, booking payment links).
-  The last two are called from the browser with the staff member's own JWT, which
+  Payments panel), `payments` (card + cash refunds, move-sale, booking payment links),
+  `stripe-reports` (the owner's Payouts tab; reads Stripe, never writes to it) and
+  `stripe-disputes` (the owner's Disputes tab: evidence, submit, accept).
+  The last four are called from the browser with the staff member's own JWT, which
   `requireStaff` turns into their staff row before any role check. Vercel holds **no Stripe
   key at all**: `src/lib/stripe/server.ts`, the Connect server actions, the payments server
   actions and the payment-link route are deleted. Supabase secrets: `STRIPE_SECRET_KEY`
@@ -652,6 +661,25 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   account, records `stripe_refunds`, webhook reconciles); and **customer payment links**
   (`POST /api/bookings/[id]/payment-link` + the "Payment link" button in the booking edit
   modal) that mint a Checkout link for a booking to send the customer.
+  **Payouts tab** (built 2026-10-06, owner only): `/admin/payments/payouts` shows, per
+  business, account health in plain words and one "coming to the bank" total split into
+  the next payout (date and amount, from Stripe's clearing funds) and later; a banner when a
+  dispute waits; and
+  the payout history (`stripe_payouts`, backfilled to 2024). Opening a payout lists the
+  sales, refunds, disputes and fees inside it, matched to our bookings. Every Stripe read
+  goes through `stripe-reports`, which also re-syncs each account's latest payouts on every
+  open. The `payout.*` events are ticked on the Connect endpoint and `stripe-webhook`
+  saves them (deployed 2026-10-06 23:33 UTC), so a payout lands without the tab being
+  opened. See "Payouts" in [`docs/DATABASE.md`](docs/DATABASE.md).
+  **Disputes tab** (built 2026-10-06, owner only): `/admin/payments/disputes` lists every
+  dispute (`stripe_disputes`, synced from Stripe on every open and by the webhook), and each
+  one opens on its own page with everything Stripe's dashboard offers: the evidence form
+  (fields recommended for the dispute's reason first, file uploads, drafts, one confirmed
+  submission), accept, and refund instead while it is an inquiry. Empty fields are drafted
+  from our records (check-in, tour, guest). Runs in the `stripe-disputes` function; every
+  action is in `audit_log`. `stripe-webhook` saves every `charge.dispute.*` event
+  (deployed 2026-10-06), so a new dispute lands without the tab being opened. See
+  "Disputes" in [`docs/DATABASE.md`](docs/DATABASE.md).
   **Account shape**: accounts are created with controller properties
   (`connectControllerParams()`), never `type: "express"` (the shorthand puts Stripe's
   Connect fees, $2 per active account + 0.25% of payout volume, on PRIME). The business

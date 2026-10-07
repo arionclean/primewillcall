@@ -20,6 +20,8 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { mirrorGrouponBooking } from "../_shared/gp-xano-mirror.ts";
 import { syncCardRefundToLedger } from "../_shared/sale-refund.ts";
 import { withSentry } from "../_shared/sentry.ts";
+import { PAYOUT_EXPAND, payoutRow, upsertPayouts } from "../_shared/stripe-payouts.ts";
+import { upsertDisputes } from "../_shared/stripe-disputes.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -124,13 +126,25 @@ async function handleEvent(event: Stripe.Event): Promise<void> {
     }
     case "charge.dispute.created":
     case "charge.dispute.updated":
-    case "charge.dispute.closed": {
+    case "charge.dispute.closed":
+    case "charge.dispute.funds_withdrawn":
+    case "charge.dispute.funds_reinstated": {
       const dispute = event.data.object as Stripe.Dispute;
       const chargeId = typeof dispute.charge === "string" ? dispute.charge : dispute.charge.id;
       await sb
         .from("stripe_transactions")
         .update({ dispute_status: dispute.status, status: "disputed" })
         .eq("stripe_id", chargeId);
+      await upsertDisputeFromEvent(event, dispute);
+      return;
+    }
+    case "payout.created":
+    case "payout.updated":
+    case "payout.paid":
+    case "payout.failed":
+    case "payout.canceled":
+    case "payout.reconciliation_completed": {
+      await upsertPayoutFromEvent(event, event.data.object as Stripe.Payout);
       return;
     }
     case "account.updated": {
@@ -344,6 +358,37 @@ async function upsertChargeToLedger(event: Stripe.Event, charge: Stripe.Charge):
   if ((charge.amount_refunded ?? 0) > 0) {
     await syncCardRefundToLedger(sb, bookingRef, charge.amount_refunded ?? 0);
   }
+}
+
+/**
+ * Save a payout to stripe_payouts (the owner's Payouts tab).
+ *
+ * The payout is read back from Stripe rather than taken from the event: events can
+ * arrive out of order, and a late payout.updated snapshot would otherwise turn a
+ * paid payout back into "in transit". The fresh read also expands the bank, so the
+ * row can name it. Only connected-account payouts are kept: the platform's own
+ * payouts are Prime's, not a business's.
+ */
+async function upsertPayoutFromEvent(event: Stripe.Event, snapshot: Stripe.Payout): Promise<void> {
+  if (!event.account) return;
+  const payout = await stripe.payouts.retrieve(
+    snapshot.id,
+    { expand: PAYOUT_EXPAND },
+    { stripeAccount: event.account },
+  );
+  const businessId = await businessIdForAccount(event.account);
+  await upsertPayouts(sb, [payoutRow(payout, event.account, businessId)]);
+}
+
+/**
+ * Save a dispute to stripe_disputes (the owner's Disputes tab). Read back from
+ * Stripe for the same reason as payouts: a late event must not undo a newer state.
+ */
+async function upsertDisputeFromEvent(event: Stripe.Event, snapshot: Stripe.Dispute): Promise<void> {
+  if (!event.account) return;
+  const dispute = await stripe.disputes.retrieve(snapshot.id, {}, { stripeAccount: event.account });
+  const businessId = await businessIdForAccount(event.account);
+  await upsertDisputes(sb, [{ dispute, accountId: event.account, businessId }]);
 }
 
 /**

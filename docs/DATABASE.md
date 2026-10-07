@@ -602,6 +602,31 @@ business's current account.
   refund action (below); the webhook `charge.refunded` reconciles the transaction totals.
 - `stripe_events` — webhook idempotency + audit (`id` = Stripe `evt_...`, `type`, `account`,
   `payload`, `received_at`, `processed_at`, `error`).
+- `stripe_payouts`: one row per Stripe payout to a business's bank, deduped on
+  `stripe_payout_id`: `business_id`, `connected_account_id`, `amount` (cents), `currency`,
+  `status` (Stripe's `pending` | `in_transit` | `paid` | `failed` | `canceled`),
+  `arrival_date` (a plain DATE: Stripe sends the arrival day as midnight UTC, so it is never
+  shifted to New York), `automatic`, `method`, `destination_id` + `bank_name` + `bank_last4`
+  (from the payout's expanded `destination`, so no second Stripe call), `failure_code` /
+  `failure_message`, `stripe_created`. Three writers converge on the row: the webhook's
+  `payout.*` events, `stripe-reports`' `overview` (re-reads each account's latest 30 every
+  time the Payouts tab opens) and its one-time `backfill` (811 payouts on 2026-10-06, back
+  to 2024-04). Older payouts to a since-replaced bank have no bank name (Stripe returns the
+  deleted account as an id only). What went INTO a payout is not stored; it is read live.
+  In the realtime publication.
+- `stripe_disputes`: one row per Stripe dispute (chargeback or inquiry), deduped on
+  `stripe_dispute_id`: `business_id`, `connected_account_id`, `charge_id`, the links to our
+  ledger (`transaction_id`, `booking_id`, `customer_name`, from `stripe_transactions` by
+  charge id), `amount`, `currency`, `status` (Stripe's eight values), `bucket` (GENERATED from
+  status: `needs_response` | `under_review` | `won` | `lost` | `closed`, the one grouping the
+  list filter, the summary and the tab count share), `reason`, `network_reason_code`,
+  `card_brand`, `is_charge_refundable`, `evidence_due_by`, `has_evidence`,
+  `evidence_past_due`, `submission_count`, `stripe_created`. Writers: the webhook's
+  `charge.dispute.*` events (re-read from Stripe, like payouts), `stripe-disputes`' `sync`
+  (every account's whole history, each time the Disputes tab opens; 19 disputes on
+  2026-10-06, all 18 closed ones lost without an answer), and its `save` / `accept`. The
+  evidence itself is never stored here: it lives in Stripe and is read live, so a draft can
+  never disagree with what the bank will see. In the realtime publication.
 - `cash_sales` — the PrimeKiosk tablet's cash ledger (`business_id`, `kiosk_id`,
   `booking_id`/`booking_ref`, `amount_cents`, `type`, `product`, `status`, `kiosk_slug`,
   the refund columns, and the void stamp `voided_at` / `voided_by` / `void_reason`). A
@@ -679,7 +704,9 @@ business's current account.
 (own `business_id`); no INSERT/UPDATE/DELETE policies (the webhook + server actions write
 with the service role, which bypasses RLS). `cash_sales`: SELECT for `owner` (all) and
 `business_manager` + `check_in` (own `business_id`); the kiosk route writes with the service
-role. `stripe_events`: RLS on, no policies (service-role only).
+role. `stripe_events`: RLS on, no policies (service-role only). `stripe_payouts` and
+`stripe_disputes`: SELECT for `owner` only (the owner's call, 2026-10-06: managers do not see
+payouts or disputes); no write policies, the functions write with the service role.
 
 ### Flow
 - **Connect onboarding** (`/admin/businesses/[id]`, owner): create the connected account,
@@ -696,7 +723,13 @@ role. `stripe_events`: RLS on, no policies (service-role only).
   official `constructEventAsync` verifier (Deno has no Node crypto).
   Handles `checkout.session.completed` / `payment_intent.succeeded`
   (flip booking to `confirmed`, set `paid_at` + `stripe_payment_intent_id`), `charge.*`
-  (upsert the ledger), `charge.dispute.*`, and `account.updated`.
+  (upsert the ledger), `charge.dispute.*`, `payout.*` (upsert `stripe_payouts`; the payout is
+  re-read from Stripe, not taken from the event, so an out-of-order `payout.updated` cannot
+  turn a paid payout back into "in transit"), and `account.updated`. The Connect endpoint
+  (`we_1TsTkvFK2DDqkJsmzF6KSCak`) has listened to `payout.created/updated/paid/failed/
+  canceled` and `charge.dispute.funds_withdrawn/funds_reinstated` since 2026-10-06, next to
+  the dispute and charge events it already had; the Payouts and Disputes tabs also sync
+  on open, so a missed event only delays a row.
   On `checkout.session.completed` it also **emails the Stripe receipt** by setting
   `receipt_email` on the charge (the address Checkout collected) and copies that address
   onto the booking's customer when the row has none. Stripe does not send a receipt on its
@@ -712,6 +745,64 @@ role. `stripe_events`: RLS on, no policies (service-role only).
   source and owner business filters, search, paged 50 at a time via `payments_feed`) plus
   summary cards from `payments_summary` (Total, Card, Cash, each net of its refunds). The
   range defaults to the current month to date.
+- **Payouts** (`/admin/payments/payouts`, owner only): per business, account health in
+  plain words (paused charges or payouts, what Stripe needs and by when, with a link to the
+  business settings), one total "coming to the bank" (balance `pending` + `available`, plus a
+  payout already sent and not yet arrived), split into the next payout (date and amount)
+  and "later", and any balance left on a retired account. The next payout comes from
+  Stripe, which has no "upcoming payout" object (a payout exists only once it is sent): a
+  sent payout not yet arrived wins (exact); otherwise the balance transactions still
+  clearing are summed by `available_on`, and the earliest day (plus anything already
+  available) is the next payout, since on these accounts a payout arrives the day its funds
+  clear. The scan reads newest first and stops at the first charge already cleared, so it
+  only reads what is pending (checked against Stripe on 2026-10-06: Key West $2,220.69 on
+  Oct 7 and $418.54 on Oct 8, exactly its $2,639.23 pending); a banner pointing at Disputes when one waits for an answer; then the
+  payout history from `stripe_payouts`, paged 50 at a time. Opening a payout lists every sale, refund, dispute and fee in it (Stripe fee
+  and the payout volume fee split out), each matched to `stripe_transactions` for the guest's name
+  and booking link. All Stripe reads go through the `stripe-reports` edge function (JWT on,
+  owner or the service role only, never writes to Stripe). The browser calls it pinned to
+  `us-west-2`, next to the database: from the default region the ledger lookups crossed the
+  country and opening a payout took about a second longer.
+- **Disputes** (`/admin/payments/disputes`, owner only; the tab's pill counts the ones
+  waiting for an answer). Everything on the tab counts the last 30 days (the owner's call,
+  2026-10-06: card networks and Stripe judge the rate month by month), except disputes
+  still waiting for an answer, which always show. The dispute rate is disputes opened in
+  the period over card payments in the same days (`stripe_dispute_rate(p_business,
+  p_days)`; the window never starts before the first charge in our ledger, 2026-07-12, so
+  both counts cover the same days; green under two thirds of Stripe's 0.75% limit, amber
+  near it, red over it), then summary cards (needs an answer, waiting on the bank, won,
+  lost, from `stripe_disputes_summary(p_business, p_since)`; both SECURITY INVOKER), a status filter and a business
+  filter, and the list (soonest deadline first when filtered to "needs an answer"). Each
+  dispute opens at `/admin/payments/disputes/<du_...>`: where it stands and the deadline,
+  the money taken and the fee, the payment (card, wallet, how it was read at the desk, the
+  security checks, Stripe's risk level), our booking (tour, guests, the check-in) and the
+  guest. While the bank waits, the owner can do what Stripe's dashboard allows:
+  fight it (every evidence field Stripe takes except shipping and Visa's enhanced evidence;
+  the ones Stripe recommends for the dispute's reason first; files are PDF, PNG or JPEG,
+  4.5 MB in total; save drafts freely, then send once after a confirm), accept it, or,
+  while it is still an inquiry, refund instead through the `payments` function's
+  `refund_card` (same passcode, same ledger). Empty fields arrive drafted from our records
+  (guest, tour, date, a line of facts including the check-in), marked as such, and never
+  over what is already saved in Stripe (Stripe itself pre-fills a chip-card note on
+  card-present disputes). All of it runs in the `stripe-disputes` edge function (JWT on,
+  owner only; `sync` also takes the service role), which writes `audit_log` for every save,
+  submission and acceptance. Closed disputes show what was sent, read-only.
+  **The rules that guard the one submission** live in `_shared/dispute-evidence.ts`:
+  `submit` is always sent explicitly (Stripe's default for it is TRUE, so an update that
+  leaves it out goes to the bank), only known fields are sent, Stripe's limits are checked
+  first, and the status is re-read from Stripe right before any write (409 if it is no
+  longer waiting). Once Stripe accepts a change, our copy and the activity log are
+  best-effort: a failure there never turns a submission into an error on screen. Inquiries
+  (`warning_needs_response`) cannot be accepted: Stripe leaves them as they are when closed,
+  so the screen offers an answer or a refund, and a refund closes them (`warning_closed`).
+  Tests: `deno test --node-modules-dir=none --allow-read
+  supabase/functions/_shared/dispute-evidence.test.ts` (rules, and that the screen's field
+  list matches the server's); `dispute-evidence.sandbox.test.ts` runs the whole answer in
+  Stripe TEST mode (disputed payment, file upload and read-back, draft, clearing a field,
+  one submission and a refused second one, accept, inquiry refund) and refuses to run
+  without a test key: `STRIPE_SECRET_KEY=<sk_test_...> STRIPE_SANDBOX_ACCOUNT=<test acct>
+  deno test --node-modules-dir=none --allow-env --allow-net --allow-read <file>`. Passed on
+  2026-10-06 against test account `acct_1Q7lm92al3z20Yx8`.
 - **Move a sale to another kiosk** (`moveSaleSource` in `admin/payments/actions.ts`): a
   tablet sometimes rings up a sale that belongs to another kiosk, so owner and the
   business's own manager can re-tag it. No money moves, so there is no passcode. It writes
