@@ -21,6 +21,7 @@ import {
   presetRange,
   type PresetKey,
 } from "@/lib/payments/date-range";
+import { invokeEdgeFunction } from "@/lib/payments/edge";
 import { useLiveRefresh } from "@/lib/realtime/use-live-refresh";
 import type { Database } from "@/lib/supabase/database.types";
 import {
@@ -51,6 +52,9 @@ async function invokePayments(
 }
 
 type StaffRole = Database["public"]["Enums"]["staff_role"];
+
+/** A saved Stripe receipt link is trusted this long; it expires at 30 days. */
+const RECEIPT_LINK_FRESH_MS = 25 * 24 * 60 * 60 * 1000;
 
 type Txn = {
   id: string;
@@ -397,6 +401,36 @@ export function PaymentsView({
     setMoveTarget("");
     setMovePin("");
     setMoveError(null);
+  }
+
+  /**
+   * Stripe's receipt links stop working 30 days after they are issued. A payment
+   * younger than 25 days opens the saved link; an older one asks Stripe for a fresh
+   * one. That tab opens inside the click, where the browser allows it, and is
+   * pointed at the receipt once the link comes back (the saved link if that fails).
+   */
+  async function openReceipt(txn: Txn) {
+    const age = txn.stripe_created ? Date.now() - Date.parse(txn.stripe_created) : Infinity;
+    if (txn.receipt_url && age < RECEIPT_LINK_FRESH_MS) {
+      window.open(txn.receipt_url, "_blank", "noopener,noreferrer");
+      return;
+    }
+    const tab = window.open("", "_blank");
+    const { data } = await invokeEdgeFunction<{ url: string }>("payments", {
+      action: "receipt",
+      id: txn.id,
+    });
+    const url = data?.url ?? txn.receipt_url;
+    if (!url) {
+      tab?.close();
+      return;
+    }
+    if (tab) {
+      tab.opener = null;
+      tab.location.href = url;
+    } else {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
   }
 
   function openVoid(item: CashFeedItem) {
@@ -792,14 +826,13 @@ export function PaymentsView({
                     <td className="whitespace-nowrap px-3 py-2 text-right">
                       <div className="flex items-center justify-end gap-3">
                         {txn.receipt_url && (
-                          <a
-                            href={txn.receipt_url}
-                            target="_blank"
-                            rel="noreferrer"
+                          <button
+                            type="button"
+                            onClick={() => void openReceipt(txn)}
                             className="text-xs text-primary underline-offset-4 hover:underline"
                           >
                             Receipt
-                          </a>
+                          </button>
                         )}
                         {refundable && (
                           <Button
