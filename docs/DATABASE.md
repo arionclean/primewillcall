@@ -334,9 +334,15 @@ is attempted: the close is the record, the email is a copy of it.
 The commission staff type at the desk is money that leaves the till, so it needs a row
 that can be totalled and corrected. Two columns, never one: `commission_cents` is what
 the tablet reported and is never edited in place, `commission_cents_corrected` holds an
-owner's fix with `corrected_at` / `corrected_by` / `correction_note`, and
+owner's fix with `corrected_at` / `corrected_by`, and
 `total_cash_cents` (cash less the effective commission) is generated, never typed. It
 can go negative when a commission exceeds the night's cash, which is worth seeing.
+
+`correction_note` is the owner's free-text note on the night (the "Add note" link under
+the kiosk name on `/admin/payments/cash`, written by `saveNightNote`). Despite the name it
+is not tied to a correction: it is the one place to say what the figures cannot ("Alex
+owes $20, paying Monday"). A reprint from the tablet never touches it, saving it leaves a
+completed night completed, and only a night with a close has a row to carry one.
 
 `business_date` is the day the tablet says it is reporting, parsed from its date label,
 not the clock when it posted: kiosk3 closes after 8pm ET and kiosk1 sometimes past
