@@ -1,14 +1,16 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Plus, StickyNote } from "lucide-react";
 import { useActionState, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { SubmitButton } from "@/components/ui/submit-button";
+import { Textarea } from "@/components/ui/textarea";
 import { formatCents, formatCentsExact, nyDateISO } from "@/lib/dashboard/queries";
 import {
   RANGE_PRESETS,
@@ -21,8 +23,10 @@ import { useLiveRefresh } from "@/lib/realtime/use-live-refresh";
 import {
   completeNight,
   saveNightFigure,
+  saveNightNote,
   type CompleteState,
   type FigureState,
+  type NoteState,
 } from "./actions";
 
 /** One kiosk's night: what the desk counted next to what the system recorded. */
@@ -58,6 +62,7 @@ export type CloseRow = {
   commission_cents: number | null;
   commission_cents_corrected: number | null;
   effective_commission_cents: number;
+  /** The owner's note on the night. Null when there is none. */
   correction_note: string | null;
   reviewed_at: string | null;
   reviewed_by_name: string | null;
@@ -339,6 +344,7 @@ function NightRow({
                 }${closeTime(night.closed_at) ? ` at ${closeTime(night.closed_at)}` : ""}`
               : ""}
         </p>
+        <NightNote night={night} editable={isOwner && night.closing_id != null} />
       </td>
       <td className="px-4 py-3 text-right font-medium tabular-nums">
         {formatCentsExact(night.system_card_cents + night.system_cash_cents)}
@@ -378,6 +384,94 @@ function NightRow({
         </td>
       )}
     </tr>
+  );
+}
+
+/**
+ * The owner's note on a night, under the kiosk name. Everyone who can see the
+ * row reads it; the owner writes it, on any night that has a close (tonight
+ * included, once the desk has closed). Click the note to change it, save it
+ * blank to take it off.
+ */
+function NightNote({ night, editable }: { night: CloseRow; editable: boolean }) {
+  const note = night.correction_note;
+  const [editing, setEditing] = useState(false);
+  // Held in state for the same reason as FigureCell: React resets a form after
+  // its action runs, which would wipe the text when the save is refused.
+  const [value, setValue] = useState("");
+  const [state, action] = useActionState<NoteState, FormData>(async (prev, formData) => {
+    const result = await saveNightNote(prev, formData);
+    if (result.saved) setEditing(false);
+    return result;
+  }, {});
+
+  function startEditing() {
+    setValue(note ?? "");
+    setEditing(true);
+  }
+
+  if (editing) {
+    return (
+      <form action={action} className="mt-2 flex w-64 flex-col gap-2">
+        <input type="hidden" name="closing_id" value={night.closing_id ?? ""} />
+        <Textarea
+          name="note"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setEditing(false);
+          }}
+          rows={3}
+          maxLength={1000}
+          placeholder="A note about this night"
+          aria-label="Note"
+          autoFocus
+          className="min-h-0 text-sm"
+        />
+        {state.error && <span className="text-xs text-red-600">{state.error}</span>}
+        <div className="flex gap-2">
+          <SubmitButton size="sm">Save note</SubmitButton>
+          <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(false)}>
+            Cancel
+          </Button>
+        </div>
+      </form>
+    );
+  }
+
+  if (note) {
+    const body = (
+      <>
+        <StickyNote className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+        <span className="whitespace-pre-wrap break-words">{note}</span>
+      </>
+    );
+    const noteClass =
+      "mt-2 flex max-w-64 items-start gap-1.5 rounded-md bg-amber-50 px-2 py-1.5 text-left text-xs text-amber-900";
+    return editable ? (
+      <button
+        type="button"
+        onClick={startEditing}
+        title="Click to change the note"
+        className={`${noteClass} hover:bg-amber-100`}
+      >
+        {body}
+      </button>
+    ) : (
+      <p className={noteClass}>{body}</p>
+    );
+  }
+
+  if (!editable) return null;
+  return (
+    <button
+      type="button"
+      onClick={startEditing}
+      className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+    >
+      <Plus className="size-3.5" aria-hidden />
+      Add note
+    </button>
   );
 }
 

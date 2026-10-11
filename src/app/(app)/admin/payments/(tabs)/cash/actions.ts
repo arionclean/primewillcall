@@ -19,6 +19,8 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
  * marked `entered_manually` with NULL reported figures: nothing was reported,
  * and a zero there would read as "the desk counted nothing".
  *
+ * The owner can also leave a note on a night that has a close (`saveNightNote`).
+ *
  * Owner only, re-checked here on top of the layout gate. RLS is the backstop:
  * `kiosk_closings_owner_all` is the only policy that allows a write at all.
  */
@@ -102,6 +104,50 @@ export async function completeNight(
     });
     if (error) return { error: error.message };
   }
+
+  revalidatePath("/admin/payments/cash");
+  return { saved: true };
+}
+
+export type NoteState = { error?: string; saved?: boolean };
+
+/** A note is a line or two about the night, not a report. */
+const NOTE_MAX_LENGTH = 1000;
+
+/**
+ * The owner's note on a night: free text under the kiosk name, for what the
+ * figures cannot say ("Alex owes $20, paying Monday"). It is the close's one
+ * text column, `correction_note`, which a reprint from the tablet never touches.
+ *
+ * A note is not a figure, so a completed night stays completed, and tonight
+ * takes one as soon as it is closed. Saving it blank takes it off.
+ *
+ * Only a night with a close has a row to write on. Making a row here would mark
+ * the night closed when nobody closed it.
+ */
+export async function saveNightNote(
+  _prev: NoteState,
+  formData: FormData,
+): Promise<NoteState> {
+  const { staff } = await getCurrentStaff();
+  if (!staff || !staff.is_active || staff.role !== "owner") {
+    return { error: "Only the owner can add a note." };
+  }
+
+  const closingId = String(formData.get("closing_id") ?? "");
+  if (!closingId) return { error: "This night has no close to add a note to." };
+
+  const note = String(formData.get("note") ?? "").trim();
+  if (note.length > NOTE_MAX_LENGTH) {
+    return { error: `Keep the note under ${NOTE_MAX_LENGTH} characters.` };
+  }
+
+  const supabase = await getSupabaseServerClient();
+  const { error } = await supabase
+    .from("kiosk_closings")
+    .update({ correction_note: note || null })
+    .eq("id", closingId);
+  if (error) return { error: error.message };
 
   revalidatePath("/admin/payments/cash");
   return { saved: true };
