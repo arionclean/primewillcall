@@ -14,11 +14,18 @@
 //
 // Body: { kiosk, business_name?, date_label, business_date?, representative?,
 //         total_sales, credit_sales, cash_sales, total_count, card_count,
-//         cash_count, commission?, products: [{name,count,amount}], printed_at }
-// `commission` (dollars) is what staff typed at close, from build 21. Without it the
-// email reads as it always has; with it, Commission and Total Cash appear too.
+//         cash_count, commission?, commission_auto?, products: [{name,count,amount}],
+//         printed_at }
+// `commission` (dollars) is what staff typed at close, builds 21 to 26. Without it
+// the email reads as it always has; with it, Commission and Total Cash appear too.
+// From build 27 nobody types it: the tablet sends `commission_auto: true` and the
+// commission is worked out here, per seller, from kiosk_commissions (the same read
+// as the tablet's Commission button). The tablet's own figure is only the fallback
+// if that read fails. The answer carries the commission recorded, so a reprint
+// matches the email.
 
 import { json, kioskAuthorized, resolveKiosk, serviceClient } from "../_shared/kiosk-sale.ts";
+import { kioskCommissions } from "../_shared/kiosk-commission.ts";
 import {
   closingHtml,
   closingSubject,
@@ -124,6 +131,19 @@ Deno.serve(withSentry("kiosk-closing-report", async (req) => {
     printedAt: String(body.printed_at ?? ""),
   };
 
+  const businessDate = businessDateOf(body.business_date, report.dateLabel);
+
+  // From build 27 the commission is the sellers' own, worked out here. Each seller
+  // who reached $500 today earns 10%; the night's commission is the sum.
+  if (body.commission_auto === true) {
+    const auto = await kioskCommissions(sb, slug, businessDate);
+    if ("error" in auto) {
+      console.error("[closing-report] commission read failed, using the tablet's:", auto.error);
+    } else {
+      report.commission = auto.people.reduce((sum, p) => sum + p.commission_cents, 0) / 100;
+    }
+  }
+
   const commissionCents = report.commission == null ? null : Math.round(report.commission * 100);
   const appBuild = body.app_build ? String(body.app_build) : null;
   const deviceId = body.device_id ? String(body.device_id) : null;
@@ -137,7 +157,7 @@ Deno.serve(withSentry("kiosk-closing-report", async (req) => {
       p_kiosk_id: resolved.kiosk.id,
       p_kiosk_slug: slug,
       p_business_id: resolved.kiosk.business_id,
-      p_business_date: businessDateOf(body.business_date, report.dateLabel),
+      p_business_date: businessDate,
       p_date_label: report.dateLabel,
       p_sales_count: report.totalCount,
       p_card_count: report.cardCount,
@@ -180,6 +200,7 @@ Deno.serve(withSentry("kiosk-closing-report", async (req) => {
       card_cents: Math.round(report.creditSales * 100),
       cash_cents: Math.round(report.cashSales * 100),
       commission_cents: commissionCents,
+      commission_auto: body.commission_auto === true,
       sales: report.totalCount,
       date: report.dateLabel,
     },
@@ -195,8 +216,8 @@ Deno.serve(withSentry("kiosk-closing-report", async (req) => {
   };
 
   const to = row?.closing_report_email?.trim();
-  if (!to) return json({ ok: true, emailed: false, reason: "no_recipient" }, 200);
-  if (!RESEND_API_KEY) return json({ ok: true, emailed: false, reason: "no_key" }, 200);
+  if (!to) return json({ ok: true, emailed: false, reason: "no_recipient", commission: report.commission }, 200);
+  if (!RESEND_API_KEY) return json({ ok: true, emailed: false, reason: "no_key", commission: report.commission }, 200);
 
   try {
     const res = await fetch("https://api.resend.com/emails", {
@@ -216,13 +237,13 @@ Deno.serve(withSentry("kiosk-closing-report", async (req) => {
     if (!res.ok) {
       const detail = await res.text();
       console.error("[closing-report] resend:", res.status, detail.slice(0, 300));
-      return json({ ok: true, emailed: false, reason: "send_failed" }, 200);
+      return json({ ok: true, emailed: false, reason: "send_failed", commission: report.commission }, 200);
     }
   } catch (e) {
     console.error("[closing-report] resend threw:", e);
-    return json({ ok: true, emailed: false, reason: "send_error" }, 200);
+    return json({ ok: true, emailed: false, reason: "send_error", commission: report.commission }, 200);
   }
 
   await markEmailed(to);
-  return json({ ok: true, emailed: true, to }, 200);
+  return json({ ok: true, emailed: true, to, commission: report.commission }, 200);
 }));

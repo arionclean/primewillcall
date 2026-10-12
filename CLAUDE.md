@@ -605,6 +605,12 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   Backfilled from `kiosk_events` for 2026-09-09 on. The owner reads and corrects it on
   Payments -> **Cash close** (`/admin/payments/cash`). See "kiosk_closings" in
   [`docs/DATABASE.md`](docs/DATABASE.md).
+  **The commission is per seller** (2026-10-12, tablet build 27): a seller whose sales
+  at a kiosk for the day reach $500 earns 10% of all of them, in whole dollars ($550
+  earns $55). Nobody types it any more. `kiosk_commissions()` is the one place the
+  rule lives; the tablet's **Commission** button on the sales screen lists each seller
+  through `kiosk-read`, and the close records the sum (`commission_auto: true`). See
+  "kiosk_commissions()" in [`docs/DATABASE.md`](docs/DATABASE.md).
 - **Time clock** (built 2026-09-17, switch still OFF everywhere): desk staff clock in and
   out on the iPad with the PIN they already type for sales, and the owner reads the hours
   on Team -> **Hours** (owner only, tab and RLS). One button does both directions: the
