@@ -17,6 +17,9 @@
 // the internal code (KS-... for its own sales, PW-... for the rest). The row id wins
 // when we hold it. The code alone is not enough on its own: Xano reuses PW codes
 // (PW-25335 is two different people), so a code match is narrowed by the tour date.
+// A booking born on this platform (the web form, /gp) has no Xano row and no code, so
+// kiosk-read hands the tablet its ticket token (public_token) as the code instead; the
+// code is matched against that too, or a check-in on such a booking lands nowhere.
 //
 // Public like the other kiosk functions (JWT off); optional KIOSK_SHARED_SECRET.
 // Body: { kiosk, action: 'check_in' | 'mark_paid', booking_id?, booking_ref?,
@@ -75,7 +78,7 @@ async function findBooking(
   const { data: rows } = await sb
     .from("bookings")
     .select(COLS)
-    .or(`xano_internal_id.eq.${ref},legacy_id.eq.${ref}`)
+    .or(`xano_internal_id.eq.${ref},legacy_id.eq.${ref},public_token.eq.${ref}`)
     .neq("status", "cancelled")
     .limit(10)
     .returns<BookingRow[]>();
