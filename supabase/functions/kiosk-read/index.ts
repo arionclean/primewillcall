@@ -14,7 +14,9 @@
 //                                              departure, guests = adults + children)
 //   sales     <- api:_o9979qq/cash_sales      (this kiosk, the New York day, newest
 //                                              first, the booking attached)
-//
+//   booking   <- api:2k2IsvEZ/booking?booking_confirmation_id=...
+//                                             (one booking by the id printed on the
+//                                              ticket, for the scan screens)
 //   commission                                (new here, no Xano twin: each seller
 //                                              at this kiosk on the New York day,
 //                                              their sales and their commission,
@@ -31,8 +33,8 @@
 // write for it goes through kiosk-booking-update by code and date regardless.
 //
 // Public like the other kiosk functions (JWT off); optional KIOSK_SHARED_SECRET.
-// Body: { kiosk, action: 'products' | 'bookings' | 'sales' | 'commission', date?,
-//         app_build?, device_id? }
+// Body: { kiosk, action: 'products' | 'bookings' | 'sales' | 'booking' | 'commission',
+//         date?, booking_confirmation_id?, app_build?, device_id? }
 // `date` as the tablet sends it ("Sep 9 2026") or ISO "2026-09-09"; today when absent.
 
 import {
@@ -48,12 +50,13 @@ const NY = "America/New_York";
 /** Xano's product id for the Key West Day Trip, which the tablet's manifest has never shown. */
 const KEY_WEST_DAY_TRIP = "1733296384794x165710027724423170";
 
-type Action = "products" | "bookings" | "sales" | "commission";
+type Action = "products" | "bookings" | "sales" | "booking" | "commission";
 
 interface Body {
   kiosk?: string;
   action?: Action;
   date?: string;
+  booking_confirmation_id?: string;
   app_build?: string;
   device_id?: string;
 }
@@ -339,6 +342,25 @@ async function bookings(sb: ReturnType<typeof serviceClient>, ymd: string) {
   return { bookings: groups };
 }
 
+/**
+ * One booking by the id printed on the guest's ticket, in the shape the scan screens
+ * have always read from Xano's `booking` endpoint. Keyed on `public_token`, which IS
+ * that id: a booking born here generates it, and one synced from Xano keeps the token
+ * Xano emailed. No day filter, because a guest can scan a ticket for any date.
+ */
+async function bookingByConfirmation(sb: ReturnType<typeof serviceClient>, token: string) {
+  const { data, error } = await sb
+    .from("bookings")
+    .select(BOOKING_SELECT)
+    .eq("public_token", token)
+    .eq("awaiting_payment", false)
+    .limit(1)
+    .maybeSingle<BookingRow>();
+  if (error) return { error: error.message };
+  if (!data) return { notFound: true as const };
+  return { booking: toXanoBooking(data) };
+}
+
 // ── sales ─────────────────────────────────────────────────────────────────────
 
 interface SaleRow {
@@ -443,7 +465,10 @@ Deno.serve(withSentry("kiosk-read", async (req) => {
   const slug = String(body.kiosk ?? "").trim();
   if (!slug) return json({ error: "missing_kiosk" }, 400);
   const action = body.action;
-  if (action !== "products" && action !== "bookings" && action !== "sales" && action !== "commission") {
+  if (
+    action !== "products" && action !== "bookings" && action !== "sales" &&
+    action !== "booking" && action !== "commission"
+  ) {
     return json({ error: "bad_action" }, 400);
   }
 
@@ -456,6 +481,17 @@ Deno.serve(withSentry("kiosk-read", async (req) => {
     if (!kiosk.business_id) return json({ error: "kiosk_has_no_business" }, 409);
     const out = await products(sb, kiosk.business_id);
     return json(out, "error" in out ? 500 : 200);
+  }
+
+  if (action === "booking") {
+    const token = String(body.booking_confirmation_id ?? "").trim();
+    if (!token) return json({ error: "missing_booking_confirmation_id" }, 400);
+    const out = await bookingByConfirmation(sb, token);
+    if ("error" in out) return json(out, 500);
+    // The screens read a 404 as "not found", the same as Xano's answer.
+    if ("notFound" in out) return json({ error: "not_found" }, 404);
+    // Unwrapped, because that endpoint answers with the booking itself.
+    return json(out.booking, 200);
   }
 
   const ymd = dayOf(body.date);
