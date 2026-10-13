@@ -69,6 +69,7 @@ export default async function SalesPage({
       businesses={businessesRes.data ?? []}
       filters={{ from, to, business: business ?? "" }}
       loadError={sales.error}
+      commissionError={sales.commissionError}
     />
   );
 }

@@ -40,6 +40,8 @@ type Props = {
   businesses: { id: string; name: string }[];
   filters: { from: string; to: string; business: string };
   loadError: boolean;
+  /** The commission could not be read: its column stays empty rather than say $0. */
+  commissionError: boolean;
 };
 
 const total = (r: SellerTotal) => r.cashCents + r.cardCents;
@@ -59,6 +61,7 @@ export function SalesView({
   businesses,
   filters,
   loadError,
+  commissionError,
 }: Props) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -113,7 +116,7 @@ export function SalesView({
           dollars(r.cashCents),
           dollars(r.cardCents),
           dollars(total(r)),
-          r.employeeId ? dollars(r.commissionCents) : "",
+          r.employeeId && !commissionError ? dollars(r.commissionCents) : "",
         ];
         if (showHours) {
           const perHour = perHourCents(r);
@@ -131,6 +134,11 @@ export function SalesView({
       {loadError && (
         <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           Could not load the sales. Refresh the page and try again.
+        </p>
+      )}
+      {!loadError && commissionError && (
+        <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          Could not load the commission. Refresh the page and try again.
         </p>
       )}
 
@@ -228,7 +236,7 @@ export function SalesView({
                         {formatCents(total(r))}
                       </td>
                       <td className="px-4 py-2.5 text-right tabular-nums">
-                        {nobody ? "" : formatCents(r.commissionCents)}
+                        {nobody || commissionError ? "" : formatCents(r.commissionCents)}
                       </td>
                       {showHours && (
                         <>
@@ -260,7 +268,7 @@ export function SalesView({
                     {formatCents(sum.cashCents + sum.cardCents)}
                   </td>
                   <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
-                    {formatCents(sum.commissionCents)}
+                    {commissionError ? "" : formatCents(sum.commissionCents)}
                   </td>
                   {showHours && (
                     <>

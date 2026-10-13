@@ -30,7 +30,14 @@ export async function loadTeamSales(
     business: string | null;
     withHours: boolean;
   },
-): Promise<{ people: SellerTotal[]; uncredited: SellerTotal | null; showHours: boolean; error: boolean }> {
+): Promise<{
+  people: SellerTotal[];
+  uncredited: SellerTotal | null;
+  showHours: boolean;
+  error: boolean;
+  /** The commission could not be read; the sales still stand. */
+  commissionError: boolean;
+}> {
   const [salesRes, hoursRes, commissionRes] = await Promise.all([
     supabase.rpc("team_sales", {
       p_start: startIso,
@@ -114,6 +121,7 @@ export async function loadTeamSales(
     people: [...people, ...unsold],
     uncredited,
     showHours: hours.size > 0,
-    error: Boolean(salesRes.error || commissionRes.error),
+    error: Boolean(salesRes.error),
+    commissionError: Boolean(commissionRes.error),
   };
 }
