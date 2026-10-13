@@ -270,7 +270,7 @@ type BookingsListProps = {
   date: string; // YYYY-MM-DD
   role: "owner" | "business_manager" | "check_in";
   caps: BookingCaps;
-  businessId: string | null; // scopes the realtime subscription for non-owners
+  businessId: string | null; // narrows the realtime subscription to one business
   rangeStartUtc: string;
   rangeEndUtcExclusive: string;
 };
@@ -848,9 +848,9 @@ export function BookingsList({
       });
 
     // A manager only reacts to their own business's changes, so an unrelated
-    // business updating a booking never wakes this screen. The owner and a
-    // check-in login (every business's guests on its tours) get the whole
-    // stream; RLS is what scopes it.
+    // business updating a booking never wakes this screen. The owner, a check-in
+    // login (every business's guests on its tours) and a manager the owner shared
+    // another business's tour with get the whole stream; RLS is what scopes it.
     const changes = {
       event: "*",
       schema: "public",
