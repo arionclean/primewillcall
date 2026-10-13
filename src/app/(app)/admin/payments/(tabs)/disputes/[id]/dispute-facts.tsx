@@ -1,9 +1,10 @@
 import { CheckCircle2, ExternalLink } from "lucide-react";
 
+import { OpenInStripe } from "@/components/admin/open-in-stripe";
 import { Card, CardContent } from "@/components/ui/card";
 import { checkResult, disputeReason, type DisputeDetail } from "@/lib/payments/disputes";
 import { bookingHref, formatNyDateTime, formatNyDeadline, money } from "@/lib/payments/format";
-import { saleSourceLabel, stripeAccountUrl } from "@/lib/payments/stripe-reports";
+import { saleSourceLabel } from "@/lib/payments/stripe-reports";
 import { formatUsPhoneDisplay } from "@/lib/sms/format";
 
 /**
@@ -53,7 +54,7 @@ const BOOKING_STATUS: Record<string, string> = {
   voided: "Voided",
 };
 
-export function DisputeFacts({ detail }: { detail: DisputeDetail }) {
+export function DisputeFacts({ detail, businessId }: { detail: DisputeDetail; businessId: string | null }) {
   const { dispute, payment, booking, guest } = detail;
   const net = dispute.money.reinstated + dispute.money.feesReturned - dispute.money.withdrawn - dispute.money.fees;
   const href = booking ? bookingHref(booking.id, booking.startsAt) : null;
@@ -129,15 +130,11 @@ export function DisputeFacts({ detail }: { detail: DisputeDetail }) {
                   <ExternalLink className="size-3" aria-hidden />
                 </a>
               )}
-              <a
-                href={stripeAccountUrl(detail.accountId)}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
-              >
-                Open in Stripe
-                <ExternalLink className="size-3" aria-hidden />
-              </a>
+              <OpenInStripe
+                businessId={businessId}
+                accountId={detail.accountId}
+                className="text-muted-foreground hover:text-foreground"
+              />
             </div>
           }
         />

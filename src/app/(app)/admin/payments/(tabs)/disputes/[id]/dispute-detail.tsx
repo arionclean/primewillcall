@@ -32,6 +32,8 @@ export type DisputeHeader = {
   reason: string;
   customerName: string | null;
   businessName: string | null;
+  /** Set when the dispute is on the business's current Stripe account. */
+  businessId: string | null;
   dueBy: string | null;
   created: string;
 };
@@ -132,7 +134,7 @@ export function DisputeDetailView({ header }: { header: DisputeHeader }) {
             )}
           </div>
           <aside className="lg:sticky lg:top-4">
-            <DisputeFacts detail={detail} />
+            <DisputeFacts detail={detail} businessId={header.businessId} />
           </aside>
         </div>
       )}
