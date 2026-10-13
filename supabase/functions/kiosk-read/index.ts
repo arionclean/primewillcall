@@ -18,7 +18,7 @@
 //   commission                                (new here, no Xano twin: each seller
 //                                              at this kiosk on the New York day,
 //                                              their sales and their commission,
-//                                              from kiosk_commissions)
+//                                              from seller_commissions)
 //
 // Two things are deliberately better than Xano's answer, both already agreed:
 // a refunded card sale nets to what was kept (Xano drops the row), and a

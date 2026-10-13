@@ -19,7 +19,7 @@
 // `commission` (dollars) is what staff typed at close, builds 21 to 26. Without it
 // the email reads as it always has; with it, Commission and Total Cash appear too.
 // From build 27 nobody types it: the tablet sends `commission_auto: true` and the
-// commission is worked out here, per seller, from kiosk_commissions (the same read
+// commission is worked out here, per seller, from seller_commissions (the same read
 // as the tablet's Commission button). The tablet's own figure is only the fallback
 // if that read fails. The answer carries the commission recorded, so a reprint
 // matches the email.

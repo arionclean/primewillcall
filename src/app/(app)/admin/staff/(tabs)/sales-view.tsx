@@ -23,6 +23,8 @@ export type SellerTotal = {
   /** Each net of its refunds. */
   cashCents: number;
   cardCents: number;
+  /** Desk commission earned in the range; 0 for the sales nobody can be credited with. */
+  commissionCents: number;
   /** Minutes on the time clock in the range; 0 when they did not clock in. */
   minutes: number;
 };
@@ -90,15 +92,16 @@ export function SalesView({
           sales: acc.sales + r.sales,
           cashCents: acc.cashCents + r.cashCents,
           cardCents: acc.cardCents + r.cardCents,
+          commissionCents: acc.commissionCents + r.commissionCents,
           minutes: acc.minutes + r.minutes,
         }),
-        { sales: 0, cashCents: 0, cardCents: 0, minutes: 0 },
+        { sales: 0, cashCents: 0, cardCents: 0, commissionCents: 0, minutes: 0 },
       ),
     [rows],
   );
 
   function exportCsv() {
-    const header = ["Person", "Sales", "Cash", "Card", "Total"];
+    const header = ["Person", "Sales", "Cash", "Card", "Total", "Commission"];
     if (showHours) header.push("Hours", "Per hour");
     downloadCsv(
       from === to ? `sales-${from}.csv` : `sales-${from}_to_${to}.csv`,
@@ -110,6 +113,7 @@ export function SalesView({
           dollars(r.cashCents),
           dollars(r.cardCents),
           dollars(total(r)),
+          r.employeeId ? dollars(r.commissionCents) : "",
         ];
         if (showHours) {
           const perHour = perHourCents(r);
@@ -120,7 +124,7 @@ export function SalesView({
     );
   }
 
-  const columns = showHours ? 7 : 5;
+  const columns = showHours ? 8 : 6;
 
   return (
     <div className="space-y-6">
@@ -169,6 +173,7 @@ export function SalesView({
                 <th className="hidden px-4 py-2.5 text-right sm:table-cell">Cash</th>
                 <th className="hidden px-4 py-2.5 text-right sm:table-cell">Card</th>
                 <th className="px-4 py-2.5 text-right">Total</th>
+                <th className="px-4 py-2.5 text-right">Commission</th>
                 {showHours && (
                   <>
                     <th className="hidden px-4 py-2.5 text-right sm:table-cell">Hours</th>
@@ -222,6 +227,9 @@ export function SalesView({
                       >
                         {formatCents(total(r))}
                       </td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">
+                        {nobody ? "" : formatCents(r.commissionCents)}
+                      </td>
                       {showHours && (
                         <>
                           <td className="hidden px-4 py-2.5 text-right tabular-nums text-muted-foreground sm:table-cell">
@@ -250,6 +258,9 @@ export function SalesView({
                   </td>
                   <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
                     {formatCents(sum.cashCents + sum.cardCents)}
+                  </td>
+                  <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
+                    {formatCents(sum.commissionCents)}
                   </td>
                   {showHours && (
                     <>
