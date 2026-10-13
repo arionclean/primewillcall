@@ -354,7 +354,9 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   `kiosk-booking-update`, right after the Xano PATCH, under `x-sync-origin: mirror` so
   the queue does not send them to Xano a second time. Xano's echo of the same change
   then lands as a no-op. The function finds the booking by Xano row id first, else by
-  internal code narrowed by tour date, because Xano reuses PW codes across people.
+  internal code narrowed by tour date, because Xano reuses PW codes across people. A
+  booking born on the web has no code, so the tablet's code for it is its ticket token
+  (`public_token`), matched too (2026-10-13; before that its check-ins were lost).
   **The tablet's reads** (2026-09-09, build 17+): the product list, the day's bookings
   and the day's sales come from `kiosk-read`, in the exact shapes the screens have
   always consumed from Xano's `products`, `querry_all` and `cash_sales` (taken from the
