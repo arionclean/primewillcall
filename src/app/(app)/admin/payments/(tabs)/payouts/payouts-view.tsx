@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
 import { formatCents, formatCentsExact } from "@/lib/dashboard/queries";
+import { invokeEdgeFunction } from "@/lib/payments/edge";
 import { bookingHref, formatDay, formatNyDate, formatNyDateTime, formatNyDeadline, money } from "@/lib/payments/format";
 import {
   invokeStripeReports,
@@ -313,18 +314,53 @@ function BusinessCard({ business: b }: { business: BusinessOverview }) {
           </>
         )}
 
-        {/* The business's account in Prime's own Stripe dashboard, in a new tab. */}
-        <a
-          href={stripeAccountUrl(b.accountId)}
-          target="_blank"
-          rel="noreferrer"
-          className="mt-auto inline-flex items-center gap-1 self-start text-xs text-muted-foreground/60 hover:text-muted-foreground"
-        >
-          Open in Stripe
-          <ExternalLink className="size-3" aria-hidden />
-        </a>
+        <OpenInStripe businessId={b.id} accountId={b.accountId} />
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Opens the business's own Stripe dashboard in a new tab, through a one-time login link
+ * from `stripe-connect`, so no Stripe sign-in is needed. An account Stripe makes no such
+ * link for (one that is not an Express account) opens on its page in Prime's dashboard.
+ */
+function OpenInStripe({ businessId, accountId }: { businessId: string; accountId: string }) {
+  const [opening, setOpening] = useState(false);
+
+  async function open() {
+    // The tab is opened inside the click: one opened after the call returns is blocked
+    // as a pop-up, on the iPhone above all.
+    const tab = window.open("", "_blank");
+    setOpening(true);
+    const { data } = await invokeEdgeFunction<{ url?: string }>("stripe-connect", {
+      business_id: businessId,
+      action: "login_link",
+    });
+    setOpening(false);
+    const url = data?.url ?? stripeAccountUrl(accountId);
+    if (tab) {
+      tab.opener = null;
+      tab.location.href = url;
+    } else {
+      window.location.href = url;
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={open}
+      disabled={opening}
+      className="mt-auto inline-flex items-center gap-1 self-start text-xs text-muted-foreground/60 hover:text-muted-foreground"
+    >
+      Open in Stripe
+      {opening ? (
+        <Loader2 className="size-3 animate-spin" aria-hidden />
+      ) : (
+        <ExternalLink className="size-3" aria-hidden />
+      )}
+    </button>
   );
 }
 
