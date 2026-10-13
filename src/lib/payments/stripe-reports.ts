@@ -89,7 +89,14 @@ export function saleSourceLabel(source: string | null): string | null {
 export const STRIPE_PRICING_URL = "https://stripe.com/pricing";
 export const STRIPE_CONNECT_PRICING_URL = "https://stripe.com/connect/pricing";
 
-/** Stripe's page for a business's account, in Prime's own Stripe dashboard. */
+/** Prime's live platform account: the Stripe account every business is connected to. */
+const PRIME_PLATFORM_ACCOUNT_ID = "acct_1P3rN4FK2DDqkJsm";
+
+/**
+ * Stripe's page for a business's account, in Prime's own Stripe dashboard. The platform id
+ * in the path makes Stripe switch to Prime's account first: without it the link opens in
+ * whichever account the login last used, cannot find the business there, and lands on home.
+ */
 export function stripeAccountUrl(accountId: string): string {
-  return `https://dashboard.stripe.com/connect/accounts/${accountId}`;
+  return `https://dashboard.stripe.com/${PRIME_PLATFORM_ACCOUNT_ID}/connect/accounts/${accountId}`;
 }
