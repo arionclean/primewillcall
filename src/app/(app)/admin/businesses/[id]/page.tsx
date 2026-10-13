@@ -29,6 +29,11 @@ export default async function EditBusinessPage({
 
   if (!business) notFound();
 
+  const { count: kioskCount } = await supabase
+    .from("kiosks")
+    .select("id", { count: "exact", head: true })
+    .eq("business_id", id);
+
   return (
     <div>
       <header className="mb-6 flex items-end justify-between">
@@ -57,7 +62,11 @@ export default async function EditBusinessPage({
         </p>
         <Card>
           <CardContent className="py-6">
-            <StripeConnectPanel business={business} justReturned={stripe === "return"} />
+            <StripeConnectPanel
+              business={business}
+              kioskCount={kioskCount ?? 0}
+              justReturned={stripe === "return"}
+            />
           </CardContent>
         </Card>
       </section>

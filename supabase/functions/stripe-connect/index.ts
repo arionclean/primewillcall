@@ -17,6 +17,8 @@
 // Secrets: STRIPE_SECRET_KEY (Prime's PLATFORM key), APP_URL. SUPABASE_URL and
 // SUPABASE_SERVICE_ROLE_KEY are provided by the platform.
 
+import type Stripe from "npm:stripe@22.3.0";
+
 import {
   accountFeesPayer,
   accountStatusColumns,
@@ -84,6 +86,99 @@ async function loadBusiness(businessId: string): Promise<BusinessRow | null> {
     .eq("id", businessId)
     .maybeSingle();
   return (data as BusinessRow | null) ?? null;
+}
+
+/**
+ * Give each of the business's kiosks a card reader Location on `toAccount` before its
+ * money moves there. A Stripe Terminal Location belongs to one account and a reader can
+ * only take a card for the account its Location is on, so without this the desk's
+ * readers would stay on the old account and every card sale there would fail.
+ *
+ * Each new Location copies the name and address of the kiosk's Location on
+ * `fromAccount`, and kiosks sharing one there (two desks at one dock) share the copy.
+ * kiosk-connection-token picks the Location by the account the kiosk charges on, so
+ * the rows written here take effect the moment the business's account changes, and not
+ * before. Skipped: kiosks with their own account (kiosks.stripe_account_id, they do not
+ * follow the business) and kiosks with no Location (no reader). Safe to run again: a
+ * kiosk that already has a Location on `toAccount` keeps it. Throws on any failure, so
+ * the caller does not switch with the readers half ready.
+ */
+async function ensureKioskLocations(
+  businessId: string,
+  fromAccount: string,
+  toAccount: string,
+): Promise<void> {
+  const stripe = getStripe()!;
+  const { data, error } = await db
+    .from("kiosks")
+    .select("id, kiosk_terminal_locations(stripe_account_id, location_id)")
+    .eq("business_id", businessId)
+    .is("stripe_account_id", null);
+  if (error) throw new Error(error.message);
+
+  const kiosks = (data ?? []).map((k) => {
+    const rows = (k.kiosk_terminal_locations ?? []) as { stripe_account_id: string; location_id: string }[];
+    return {
+      id: k.id as string,
+      from: rows.find((r) => r.stripe_account_id === fromAccount)?.location_id ?? null,
+      to: rows.find((r) => r.stripe_account_id === toAccount)?.location_id ?? null,
+    };
+  });
+
+  // Old Location -> its copy, seeded from kiosks already done so a sibling reuses it.
+  const copies = new Map<string, string>();
+  for (const k of kiosks) if (k.from && k.to) copies.set(k.from, k.to);
+
+  for (const k of kiosks) {
+    if (k.to || !k.from) continue;
+    let copy = copies.get(k.from);
+    if (!copy) {
+      const old = await stripe.terminal.locations.retrieve(k.from, {}, { stripeAccount: fromAccount });
+      if ("deleted" in old && old.deleted) {
+        throw new Error(`The card reader location ${k.from} was deleted in Stripe.`);
+      }
+      const { display_name, address } = old as Stripe.Terminal.Location;
+      const created = await stripe.terminal.locations.create(
+        {
+          display_name,
+          address: {
+            line1: address.line1 ?? undefined,
+            line2: address.line2 ?? undefined,
+            city: address.city ?? undefined,
+            state: address.state ?? undefined,
+            postal_code: address.postal_code ?? undefined,
+            country: address.country ?? "US",
+          },
+        },
+        // A retry after a half-done run gets the same Location back, not a second one.
+        { stripeAccount: toAccount, idempotencyKey: `kiosk-location:${k.from}:${toAccount}` },
+      );
+      copy = created.id;
+      copies.set(k.from, copy);
+    }
+    const { error: insertError } = await db
+      .from("kiosk_terminal_locations")
+      .insert({ kiosk_id: k.id, stripe_account_id: toAccount, location_id: copy });
+    if (insertError) throw new Error(insertError.message);
+  }
+}
+
+/** ensureKioskLocations for a switch: null when ready, else the error to answer with. */
+async function readersReady(
+  businessId: string,
+  fromAccount: string,
+  toAccount: string,
+): Promise<Response | null> {
+  try {
+    await ensureKioskLocations(businessId, fromAccount, toAccount);
+    return null;
+  } catch (err) {
+    console.error("[stripe-connect] kiosk reader locations failed:", err);
+    return json({
+      error:
+        `The card readers could not be set up on that account, so nothing was switched. ${stripeErrorMessage(err)}`,
+    }, 502);
+  }
 }
 
 /** Hosted onboarding link, used both for first setup and for fixing requirements. */
@@ -310,6 +405,10 @@ Deno.serve(withSentry("stripe-connect", async (req) => {
               "Stripe has not enabled charges on the new account yet. Finish onboarding first.",
           }, 400);
         }
+        if (biz.stripe_account_id) {
+          const readers = await readersReady(biz.id, biz.stripe_account_id, account.id);
+          if (readers) return readers;
+        }
         const legacy = [...(biz.stripe_account_id_legacy ?? [])];
         if (biz.stripe_account_id && !legacy.includes(biz.stripe_account_id)) {
           legacy.push(biz.stripe_account_id);
@@ -347,6 +446,10 @@ Deno.serve(withSentry("stripe-connect", async (req) => {
             error:
               "Stripe is not allowing charges on that account, so payments cannot go back to it.",
           }, 400);
+        }
+        if (biz.stripe_account_id) {
+          const readers = await readersReady(biz.id, biz.stripe_account_id, account.id);
+          if (readers) return readers;
         }
         const legacy = (biz.stripe_account_id_legacy ?? []).filter((id) => id !== accountId);
         if (biz.stripe_account_id && !legacy.includes(biz.stripe_account_id)) {

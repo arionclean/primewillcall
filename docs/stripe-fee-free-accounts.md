@@ -56,10 +56,18 @@ All of it lives on `/admin/businesses/[id]` under **Payments**, owner-only.
    handling every charge, so this step is safe to do at any time of day.
 3. **Send the business through onboarding.** The same Stripe hosted flow as the first
    time. "Continue onboarding" reopens it if they stop halfway.
-4. **Switch over.** Enabled only once Stripe reports `charges_enabled` on the new
-   account. It moves the old id into `stripe_account_id_legacy` and makes the new one
-   `stripe_account_id`. From the next request, every charge path uses it.
-5. **Leave the old account open** until its remaining balance pays out. Do not delete it.
+4. **Switch over.** The "Switch to the new account" button, shown once Stripe reports
+   `charges_enabled` on the new account. It is a button on purpose, never automatic
+   (the webhook used to promote the account on `account.updated`; removed 2026-10-13):
+   a business with iPads has to reconnect their card readers afterwards, so the owner
+   switches when the desk is closed. It first gives each kiosk a reader Location on the
+   new account (see "Kiosk card readers" below), then moves the old id into
+   `stripe_account_id_legacy` and makes the new one `stripe_account_id`. From the next
+   request, every charge path uses it.
+5. **On each iPad of that business**: close and reopen the app, then connect the card
+   reader again in Settings. The app asks for its Stripe account and reader Location once
+   at login, so until it restarts it keeps using the old account's.
+6. **Leave the old account open** until its remaining balance pays out. Do not delete it.
 
 Step 4 is reversible: each retired account is listed with a **Send payments back here**
 button that points the business at it again, which is why the old id is kept rather than
@@ -85,20 +93,29 @@ Stripe itself or from `stripe_account_id_legacy`.
 - **In-flight Checkout links** created before the switch still complete on the old
   account, and the webhook still records them.
 
-## Not done yet: kiosk Terminal
+## Kiosk card readers
 
-Stripe Terminal **Locations and registered readers belong to an account**, so a business
-that runs a PrimeKiosk tablet needs, after its switch:
+Stripe Terminal **Locations belong to an account**, and a reader only takes a card for
+the account its Location is on. So the Location is kept per kiosk per account, in
+`kiosk_terminal_locations` (2026-10-13; it replaced the single
+`kiosks.terminal_location_id`):
 
-1. A Terminal Location created on the new account.
-2. `kiosks.terminal_location_id` (and `kiosks.stripe_account_id` where it overrides the
-   business) pointed at it.
-3. Each physical reader re-registered against the new Location.
-
-This is deliberately not built or automated yet: there are no new accounts to create
-Locations on. Until a kiosk business is migrated, the `kiosk-connection-token` and
-`kiosk-payment-intent` edge functions keep resolving the account from the tablet's
-`kiosks.slug` exactly as before. Do the switch for non-kiosk businesses first.
+- `kiosk-connection-token` returns the Location for the account the kiosk charges on
+  right now. The business's switch (one row update) therefore moves its readers too, and
+  a switch back moves them back.
+- `switch_over` and `switch_back` in `stripe-connect` first make sure every kiosk of the
+  business has a row for the target account. A missing one is created by copying the
+  name and address of the kiosk's Location on the current account (kiosks sharing a
+  Location share the copy; the create carries an idempotency key, so a retry does not
+  make a second one). If any of it fails, nothing is switched.
+- Skipped: a kiosk with its own `kiosks.stripe_account_id` (it does not follow the
+  business) and a kiosk with no Location (no reader).
+- The readers are Bluetooth (`bluetoothScan` in the tablet app), so there is no
+  registration code to enter: they attach to whatever Location the tablet is given when
+  it connects. Reconnecting after the app restarts is the whole step.
+- Card sales started before the switch finish on the account they started on:
+  `kiosk_sales.stripe_account_id` is stamped at the start and the sweep and completion
+  read it.
 
 ## Schema
 

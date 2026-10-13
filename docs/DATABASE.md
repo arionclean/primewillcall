@@ -682,8 +682,18 @@ business's current account.
   Card kiosk sales need no table: a Terminal PaymentIntent is a direct charge, so the webhook
   records it into `stripe_transactions` with `source='kiosk'`.
 - `kiosks` (Kiosk POS columns) — `business_id`, `slug` (the tablet's login tag; unique),
-  `stripe_account_id` (optional per-kiosk Connect override), `terminal_location_id`,
-  `simulated`. Maps a tablet to the connected account its sales settle on.
+  `stripe_account_id` (optional per-kiosk Connect override), `terminal_location_id`
+  (superseded, no longer read), `simulated`. Maps a tablet to the connected account its
+  sales settle on.
+- `kiosk_terminal_locations` (2026-10-13): the Stripe Terminal Location (`location_id`,
+  `tml_...`) a kiosk's card readers use on each account (`stripe_account_id`) it has charged
+  on; primary key (`kiosk_id`, `stripe_account_id`). A Location belongs to one account, so
+  `kiosk-connection-token` returns the one for the account the kiosk charges on NOW, and a
+  business's switch to its new Stripe account moves its readers with it. `stripe-connect`'s
+  `switch_over` / `switch_back` create the target account's rows (copying the old
+  Location's name and address) before they switch, and refuse to switch if they cannot.
+  Backfilled from `kiosks.terminal_location_id`. Owner may read; only the edge functions
+  write. See docs/stripe-fee-free-accounts.md.
 
 - `kiosk_sales` — kiosk **card flow v2** (docs/kiosk-card-flow-v2.md): one row per card
   sale, written by `kiosk-sale-start` BEFORE the reader is asked for the card (`ref` = the KS
