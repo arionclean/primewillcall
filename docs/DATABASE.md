@@ -338,6 +338,34 @@ owner's fix with `corrected_at` / `corrected_by`, and
 `total_cash_cents` (cash less the effective commission) is generated, never typed. It
 can go negative when a commission exceeds the night's cash, which is worth seeing.
 
+From tablet build 27 nobody types the commission. It is each seller's, worked out by
+`seller_commissions()` (see below), and `kiosk-closing-report` records
+the sum of that night's sellers in `commission_cents` when the tablet sends
+`commission_auto: true`. Builds 21 to 26 still send a typed figure and are recorded as
+before. The column, the owner's correction and Cash close are unchanged either way.
+
+### seller_commissions() and team_commissions() (the desk commission, per seller)
+`seller_commissions(p_from date, p_to date, p_kiosk_slug text = NULL)` returns one row
+per seller, per kiosk, per New York day in the range: `business_date, kiosk_slug,
+business_id, employee_id, employee_name, sales, sales_cents, commission_cents`. The rule
+lives here and nowhere else: a seller whose sales at a kiosk for the day reach $500 earns
+10% of ALL of that day's sales, rounded to whole dollars ($550 earns $55, $499 earns
+nothing). Sales are the kiosk's `cash_sales` rows, cash and card alike, net of refunds,
+voided and failed ones left out (the same rows the tablet's sales screen totals). Each
+kiosk counts on its own, because the commission is paid from that kiosk's cash. Who sold
+it is the PIN on the sale (`cash_sales.employee_id`); a sale with no PIN earns nobody a
+commission. `business_id` is the kiosk's. SECURITY INVOKER, so `cash_sales` RLS decides
+what a caller sees; the rule needs every sale of a kiosk-day, which only the service role
+and the owner see, so those are its readers.
+
+Readers: `kiosk-read` (`action: 'commission'`, the tablet's Commission button on the sales
+screen) and `kiosk-closing-report` (the close), one kiosk and one day, both through
+`_shared/kiosk-commission.ts`, so what a seller sees during the day is what the close pays
+out. And `team_commissions(p_from date, p_to date, p_business uuid = NULL)`, each
+person's `commission_cents` over a range (a business filter keeps that
+business's kiosks), the Commission column on Team -> Sales. Owner only, with the check
+inside the function like `team_sales`: anyone else gets no rows.
+
 `correction_note` is the owner's free-text note on the night (the "Add note" link under
 the kiosk name on `/admin/payments/cash`, written by `saveNightNote`). Despite the name it
 is not tied to a correction: it is the one place to say what the figures cannot ("Alex

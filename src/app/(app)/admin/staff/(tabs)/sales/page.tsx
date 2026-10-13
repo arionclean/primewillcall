@@ -21,6 +21,9 @@ import { SalesView } from "../sales-view";
  * the tablets. A sale counts for the PIN typed when it was made; sales without
  * one come back as a single row, so the Total is every tablet sale in the range.
  *
+ * Commission comes from team_commissions: what each person earned at the desk,
+ * day by day, by the rule the tablet uses (seller_commissions), added up.
+ *
  * Hours and Per hour come from the time clock. The clock is not kept per
  * business, so a business filter hides them rather than divide one business's
  * sales by every hour worked.
@@ -47,6 +50,8 @@ export default async function SalesPage({
   const supabase = await getSupabaseServerClient();
   const [sales, businessesRes] = await Promise.all([
     loadTeamSales(supabase, {
+      from,
+      to,
       // Business-time day bounds, end exclusive: the window both RPCs sum over.
       startIso: nyLocalToUtcIso(from, "00:00"),
       endIso: nyLocalToUtcIso(shiftDayISO(to, 1), "00:00"),
@@ -64,6 +69,7 @@ export default async function SalesPage({
       businesses={businessesRes.data ?? []}
       filters={{ from, to, business: business ?? "" }}
       loadError={sales.error}
+      commissionError={sales.commissionError}
     />
   );
 }

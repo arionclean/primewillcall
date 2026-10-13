@@ -365,6 +365,8 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   flipped per kiosk like `card_flow`. Reading from here does not change writing: a
   tablet on 'supabase' still writes to both. Identity on the way out stays Xano's (row
   id, code, product id from `tours.legacy_product_id`) because the writes still need it.
+  A fourth action, `booking`, answers one booking by the id printed on the guest's
+  ticket (`bookings.public_token`), which is what the two scan screens read.
   **Known before flipping a kiosk:** `bookings.total_cents` is 100x too high on 2,312
   kiosk bookings synced from Xano (the sync treats Xano's price as dollars; Xano's
   trigger sends cents below $100), so a tablet reading bookings from here would show
@@ -605,6 +607,13 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   Backfilled from `kiosk_events` for 2026-09-09 on. The owner reads and corrects it on
   Payments -> **Cash close** (`/admin/payments/cash`). See "kiosk_closings" in
   [`docs/DATABASE.md`](docs/DATABASE.md).
+  **The commission is per seller** (2026-10-12, tablet build 27): a seller whose sales
+  at a kiosk for the day reach $500 earns 10% of all of them, in whole dollars ($550
+  earns $55). Nobody types it any more. `seller_commissions()` is the one place the
+  rule lives; the tablet's **Commission** button on the sales screen lists each seller
+  through `kiosk-read`, the close records the sum (`commission_auto: true`), and the
+  owner sees each person's total on Team -> **Sales** (`team_commissions`). See
+  "seller_commissions()" in [`docs/DATABASE.md`](docs/DATABASE.md).
 - **Time clock** (built 2026-09-17, switch still OFF everywhere): desk staff clock in and
   out on the iPad with the PIN they already type for sales, and the owner reads the hours
   on Team -> **Hours** (owner only, tab and RLS). One button does both directions: the

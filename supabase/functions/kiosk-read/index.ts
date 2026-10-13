@@ -1,5 +1,6 @@
-// The three things a tablet READS, answered from this platform instead of Xano:
-// the product list, the day's bookings, and the day's sales.
+// The things a tablet READS, answered from this platform instead of Xano: the
+// product list, the day's bookings, the day's sales and, from build 27, the day's
+// commission per seller.
 //
 // Each answer is in the exact shape the tablet's screen has always consumed from
 // the Xano endpoint it replaces, so the screens change nothing but the URL and a
@@ -13,6 +14,13 @@
 //                                              departure, guests = adults + children)
 //   sales     <- api:_o9979qq/cash_sales      (this kiosk, the New York day, newest
 //                                              first, the booking attached)
+//   booking   <- api:2k2IsvEZ/booking?booking_confirmation_id=...
+//                                             (one booking by the id printed on the
+//                                              ticket, for the scan screens)
+//   commission                                (new here, no Xano twin: each seller
+//                                              at this kiosk on the New York day,
+//                                              their sales and their commission,
+//                                              from seller_commissions)
 //
 // Two things are deliberately better than Xano's answer, both already agreed:
 // a refunded card sale nets to what was kept (Xano drops the row), and a
@@ -25,7 +33,8 @@
 // write for it goes through kiosk-booking-update by code and date regardless.
 //
 // Public like the other kiosk functions (JWT off); optional KIOSK_SHARED_SECRET.
-// Body: { kiosk, action: 'products' | 'bookings' | 'sales', date?, app_build?, device_id? }
+// Body: { kiosk, action: 'products' | 'bookings' | 'sales' | 'booking' | 'commission',
+//         date?, booking_confirmation_id?, app_build?, device_id? }
 // `date` as the tablet sends it ("Sep 9 2026") or ISO "2026-09-09"; today when absent.
 
 import {
@@ -34,18 +43,20 @@ import {
   resolveKiosk,
   serviceClient,
 } from "../_shared/kiosk-sale.ts";
+import { kioskCommissions } from "../_shared/kiosk-commission.ts";
 import { withSentry } from "../_shared/sentry.ts";
 
 const NY = "America/New_York";
 /** Xano's product id for the Key West Day Trip, which the tablet's manifest has never shown. */
 const KEY_WEST_DAY_TRIP = "1733296384794x165710027724423170";
 
-type Action = "products" | "bookings" | "sales";
+type Action = "products" | "bookings" | "sales" | "booking" | "commission";
 
 interface Body {
   kiosk?: string;
   action?: Action;
   date?: string;
+  booking_confirmation_id?: string;
   app_build?: string;
   device_id?: string;
 }
@@ -331,6 +342,25 @@ async function bookings(sb: ReturnType<typeof serviceClient>, ymd: string) {
   return { bookings: groups };
 }
 
+/**
+ * One booking by the id printed on the guest's ticket, in the shape the scan screens
+ * have always read from Xano's `booking` endpoint. Keyed on `public_token`, which IS
+ * that id: a booking born here generates it, and one synced from Xano keeps the token
+ * Xano emailed. No day filter, because a guest can scan a ticket for any date.
+ */
+async function bookingByConfirmation(sb: ReturnType<typeof serviceClient>, token: string) {
+  const { data, error } = await sb
+    .from("bookings")
+    .select(BOOKING_SELECT)
+    .eq("public_token", token)
+    .eq("awaiting_payment", false)
+    .limit(1)
+    .maybeSingle<BookingRow>();
+  if (error) return { error: error.message };
+  if (!data) return { notFound: true as const };
+  return { booking: toXanoBooking(data) };
+}
+
 // ── sales ─────────────────────────────────────────────────────────────────────
 
 interface SaleRow {
@@ -397,6 +427,29 @@ async function sales(sb: ReturnType<typeof serviceClient>, slug: string, ymd: st
   };
 }
 
+// ── commission ────────────────────────────────────────────────────────────────
+
+/**
+ * What the tablet's Commission button lists: each seller at this kiosk today, with
+ * their sales and commission, in dollars. The rule is the database's; this only
+ * reshapes it for the screen.
+ */
+async function commission(sb: ReturnType<typeof serviceClient>, slug: string, ymd: string) {
+  const out = await kioskCommissions(sb, slug, ymd);
+  if ("error" in out) return out;
+  return {
+    date: ymd,
+    people: out.people.map((p) => ({
+      employee_id: p.employee_id,
+      name: p.name,
+      sales: p.sales,
+      amount: p.sales_cents / 100,
+      commission: p.commission_cents / 100,
+    })),
+    total: out.people.reduce((sum, p) => sum + p.commission_cents, 0) / 100,
+  };
+}
+
 // ── handler ───────────────────────────────────────────────────────────────────
 
 Deno.serve(withSentry("kiosk-read", async (req) => {
@@ -412,7 +465,10 @@ Deno.serve(withSentry("kiosk-read", async (req) => {
   const slug = String(body.kiosk ?? "").trim();
   if (!slug) return json({ error: "missing_kiosk" }, 400);
   const action = body.action;
-  if (action !== "products" && action !== "bookings" && action !== "sales") {
+  if (
+    action !== "products" && action !== "bookings" && action !== "sales" &&
+    action !== "booking" && action !== "commission"
+  ) {
     return json({ error: "bad_action" }, 400);
   }
 
@@ -427,8 +483,23 @@ Deno.serve(withSentry("kiosk-read", async (req) => {
     return json(out, "error" in out ? 500 : 200);
   }
 
+  if (action === "booking") {
+    const token = String(body.booking_confirmation_id ?? "").trim();
+    if (!token) return json({ error: "missing_booking_confirmation_id" }, 400);
+    const out = await bookingByConfirmation(sb, token);
+    if ("error" in out) return json(out, 500);
+    // The screens read a 404 as "not found", the same as Xano's answer.
+    if ("notFound" in out) return json({ error: "not_found" }, 404);
+    // Unwrapped, because that endpoint answers with the booking itself.
+    return json(out.booking, 200);
+  }
+
   const ymd = dayOf(body.date);
   if (!ymd) return json({ error: "bad_date" }, 400);
-  const out = action === "bookings" ? await bookings(sb, ymd) : await sales(sb, kiosk.slug, ymd);
+  const out = action === "bookings"
+    ? await bookings(sb, ymd)
+    : action === "commission"
+    ? await commission(sb, kiosk.slug, ymd)
+    : await sales(sb, kiosk.slug, ymd);
   return json(out, "error" in out ? 500 : 200);
 }));

@@ -3797,6 +3797,19 @@ export type Database = {
           status: Database["public"]["Enums"]["booking_status"]
         }[]
       }
+      seller_commissions: {
+        Args: { p_from: string; p_kiosk_slug?: string; p_to: string }
+        Returns: {
+          business_date: string
+          business_id: string
+          commission_cents: number
+          employee_id: string
+          employee_name: string
+          kiosk_slug: string
+          sales: number
+          sales_cents: number
+        }[]
+      }
       set_booked_at_bulk: { Args: { p_rows: Json }; Returns: number }
       sms_conversations: {
         Args: never
@@ -3837,6 +3850,14 @@ export type Database = {
           refunded: number
           stripe_fees: number
           txn_count: number
+        }[]
+      }
+      team_commissions: {
+        Args: { p_business?: string; p_from: string; p_to: string }
+        Returns: {
+          commission_cents: number
+          employee_id: string
+          employee_name: string
         }[]
       }
       team_sales: {
