@@ -114,14 +114,14 @@ export async function updateStaffAction(
     if (kioskErr) console.error("[staff] tablet pin switch:", kioskErr);
   }
 
-  // Sync staff_tours: only meaningful when role is check_in. When role
-  // switches away from check_in, drop all linkages.
+  // Sync staff_tours. For a check-in login these are the only tours it sees; for a
+  // manager, the tours it also sees from every business (RLS reads the same table).
   const { data: existing } = await supabase
     .from("staff_tours")
     .select("tour_id")
     .eq("staff_id", id);
   const existingIds = new Set((existing ?? []).map((r) => r.tour_id));
-  const target = role === "check_in" ? new Set(tour_ids) : new Set<string>();
+  const target = new Set(tour_ids);
 
   const toAdd: string[] = [];
   const toRemove: string[] = [];

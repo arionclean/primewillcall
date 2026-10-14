@@ -3586,6 +3586,7 @@ export type Database = {
           working: number
         }[]
       }
+      manager_shared_guest_ids: { Args: never; Returns: string[] }
       match_ota_tour: {
         Args: {
           p_channel: string

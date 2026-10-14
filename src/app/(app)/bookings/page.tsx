@@ -83,9 +83,8 @@ export default async function BookingsPage({
             range={range}
             role={staff.role}
             caps={caps}
-            // Only a manager is one business. A check-in login watches every
-            // business's guests on its tours, so its live feed must not be
-            // narrowed to its own business (RLS still scopes it).
+            // A manager's own business. The panel narrows the live feed to it
+            // unless the manager also sees tours from other businesses.
             businessId={staff.role === "business_manager" ? staff.business_id : null}
           />
         </Suspense>
@@ -122,12 +121,12 @@ async function BookingsPanel({
 
   const bookings = ((data ?? []) as unknown[]).map(normalizeBookingRow);
 
-  // Role-scoped tour variants for the filter + edit dropdown. Owner sees all
-  // rows; a manager is scoped to their own business. A check-in login is not:
-  // it checks in every business's guests on its tours (RLS returns every
-  // business's copy of an assigned tour), and the filter groups copies by name,
-  // so "Miami 5 in 1 City Tour" covers Key West's guests and Miami's alike.
-  let tourQuery = supabase
+  // Role-scoped tour variants for the filter + edit dropdown, scoped by RLS alone.
+  // Owner sees all rows; a manager their own business plus every business's copy
+  // of a tour the owner shared with them; a check-in login every business's copy
+  // of its assigned tours. The filter groups copies by name, so "Jet Ski" covers
+  // Key West's guests and Miami's alike.
+  const tourQuery = supabase
     .from("business_tours")
     .select(
       `id, name, business_id, is_active,
@@ -136,13 +135,6 @@ async function BookingsPanel({
       tour_pax_tiers(id, label, price_cents, sort_order)`,
     )
     .order("name", { ascending: true });
-
-  if (role === "business_manager") {
-    tourQuery = tourQuery.eq(
-      "business_id",
-      businessId ?? "00000000-0000-0000-0000-000000000000",
-    );
-  }
 
   // Where a booking can come from: the same owner-edited list the /schedule form
   // offers, so the edit modal can correct a source that came in wrong.
@@ -214,6 +206,17 @@ async function BookingsPanel({
         })),
     }));
 
+  // A manager whose tours are all their own business's watches only that business's
+  // changes. One who also sees another business's copy of a tour needs that
+  // business's changes too, so their feed is left to RLS, like a check-in login's.
+  const liveBusinessId =
+    businessId &&
+    ((tourRows ?? []) as unknown as TourQueryRow[]).every(
+      (r) => r.business_id === businessId,
+    )
+      ? businessId
+      : null;
+
   return (
     <BookingsList
       initial={bookings}
@@ -222,7 +225,7 @@ async function BookingsPanel({
       date={dateIso}
       role={role}
       caps={caps}
-      businessId={businessId}
+      businessId={liveBusinessId}
       rangeStartUtc={range.startUtc}
       rangeEndUtcExclusive={range.endUtcExclusive}
     />

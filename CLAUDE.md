@@ -41,6 +41,11 @@ Realtime). Supabase project id: `qbnizuhozzwkiitfkjee`.
 - `owner` — Prime. Platform-wide. Manages businesses, tours, staff, everything.
 - `business_manager` — belongs to one business (`staff.business_id`). Manages that
   business's bookings, customers, and its own copy of each assigned tour (name + prices).
+  The owner can also give a manager tours they see **from every business**
+  (`staff_tours`, "Tours they see from every business" on `/admin/staff/[id]`, since
+  2026-10-13): on `/bookings` they then see and check in every business's guests on
+  those tours, like a check-in desk. Screens listing their own tours filter by
+  `business_id` explicitly. See `staff_tours` in `docs/DATABASE.md`.
 - `check_in` — desk staff for one business (the kiosk accounts). Sees bookings on
   assigned tours **from every business** (one desk checks in Key West's and Miami
   Skyline's guests alike; RLS keys on `staff_tours`, and since 2026-09-08 the login

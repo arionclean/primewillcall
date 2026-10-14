@@ -60,6 +60,22 @@ export default async function AnalyticsPage({
     cmpMonth === 1 ? 12 : cmpMonth - 1,
   );
 
+  // analytics_label is the database computed column: the tour's /analytics display
+  // name (tour_analytics_labels, else its own name), so a chip reads the same words
+  // the RPCs return. A manager's chips are their own business's tours: RLS also
+  // lets them read other businesses' copies of a tour the owner shared with them,
+  // and the reports stay on their own business.
+  let chipQuery = supabase
+    .from("business_tours")
+    .select("id, name, tour:tours(name, color, analytics_label)")
+    .order("name");
+  if (staff.role === "business_manager") {
+    chipQuery = chipQuery.eq(
+      "business_id",
+      staff.business_id ?? "00000000-0000-0000-0000-000000000000",
+    );
+  }
+
   // Both tabs are fetched together and both stay mounted, the way the existing
   // tabs already work, so switching between Departures and Sales is instant and
   // each keeps its own selections. Four small aggregated reads, all in parallel.
@@ -76,13 +92,7 @@ export default async function AnalyticsPage({
     getAnalyticsKioskSourceTour(supabase, startUtc, endUtc, "departure"),
     getAnalyticsSourceTour(supabase, startUtc, endUtc, "sale"),
     getAnalyticsKioskSourceTour(supabase, startUtc, endUtc, "sale"),
-    supabase
-      .from("business_tours")
-      // analytics_label is the database computed column: the tour's /analytics
-      // display name (tour_analytics_labels, else its own name), so a chip reads
-      // the same words the RPCs return.
-      .select("id, name, tour:tours(name, color, analytics_label)")
-      .order("name"),
+    chipQuery,
     getAnalyticsDailyByTour(supabase, curStart, nextStart, BUSINESS_TZ),
     getAnalyticsDailyByTour(supabase, prevStart, curStart, BUSINESS_TZ),
   ]);

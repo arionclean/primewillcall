@@ -97,14 +97,16 @@ export default async function AvailabilityPage({
       .filter((t) => gpTourIds.has(t.id))
       .map((t) => buildTourDay(t.id, t.name, t.tour_timeslots, closedKeys));
   } else {
-    // Business manager: RLS scopes business_tours to their business. Show the
-    // business's own tour names, never the master catalog names.
+    // Business manager: their own business's tours, by name, never the master
+    // catalog names. Filtered here because RLS also lets a manager read other
+    // businesses' copies of a tour the owner shared with them.
     const [{ data: rows }, { data: closures }] = await Promise.all([
       supabase
         .from("business_tours")
         .select(
           "name, tour_id, tours(id, is_active, tour_timeslots(start_time, duration_minutes, sort_order, is_active))",
         )
+        .eq("business_id", staff.business_id ?? "00000000-0000-0000-0000-000000000000")
         .eq("is_active", true)
         .not("groupon_fee_cents", "is", null)
         .order("name"),

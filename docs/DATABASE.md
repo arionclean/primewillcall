@@ -308,7 +308,15 @@ The `on_native_booking_created` trigger still fires from the insert inside the f
 (`legacy_id` is NULL at insert time), so the messaging automations are unaffected.
 
 ### staff_tours
-`staff_id, tour_id, created_at` — which tours a `check_in` staffer is assigned to.
+`staff_id, tour_id, created_at` — tours a staffer sees from every business. For a
+`check_in` login these are its assigned tours (the only ones it sees). For a
+`business_manager` they are extra: the manager keeps their own business and also sees
+every business's bookings on these tours (since 2026-10-13, `manager_shared_tours`;
+first use: Miami Skyline's manager and the Jet Ski, whose bookings sometimes land under
+Key West or Miami Jet Ski Tours). Set by the owner on `/admin/staff/[id]` ("Tours they
+see from every business"). Only the owner writes a manager's rows: `staff_tours_write`
+lets a manager write rows for their own business's check-in logins only, since a row
+on themselves would widen their own access.
 
 ### audit_log
 `id bigint pk, occurred_at, actor_staff_id?, actor_kiosk_id?, business_id?, employee_id?,
@@ -1062,6 +1070,14 @@ General shape:
 - **owner**: full access to everything.
 - **business_manager**: read + write rows belonging to their `business_id`
   (`bookings`, `customers`, `business_tours`, `tour_pax_tiers` via the parent business).
+  Plus, for a tour the owner put in their `staff_tours` (since 2026-10-13,
+  `manager_shared_tours`): read and update every business's `bookings` on it (same
+  capability gates as a check-in desk; insert stays own business), read the other
+  businesses' copies of the tour, their tiers and names, and read the guests on those
+  bookings only (`manager_shared_guest_ids()`, SECURITY DEFINER, called uncorrelated
+  so it runs once per query), never the other business's whole customer list.
+  Screens that list "my tours" (`/availability`, the `/analytics` chips, `/schedule`,
+  `/admin/tours`) filter by `business_id` explicitly for that reason.
 - **check_in**: read `business_tours` / `tour_pax_tiers` for their business AND every
   business's copy of a tour they are assigned to (plus those businesses' rows in
   `businesses` and their `customers`), since 2026-09-08 (`checkin_sees_all_copies`,
@@ -1080,10 +1096,12 @@ Table-specific notes:
   business is assigned to the tour (`business_tours`). Closing affects every business
   sharing the departure, which mirrors reality: the boat itself is not going out.
 - `customers`: owner + manager + check-in of the business can insert and read; update is
-  owner + manager; delete is owner only.
+  owner + manager; delete is owner only. A manager also reads the guests booked on
+  their shared tours.
 - `bookings`: all non-owner writes are capability-gated by the `staff.can_*` columns.
   Insert: owner; manager (own business); check-in (own business + assigned tour), each
-  needing `can_create_bookings`. Update: same row scopes, needing any of
+  needing `can_create_bookings`. Update: the read scopes (a manager's own business and
+  their shared tours; a check-in login's assigned tours), needing any of
   `can_edit_bookings` / `can_check_in` / `can_add_to_peek` / `can_redeem_groupon` /
   `can_void_bookings` (the trigger limits an account without edit to its stamps).
   Delete: nobody, owner included (no policy). Void through `void_booking()` instead.

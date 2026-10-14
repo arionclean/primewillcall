@@ -409,10 +409,20 @@ export function EditStaffForm({
           </label>
         </FormSection>
 
-        {role === "check_in" && (
+        {/* The same list means two things: a check-in login sees only these tours, a
+            manager sees their own business plus these tours from every business. */}
+        {(role === "check_in" || role === "business_manager") && (
           <FormSection
-            title="Tours they check in for"
-            description="Only bookings on these tours will appear in their dashboard."
+            title={
+              role === "check_in"
+                ? "Tours they check in for"
+                : "Tours they see from every business"
+            }
+            description={
+              role === "check_in"
+                ? "Only bookings on these tours will appear in their dashboard."
+                : "They already see all of their own business's bookings. Tick a tour to also show them other businesses' bookings on it."
+            }
             contentClassName="space-y-3"
           >
             {tours.length === 0 ? (
