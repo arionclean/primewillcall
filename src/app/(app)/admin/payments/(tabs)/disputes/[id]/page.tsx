@@ -24,7 +24,7 @@ export default async function DisputePage({ params }: { params: Promise<{ id: st
   const { data: row } = await supabase
     .from("stripe_disputes")
     .select(
-      "stripe_dispute_id, status, amount, currency, reason, customer_name, evidence_due_by, stripe_created, business_id, connected_account_id, business:businesses(name, stripe_account_id)",
+      "stripe_dispute_id, status, amount, currency, reason, customer_name, evidence_due_by, stripe_created, business_id, business:businesses(name)",
     )
     .eq("stripe_dispute_id", id)
     .maybeSingle();
@@ -38,10 +38,7 @@ export default async function DisputePage({ params }: { params: Promise<{ id: st
     reason: row.reason,
     customerName: row.customer_name,
     businessName: row.business?.name ?? null,
-    // Only while the dispute is on the business's current account: "Open in Stripe"
-    // signs in to that one, and a dispute on a retired account must not open the new.
-    businessId:
-      row.business?.stripe_account_id === row.connected_account_id ? row.business_id : null,
+    businessId: row.business_id,
     dueBy: row.evidence_due_by,
     created: row.stripe_created,
   };

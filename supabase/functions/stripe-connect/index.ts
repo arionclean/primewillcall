@@ -53,6 +53,8 @@ interface Payload {
   action?: Action;
   business_id?: string;
   target?: "primary" | "pending";
+  /** login_link only: one of THIS business's accounts (current, waiting or retired). */
+  account_id?: string;
 }
 
 interface BusinessRow {
@@ -215,9 +217,19 @@ Deno.serve(withSentry("stripe-connect", async (req) => {
     }
 
     case "login_link": {
-      const accountId = payload.target === "pending"
-        ? biz.stripe_account_id_pending
-        : biz.stripe_account_id;
+      // A sale taken before the business was moved to a new account (and a dispute on
+      // it) lives on the account it was taken on, so a link can ask for that one. Only
+      // this business's own accounts are accepted.
+      const own = [
+        biz.stripe_account_id,
+        biz.stripe_account_id_pending,
+        ...(biz.stripe_account_id_legacy ?? []),
+      ];
+      if (payload.account_id && !own.includes(payload.account_id)) {
+        return json({ error: "That is not one of this business's Stripe accounts." }, 400);
+      }
+      const accountId = payload.account_id ||
+        (payload.target === "pending" ? biz.stripe_account_id_pending : biz.stripe_account_id);
       if (!accountId) return json({ error: "This business has no Stripe account yet." }, 400);
       try {
         const link = await stripe.accounts.createLoginLink(accountId);

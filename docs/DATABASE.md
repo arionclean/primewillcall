@@ -799,9 +799,13 @@ payouts or disputes); no write policies, the functions write with the service ro
   range defaults to the current month to date.
 - **Payouts** (`/admin/payments/payouts`, owner only): per business, account health in
   plain words (paused charges or payouts, what Stripe needs and by when, with a link to the
-  business settings), one total "coming to the bank" (balance `pending` + `available`, plus a
-  payout already sent and not yet arrived), split into the next payout (date and amount)
-  and "later", and any balance left on a retired account. The next payout comes from
+  business settings), one total "coming to the bank" (balance `pending` + `available`, plus
+  payouts already sent and not yet arrived), split into the next payout (date and amount)
+  and "later". Every number is summed over ALL the business's Stripe accounts, current and
+  retired (`retiredAccountMoney` in `stripe-reports`), and the next payout is the earliest
+  day across them: moving a business to a new account is internal and never shows on the
+  card (the owner's call, 2026-10-13; it used to add a "left on the old account" line). The
+  health badge is the current account's. The next payout comes from
   Stripe, which has no "upcoming payout" object (a payout exists only once it is sent): a
   sent payout not yet arrived wins (exact); otherwise the balance transactions still
   clearing are summed by `available_on`, and the earliest day (plus anything already

@@ -107,6 +107,13 @@ itself or from `stripe_account_id_legacy`.
   same `stripe-webhook` Supabase edge function.
 - **In-flight Checkout links** created before the switch still complete on the old
   account, and the webhook still records them.
+- **The owner never sees it** (her call: the switch is ours, not hers to think about).
+  Payouts adds every account the business has had into one card and one next payout,
+  the payout history lists both accounts' payouts together (same bank), Sales and
+  Disputes never showed the account, and "Open in Stripe" on a sale or dispute from
+  before the switch opens the account it was taken on. The one thing we cannot merge
+  is Stripe's own dashboard: the new account's starts from the switch, and the old
+  history stays in the old one.
 
 ## Kiosk card readers
 
