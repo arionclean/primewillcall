@@ -5,7 +5,8 @@
 // live. Three actions:
 //
 //   overview       Per business: account health, balance and the next payout
-//                  (see nextPayout). Also re-reads the latest payouts into
+//                  (see nextPayout), over every account it has had as one (see
+//                  retiredAccountMoney). Also re-reads the latest payouts into
 //                  stripe_payouts, so an in-transit payout flips to paid every
 //                  time the tab opens, with or without the payout webhook events.
 //                  (Disputes have their own tab and function, stripe-disputes.)
@@ -208,6 +209,60 @@ function nextPayout(recent: Stripe.Payout[], clearing: Map<string, number>, avai
   return { date: day, amount: clearing.get(day)! + Math.max(available, 0), onTheWay: false };
 }
 
+/** Payouts Stripe has sent that have not arrived: they have already left the balance. */
+function inTransitOf(recent: Stripe.Payout[] | null): number {
+  return (recent ?? [])
+    .filter((p) => p.status === "pending" || p.status === "in_transit")
+    .reduce((s, p) => s + p.amount, 0);
+}
+
+/** Several accounts' next payouts as one: the earliest day, and all that lands on it. */
+function mergeNext(parts: (NextPayout | null)[]): NextPayout | null {
+  const real = parts.filter((p): p is NextPayout => p !== null);
+  if (real.length === 0) return null;
+  const date = real.map((p) => p.date).sort()[0];
+  const same = real.filter((p) => p.date === date);
+  return {
+    date,
+    amount: same.reduce((s, p) => s + p.amount, 0),
+    onTheWay: same.every((p) => p.onTheWay),
+  };
+}
+
+interface AccountMoney {
+  available: number;
+  pending: number;
+  inTransit: number;
+  next: NextPayout | null;
+}
+
+/**
+ * What a retired account (one the business was switched away from) still holds and
+ * pays out. It is added into the business's card as if both were one account: the
+ * switch is ours, and the owner is never meant to notice it. Null when Stripe could
+ * not be read for it, which only leaves it out of the total.
+ */
+async function retiredAccountMoney(
+  stripe: Stripe,
+  accountId: string,
+  businessId: string,
+): Promise<AccountMoney | null> {
+  try {
+    const [balance, recent] = await Promise.all([
+      stripe.balance.retrieve({}, { stripeAccount: accountId }),
+      syncRecentPayouts(stripe, accountId, businessId),
+    ]);
+    const available = usd(balance.available);
+    const pending = usd(balance.pending);
+    // A drained account costs these two calls and no scan.
+    const clearing = pending !== 0 ? await clearingByDay(stripe, accountId) : new Map<string, number>();
+    return { available, pending, inTransit: inTransitOf(recent), next: nextPayout(recent, clearing, available) };
+  } catch (err) {
+    console.error(`[stripe-reports] retired account ${accountId} could not be read:`, err);
+    return null;
+  }
+}
+
 // ── Our ledger, for names and booking links ──────────────────────────────────
 
 interface LedgerMatch {
@@ -284,12 +339,12 @@ async function overview(stripe: Stripe): Promise<Response> {
   const businesses = await loadBusinesses();
 
   const results = await Promise.all(businesses.map(async (biz) => {
-    const [primary, ...previous] = accountsOf(biz);
+    const [primary, ...retired] = accountsOf(biz);
     const opts = { stripeAccount: primary };
     try {
       // A failed sync or scan only costs its own line on the card; it must not
       // hide the balance and health.
-      const [account, balance, recent, clearing] = await Promise.all([
+      const [account, balance, recent, clearing, ...old] = await Promise.all([
         stripe.accounts.retrieve(primary),
         stripe.balance.retrieve({}, opts),
         syncRecentPayouts(stripe, primary, biz.id).catch((err) => {
@@ -300,24 +355,10 @@ async function overview(stripe: Stripe): Promise<Response> {
           console.error(`[stripe-reports] clearing scan failed for ${primary}:`, err);
           return null;
         }),
-        ...previous.map((acct) =>
-          syncRecentPayouts(stripe, acct, biz.id).catch((err) => {
-            console.error(`[stripe-reports] payout sync failed for ${acct}:`, err);
-            return null;
-          })
-        ),
+        ...retired.map((acct) => retiredAccountMoney(stripe, acct, biz.id)),
       ]);
       const available = usd(balance.available);
-
-      // A retired account can still hold money that has to pay out.
-      const previousBalances = (await Promise.all(previous.map(async (acct) => {
-        try {
-          const b = await stripe.balance.retrieve({}, { stripeAccount: acct });
-          return { accountId: acct, available: usd(b.available), pending: usd(b.pending) };
-        } catch {
-          return null;
-        }
-      }))).filter((b): b is NonNullable<typeof b> => !!b && (b.available !== 0 || b.pending !== 0));
+      const others = old.filter((m): m is AccountMoney => m !== null);
 
       return {
         id: biz.id,
@@ -325,10 +366,16 @@ async function overview(stripe: Stripe): Promise<Response> {
         accountId: primary,
         error: null as string | null,
         health: health(account),
-        balance: { available, pending: usd(balance.pending) },
+        // Every account the business has, as one: a switch never shows on the card.
+        balance: {
+          available: available + others.reduce((s, m) => s + m.available, 0),
+          pending: usd(balance.pending) + others.reduce((s, m) => s + m.pending, 0),
+        },
+        inTransit: inTransitOf(recent) + others.reduce((s, m) => s + m.inTransit, 0),
         // Left out (undefined) when Stripe could not be read for it; null means none.
-        nextPayout: recent && clearing ? nextPayout(recent, clearing, available) : undefined,
-        previous: previousBalances,
+        nextPayout: recent && clearing
+          ? mergeNext([nextPayout(recent, clearing, available), ...others.map((m) => m.next)])
+          : undefined,
       };
     } catch (err) {
       console.error(`[stripe-reports] overview failed for ${biz.name}:`, err);
@@ -339,8 +386,8 @@ async function overview(stripe: Stripe): Promise<Response> {
         error: stripeErrorMessage(err),
         health: null,
         balance: null,
+        inTransit: 0,
         nextPayout: undefined,
-        previous: [],
       };
     }
   }));

@@ -35,11 +35,15 @@ function json(obj: unknown, status: number): Response {
  * Resolve the tablet's `kiosk` tag (kiosks.slug) to the connected account its
  * sales settle on: the per-kiosk override when set, otherwise the kiosk's
  * business's account. Returns null when unknown or no account can be resolved.
+ *
+ * The reader Location is the kiosk's one ON that account (kiosk_terminal_locations):
+ * a Location belongs to one account, so when the business switches to a new account
+ * its readers move with it, and back again on a switch back.
  */
 async function resolveKioskAccount(slug: string) {
   const { data: kiosk } = await sb
     .from("kiosks")
-    .select("id, business_id, stripe_account_id, terminal_location_id, simulated")
+    .select("id, business_id, stripe_account_id, simulated")
     .eq("slug", slug)
     .maybeSingle();
   if (!kiosk) return null;
@@ -55,9 +59,16 @@ async function resolveKioskAccount(slug: string) {
   }
   if (!account) return null;
 
+  const { data: loc } = await sb
+    .from("kiosk_terminal_locations")
+    .select("location_id")
+    .eq("kiosk_id", kiosk.id)
+    .eq("stripe_account_id", account)
+    .maybeSingle();
+
   return {
     account,
-    location: (kiosk.terminal_location_id as string | null) ?? null,
+    location: (loc?.location_id as string | undefined) ?? null,
     simulated: (kiosk.simulated as boolean | null) ?? false,
   };
 }

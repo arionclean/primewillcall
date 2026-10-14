@@ -226,15 +226,17 @@ const HEALTH_BADGE = {
 
 /**
  * One business: everything Stripe will send to its bank, then when. The total is
- * the money still clearing plus anything already cleared, plus a payout already
+ * the money still clearing plus anything already cleared, plus payouts already
  * sent and not yet arrived; the lines split it into the next payout and the rest.
+ * Over every Stripe account the business has had, as one (stripe-reports adds them
+ * up): moving a business to a new account is ours, and never shows here.
  */
 function BusinessCard({ business: b }: { business: BusinessOverview }) {
   const next = b.nextPayout;
   const balance = (b.balance?.pending ?? 0) + (b.balance?.available ?? 0);
   // A sent payout has left the balance, so it is added back; a scheduled one is
   // still inside it.
-  const total = balance + (next?.onTheWay ? next.amount : 0);
+  const total = balance + b.inTransit;
   const later = next ? total - next.amount : 0;
   return (
     <Card className="h-full">
@@ -303,12 +305,6 @@ function BusinessCard({ business: b }: { business: BusinessOverview }) {
                   {next === null ? "Nothing on the way right now" : "Payout dates are not available right now"}
                 </p>
               )}
-              {b.previous.map((p) => (
-                <p key={p.accountId} className="flex justify-between gap-3">
-                  <span className="text-muted-foreground">Left on the old Stripe account</span>
-                  <span className="font-medium">{formatCentsExact(p.available + p.pending)}</span>
-                </p>
-              ))}
             </div>
           </>
         )}

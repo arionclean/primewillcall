@@ -159,37 +159,11 @@ async function handleEvent(event: Stripe.Event): Promise<void> {
 
       await sb.from("businesses").update(status).eq("stripe_account_id", account.id);
 
-      // A business being moved to a new account has that account parked in
-      // stripe_account_id_pending, taking nothing, until Stripe enables charges on
-      // it. Stripe tells us the moment that happens, so promote it here instead of
-      // asking someone to watch for it and press a button. Gated on charges_enabled,
-      // so the business never points at an account that cannot take money. The old
-      // id is kept: its balance still has to pay out, and refunds of charges it took
-      // are routed by stripe_transactions.connected_account_id.
-      if (account.charges_enabled) {
-        const { data: moving } = await sb
-          .from("businesses")
-          .select("id, stripe_account_id, stripe_account_id_legacy")
-          .eq("stripe_account_id_pending", account.id)
-          .maybeSingle();
-        if (moving) {
-          const legacy = [...(moving.stripe_account_id_legacy ?? [])];
-          if (moving.stripe_account_id && !legacy.includes(moving.stripe_account_id)) {
-            legacy.push(moving.stripe_account_id);
-          }
-          await sb
-            .from("businesses")
-            .update({
-              stripe_account_id: account.id,
-              stripe_account_id_pending: null,
-              stripe_account_id_legacy: legacy,
-              stripe_fees_payer: account.controller?.fees?.payer ?? null,
-              ...status,
-            })
-            .eq("id", moving.id);
-          console.log(`[stripe-webhook] business ${moving.id} switched to ${account.id}`);
-        }
-      }
+      // A new account waiting in stripe_account_id_pending is NOT promoted here, even
+      // once Stripe enables charges on it. The switch is internal and deliberate (the
+      // stripe-account-switch function, run by us): a business with iPads has to
+      // reconnect their card readers afterwards, so it happens when the desk is closed,
+      // and the switch sets the readers up on the new account first.
       return;
     }
     default:

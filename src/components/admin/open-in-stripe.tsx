@@ -9,17 +9,17 @@ import { cn } from "@/lib/utils";
 
 /**
  * "Open in Stripe": opens the business's own Stripe dashboard in a new tab, through a
- * one-time login link from `stripe-connect`, so no Stripe sign-in is needed. The link is
- * always for the business's current account, so a caller whose account may be another
- * one (a dispute on a retired account) passes no `businessId`. That, and an account
- * Stripe makes no such link for (one that is not an Express account), opens the account's
- * page in Prime's dashboard instead.
+ * one-time login link from `stripe-connect`, so no Stripe sign-in is needed. It opens
+ * `accountId`, which may be an account the business was moved away from (a dispute on
+ * a sale taken before the move lives there). An account Stripe makes no such link for
+ * (one that is not an Express account) opens on its page in Prime's dashboard instead.
  */
 export function OpenInStripe({
   businessId,
   accountId,
   className,
 }: {
+  /** Null when the account's business is unknown: Prime's dashboard page is all there is. */
   businessId: string | null;
   accountId: string;
   className?: string;
@@ -36,6 +36,7 @@ export function OpenInStripe({
       const { data } = await invokeEdgeFunction<{ url?: string }>("stripe-connect", {
         business_id: businessId,
         action: "login_link",
+        account_id: accountId,
       });
       setOpening(false);
       if (data?.url) url = data.url;

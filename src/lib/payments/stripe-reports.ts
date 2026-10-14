@@ -15,7 +15,11 @@ export type BusinessOverview = {
   /** Set when Stripe could not be read for this business; the rest is null then. */
   error: string | null;
   health: { level: HealthLevel; messages: string[]; deadline: string | null } | null;
-  /** Cents. `available` can be sent now; `pending` is still clearing. */
+  /**
+   * Cents. `available` can be sent now; `pending` is still clearing. Like every number
+   * here, summed over all the Stripe accounts the business has had, so moving it to a
+   * new account never shows.
+   */
   balance: { available: number; pending: number } | null;
   /**
    * From Stripe: a payout already sent and not yet arrived, else the earliest day
@@ -23,8 +27,8 @@ export type BusinessOverview = {
    * could not be read for it.
    */
   nextPayout?: { date: string; amount: number; onTheWay: boolean } | null;
-  /** A retired Stripe account that still holds money. */
-  previous: { accountId: string; available: number; pending: number }[];
+  /** Cents in payouts Stripe has sent that have not arrived (out of the balance). */
+  inTransit: number;
 };
 
 export type Overview = { businesses: BusinessOverview[] };

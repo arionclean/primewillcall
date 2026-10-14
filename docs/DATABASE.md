@@ -682,8 +682,18 @@ business's current account.
   Card kiosk sales need no table: a Terminal PaymentIntent is a direct charge, so the webhook
   records it into `stripe_transactions` with `source='kiosk'`.
 - `kiosks` (Kiosk POS columns) — `business_id`, `slug` (the tablet's login tag; unique),
-  `stripe_account_id` (optional per-kiosk Connect override), `terminal_location_id`,
-  `simulated`. Maps a tablet to the connected account its sales settle on.
+  `stripe_account_id` (optional per-kiosk Connect override), `terminal_location_id`
+  (superseded, no longer read), `simulated`. Maps a tablet to the connected account its
+  sales settle on.
+- `kiosk_terminal_locations` (2026-10-13): the Stripe Terminal Location (`location_id`,
+  `tml_...`) a kiosk's card readers use on each account (`stripe_account_id`) it has charged
+  on; primary key (`kiosk_id`, `stripe_account_id`). A Location belongs to one account, so
+  `kiosk-connection-token` returns the one for the account the kiosk charges on NOW, and a
+  business's switch to its new Stripe account moves its readers with it. The internal
+  `stripe-account-switch` function creates the target account's rows (copying the old
+  Location's name and address) before it switches, and refuses to switch if it cannot.
+  Backfilled from `kiosks.terminal_location_id`. Owner may read; only the edge functions
+  write. See docs/stripe-fee-free-accounts.md.
 
 - `kiosk_sales` — kiosk **card flow v2** (docs/kiosk-card-flow-v2.md): one row per card
   sale, written by `kiosk-sale-start` BEFORE the reader is asked for the card (`ref` = the KS
@@ -789,9 +799,13 @@ payouts or disputes); no write policies, the functions write with the service ro
   range defaults to the current month to date.
 - **Payouts** (`/admin/payments/payouts`, owner only): per business, account health in
   plain words (paused charges or payouts, what Stripe needs and by when, with a link to the
-  business settings), one total "coming to the bank" (balance `pending` + `available`, plus a
-  payout already sent and not yet arrived), split into the next payout (date and amount)
-  and "later", and any balance left on a retired account. The next payout comes from
+  business settings), one total "coming to the bank" (balance `pending` + `available`, plus
+  payouts already sent and not yet arrived), split into the next payout (date and amount)
+  and "later". Every number is summed over ALL the business's Stripe accounts, current and
+  retired (`retiredAccountMoney` in `stripe-reports`), and the next payout is the earliest
+  day across them: moving a business to a new account is internal and never shows on the
+  card (the owner's call, 2026-10-13; it used to add a "left on the old account" line). The
+  health badge is the current account's. The next payout comes from
   Stripe, which has no "upcoming payout" object (a payout exists only once it is sent): a
   sent payout not yet arrived wins (exact); otherwise the balance transactions still
   clearing are summed by `available_on`, and the earliest day (plus anything already

@@ -148,7 +148,9 @@ supabase/functions/            Deno edge functions. Everything public, webhook-d
                                gp-slots, gp-validate, gp-book, xano-booking-sync,
                                xano-mirror-dispatch, whatsapp-send, whatsapp-templates,
                                stripe-reports (the owner's Payouts tab; reads Stripe only),
-                               stripe-disputes (the owner's Disputes tab; answers disputes).
+                               stripe-disputes (the owner's Disputes tab; answers disputes),
+                               stripe-account-switch (internal: moves a business onto its
+                               new Stripe account, card readers included; no app button).
                                `_shared/` holds the modules they share (sms.ts,
                                whatsapp.ts, staff-auth.ts, gp.ts, ny-time.ts,
                                parse-booking-email.ts, inbound-email.ts (the Mailroom's
@@ -705,9 +707,16 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   replacement account -> onboard -> switch over, using
   `businesses.stripe_account_id_pending` / `_legacy` / `stripe_fees_payer`. Both accounts
   run side by side, so the switch is one gated row update with no window where charges fail.
-  **Still to do**: the kiosk Terminal side of that migration (Locations and readers belong
-  to an account, so a migrated kiosk business needs a new Location + re-registered readers;
-  deliberately not built until there are accounts to point at); taking payment inline in the
+  **Kiosk readers follow the switch** (2026-10-13): a Terminal Location belongs to one
+  account, so `kiosk_terminal_locations` keeps one per kiosk per account,
+  `kiosk-connection-token` hands out the current account's, and the switch copies the old
+  Locations onto the new account before it moves the business. The switch is INTERNAL:
+  no button in the app (the owner's call), never automatic (the webhook no longer
+  promotes a pending account). We run the `stripe-account-switch` edge function from SQL
+  with the cron secret, dry run first, when the desks are closed, because afterwards
+  each iPad of that business restarts the app and reconnects its reader. Steps and the
+  SQL in [`docs/stripe-fee-free-accounts.md`](docs/stripe-fee-free-accounts.md).
+  **Still to do**: taking payment inline in the
   internal `/schedule` new-booking flow; and saved-customer flows
   (`customers.stripe_customer_id` is still a placeholder). Go-live config (platform key,
   register the two webhook endpoints, connect each business) is the remaining operational

@@ -32,7 +32,6 @@ export type DisputeHeader = {
   reason: string;
   customerName: string | null;
   businessName: string | null;
-  /** Set when the dispute is on the business's current Stripe account. */
   businessId: string | null;
   dueBy: string | null;
   created: string;

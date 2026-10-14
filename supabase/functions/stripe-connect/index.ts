@@ -10,9 +10,11 @@
 // re-checks the role before writing. Owner-only for anything that moves which
 // account a business charges on; owner or that business's own manager for the rest.
 //
-// Every acct_ id written here comes from Stripe itself or from the business's own
-// stripe_account_id_legacy. Nothing accepts a free-typed account id, so a caller can
-// never point a business at an account it has never used.
+// Every acct_ id written here comes from Stripe itself. Nothing accepts a free-typed
+// account id, so a caller can never point a business at an account it has never used.
+//
+// Moving a business onto its new account (or back) is NOT here: it is internal, run by
+// us from SQL through stripe-account-switch, never a button in the app.
 //
 // Secrets: STRIPE_SECRET_KEY (Prime's PLATFORM key), APP_URL. SUPABASE_URL and
 // SUPABASE_SERVICE_ROLE_KEY are provided by the platform.
@@ -39,15 +41,11 @@ type Action =
   | "login_link"
   | "refresh"
   | "start_migration"
-  | "switch_over"
-  | "switch_back"
   | "cancel_migration";
 
 /** Actions that change which account a business's money lands on. */
 const OWNER_ONLY: ReadonlySet<Action> = new Set<Action>([
   "start_migration",
-  "switch_over",
-  "switch_back",
   "cancel_migration",
 ]);
 
@@ -55,6 +53,7 @@ interface Payload {
   action?: Action;
   business_id?: string;
   target?: "primary" | "pending";
+  /** login_link only: one of THIS business's accounts (current, waiting or retired). */
   account_id?: string;
 }
 
@@ -218,9 +217,19 @@ Deno.serve(withSentry("stripe-connect", async (req) => {
     }
 
     case "login_link": {
-      const accountId = payload.target === "pending"
-        ? biz.stripe_account_id_pending
-        : biz.stripe_account_id;
+      // A sale taken before the business was moved to a new account (and a dispute on
+      // it) lives on the account it was taken on, so a link can ask for that one. Only
+      // this business's own accounts are accepted.
+      const own = [
+        biz.stripe_account_id,
+        biz.stripe_account_id_pending,
+        ...(biz.stripe_account_id_legacy ?? []),
+      ];
+      if (payload.account_id && !own.includes(payload.account_id)) {
+        return json({ error: "That is not one of this business's Stripe accounts." }, 400);
+      }
+      const accountId = payload.account_id ||
+        (payload.target === "pending" ? biz.stripe_account_id_pending : biz.stripe_account_id);
       if (!accountId) return json({ error: "This business has no Stripe account yet." }, 400);
       try {
         const link = await stripe.accounts.createLoginLink(accountId);
@@ -250,9 +259,10 @@ Deno.serve(withSentry("stripe-connect", async (req) => {
      * Start moving a business off platform-paid Connect fees.
      *
      * Creates a SECOND account with the fee-free controller and parks it in
-     * stripe_account_id_pending. The live account keeps taking every charge until
-     * switch_over runs, so this is safe to call at any time. Calling it again while
-     * a pending account exists re-links that one instead of creating another.
+     * stripe_account_id_pending. The live account keeps taking every charge until we
+     * switch the business over (stripe-account-switch), so this is safe to call at any
+     * time. Calling it again while a pending account exists re-links that one instead
+     * of creating another.
      */
     case "start_migration": {
       if (biz.stripe_account_id_pending) {
@@ -286,83 +296,6 @@ Deno.serve(withSentry("stripe-connect", async (req) => {
         return await onboardingLink(businessId, account.id);
       } catch (err) {
         console.error("[stripe-connect] migration start failed:", err);
-        return json({ error: stripeErrorMessage(err) }, 502);
-      }
-    }
-
-    /**
-     * Make the pending account the live one.
-     *
-     * Gated on charges_enabled so there is never a moment where the business points
-     * at an account that cannot take money. The old account moves to the legacy list
-     * rather than being forgotten: its balance still has to pay out, and refunds of
-     * charges it took are routed by stripe_transactions.connected_account_id.
-     */
-    case "switch_over": {
-      if (!biz.stripe_account_id_pending) {
-        return json({ error: "There is no new account waiting to switch to." }, 400);
-      }
-      try {
-        const account = await stripe.accounts.retrieve(biz.stripe_account_id_pending);
-        if (!account.charges_enabled) {
-          return json({
-            error:
-              "Stripe has not enabled charges on the new account yet. Finish onboarding first.",
-          }, 400);
-        }
-        const legacy = [...(biz.stripe_account_id_legacy ?? [])];
-        if (biz.stripe_account_id && !legacy.includes(biz.stripe_account_id)) {
-          legacy.push(biz.stripe_account_id);
-        }
-        await db
-          .from("businesses")
-          .update({
-            stripe_account_id: account.id,
-            stripe_account_id_pending: null,
-            stripe_account_id_legacy: legacy,
-            ...accountStatusColumns(account),
-          })
-          .eq("id", businessId);
-        return json({ ok: true });
-      } catch (err) {
-        console.error("[stripe-connect] switch over failed:", err);
-        return json({ error: stripeErrorMessage(err) }, 502);
-      }
-    }
-
-    /**
-     * The undo for switch_over. Accepts ONLY an id already in this business's legacy
-     * list, and the account being replaced takes the other one's place, so the two
-     * can be swapped back and forth without the list drifting.
-     */
-    case "switch_back": {
-      const accountId = (payload.account_id ?? "").trim();
-      if (!accountId || !(biz.stripe_account_id_legacy ?? []).includes(accountId)) {
-        return json({ error: "That is not one of this business's previous accounts." }, 400);
-      }
-      try {
-        const account = await stripe.accounts.retrieve(accountId);
-        if (!account.charges_enabled) {
-          return json({
-            error:
-              "Stripe is not allowing charges on that account, so payments cannot go back to it.",
-          }, 400);
-        }
-        const legacy = (biz.stripe_account_id_legacy ?? []).filter((id) => id !== accountId);
-        if (biz.stripe_account_id && !legacy.includes(biz.stripe_account_id)) {
-          legacy.push(biz.stripe_account_id);
-        }
-        await db
-          .from("businesses")
-          .update({
-            stripe_account_id: account.id,
-            stripe_account_id_legacy: legacy,
-            ...accountStatusColumns(account),
-          })
-          .eq("id", businessId);
-        return json({ ok: true });
-      } catch (err) {
-        console.error("[stripe-connect] switch back failed:", err);
         return json({ error: stripeErrorMessage(err) }, 502);
       }
     }

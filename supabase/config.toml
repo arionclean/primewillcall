@@ -167,3 +167,8 @@ verify_jwt = true
 # owner's own token; answers disputes on the business's Stripe account.
 [functions.stripe-disputes]
 verify_jwt = true
+
+# Internal: moves a business onto its new Stripe account (and its kiosk card readers
+# with it). No button in the app; we call it from SQL with x-cron-secret, not a user token.
+[functions.stripe-account-switch]
+verify_jwt = false

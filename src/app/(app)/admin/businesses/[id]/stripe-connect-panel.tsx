@@ -18,11 +18,8 @@ type ConnectRequest = {
     | "login_link"
     | "refresh"
     | "start_migration"
-    | "switch_over"
-    | "switch_back"
     | "cancel_migration";
   target?: "primary" | "pending";
-  account_id?: string;
 };
 
 type ConnectResponse = {

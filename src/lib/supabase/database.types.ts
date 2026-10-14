@@ -1653,6 +1653,35 @@ export type Database = {
           },
         ]
       }
+      kiosk_terminal_locations: {
+        Row: {
+          created_at: string
+          kiosk_id: string
+          location_id: string
+          stripe_account_id: string
+        }
+        Insert: {
+          created_at?: string
+          kiosk_id: string
+          location_id: string
+          stripe_account_id: string
+        }
+        Update: {
+          created_at?: string
+          kiosk_id?: string
+          location_id?: string
+          stripe_account_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kiosk_terminal_locations_kiosk_id_fkey"
+            columns: ["kiosk_id"]
+            isOneToOne: false
+            referencedRelation: "kiosks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       kiosk_tours: {
         Row: {
           created_at: string
