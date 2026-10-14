@@ -107,13 +107,15 @@ async function moveReaders(
         const made = await stripe.terminal.locations.create(
           {
             display_name,
+            // A blank field is left out, not sent empty: Stripe reads "" as "unset this"
+            // and refuses it (Key West's line2 is blank, 2026-10-14).
             address: {
-              line1: address.line1 ?? undefined,
-              line2: address.line2 ?? undefined,
-              city: address.city ?? undefined,
-              state: address.state ?? undefined,
-              postal_code: address.postal_code ?? undefined,
-              country: address.country ?? "US",
+              line1: address.line1 || undefined,
+              line2: address.line2 || undefined,
+              city: address.city || undefined,
+              state: address.state || undefined,
+              postal_code: address.postal_code || undefined,
+              country: address.country || "US",
             },
           },
           { stripeAccount: toAccount, idempotencyKey: `kiosk-location:${k.from}:${toAccount}` },
