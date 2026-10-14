@@ -47,7 +47,8 @@ re-uploading documents.
 
 ## The per-business runbook
 
-All of it lives on `/admin/businesses/[id]` under **Payments**, owner-only.
+Steps 1 to 3 live on `/admin/businesses/[id]` under **Payments**, owner-only. Step 4 is
+internal: there is no button for it in the app (the owner's call, 2026-10-13).
 
 1. **Refresh status.** Fills `stripe_fees_payer`. If the badge reads "Prime is billed
    Stripe's fees", this business is worth migrating.
@@ -56,25 +57,39 @@ All of it lives on `/admin/businesses/[id]` under **Payments**, owner-only.
    handling every charge, so this step is safe to do at any time of day.
 3. **Send the business through onboarding.** The same Stripe hosted flow as the first
    time. "Continue onboarding" reopens it if they stop halfway.
-4. **Switch over.** The "Switch to the new account" button, shown once Stripe reports
-   `charges_enabled` on the new account. It is a button on purpose, never automatic
-   (the webhook used to promote the account on `account.updated`; removed 2026-10-13):
-   a business with iPads has to reconnect their card readers afterwards, so the owner
-   switches when the desk is closed. It first gives each kiosk a reader Location on the
-   new account (see "Kiosk card readers" below), then moves the old id into
-   `stripe_account_id_legacy` and makes the new one `stripe_account_id`. From the next
-   request, every charge path uses it.
+4. **Switch over (internal, by us).** Done when the business's desks are closed, by
+   the `stripe-account-switch` edge function, called from SQL with the cron secret. Never
+   automatic: the webhook used to promote the account on `account.updated` (it never
+   fired, that event is not sent to us) and that was removed on 2026-10-13. Run it as a
+   dry run first; it answers with what it would do and changes nothing:
+
+   ```sql
+   select net.http_post(
+     url := 'https://qbnizuhozzwkiitfkjee.supabase.co/functions/v1/stripe-account-switch',
+     headers := jsonb_build_object('Content-Type', 'application/json',
+       'x-cron-secret', (select decrypted_secret from vault.decrypted_secrets
+                         where name = 'dispatch_cron_secret')),
+     body := jsonb_build_object('business_id', '<uuid>', 'dry_run', true),
+     timeout_milliseconds := 30000);
+   -- the answer, a few seconds later (id = what the call returned):
+   select status_code, content from net._http_response where id = <id>;
+   ```
+
+   Then the same call without `dry_run`. It checks Stripe reports `charges_enabled` on
+   the new account, gives each kiosk a reader Location there (see "Kiosk card readers"
+   below), and only then moves the old id into `stripe_account_id_legacy` and makes the
+   new one `stripe_account_id`. From the next request, every charge path uses it. If
+   anything fails it answers "Nothing was switched" and the business stays put.
 5. **On each iPad of that business**: close and reopen the app, then connect the card
    reader again in Settings. The app asks for its Stripe account and reader Location once
    at login, so until it restarts it keeps using the old account's.
 6. **Leave the old account open** until its remaining balance pays out. Do not delete it.
 
-Step 4 is reversible: each retired account is listed with a **Send payments back here**
-button that points the business at it again, which is why the old id is kept rather than
-dropped. That button is also the only way an account id is ever chosen by hand, and it
-can only pick one of this business's own previous accounts. There is deliberately no
-free-text "paste an `acct_...`" field anywhere: every account the app writes comes from
-Stripe itself or from `stripe_account_id_legacy`.
+Step 4 is reversible: the same call with `'account_id', '<acct_...>'` in the body moves
+the business back to that account, which must be in its `stripe_account_id_legacy` (that
+is why the old id is kept rather than dropped). There is deliberately no free-text
+"paste an `acct_...`" anywhere: every account a business is pointed at comes from Stripe
+itself or from `stripe_account_id_legacy`.
 
 ## Why the cutover is safe
 
@@ -103,8 +118,8 @@ the account its Location is on. So the Location is kept per kiosk per account, i
 - `kiosk-connection-token` returns the Location for the account the kiosk charges on
   right now. The business's switch (one row update) therefore moves its readers too, and
   a switch back moves them back.
-- `switch_over` and `switch_back` in `stripe-connect` first make sure every kiosk of the
-  business has a row for the target account. A missing one is created by copying the
+- `stripe-account-switch` first makes sure every kiosk of the business has a row for the
+  target account. A missing one is created by copying the
   name and address of the kiosk's Location on the current account (kiosks sharing a
   Location share the copy; the create carries an idempotency key, so a retry does not
   make a second one). If any of it fails, nothing is switched.
@@ -131,11 +146,12 @@ Added by `supabase/migrations/20260814090000_stripe_fee_free_accounts.sql`:
 
 ## Code
 
-- `connectControllerParams()` in `src/lib/stripe/server.ts` is the single definition of
-  the account shape. Do not reintroduce `type: "express"`.
-- `startFeeFreeMigration` / `switchToPendingAccount` / `cancelFeeFreeMigration` /
-  `switchToLegacyAccount` in `src/app/(app)/admin/businesses/[id]/payments-actions.ts`
-  are owner-only and re-check the role before writing. `switchToLegacyAccount` accepts
-  only an id already in this business's `stripe_account_id_legacy`.
+- `connectControllerParams()` in `supabase/functions/_shared/stripe.ts` is the single
+  definition of the account shape. Do not reintroduce `type: "express"`.
+- `start_migration` / `cancel_migration` in the `stripe-connect` edge function (the
+  Payments panel) are owner-only and re-check the role before writing.
+- The switch itself, both directions, is the internal `stripe-account-switch` edge
+  function (cron secret only). A switch back accepts only an id already in this
+  business's `stripe_account_id_legacy`.
 - New businesses created through "Set up payments" already use the fee-free shape, so
   only the existing fleet needs the migration.

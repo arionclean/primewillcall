@@ -10,14 +10,14 @@
 // re-checks the role before writing. Owner-only for anything that moves which
 // account a business charges on; owner or that business's own manager for the rest.
 //
-// Every acct_ id written here comes from Stripe itself or from the business's own
-// stripe_account_id_legacy. Nothing accepts a free-typed account id, so a caller can
-// never point a business at an account it has never used.
+// Every acct_ id written here comes from Stripe itself. Nothing accepts a free-typed
+// account id, so a caller can never point a business at an account it has never used.
+//
+// Moving a business onto its new account (or back) is NOT here: it is internal, run by
+// us from SQL through stripe-account-switch, never a button in the app.
 //
 // Secrets: STRIPE_SECRET_KEY (Prime's PLATFORM key), APP_URL. SUPABASE_URL and
 // SUPABASE_SERVICE_ROLE_KEY are provided by the platform.
-
-import type Stripe from "npm:stripe@22.3.0";
 
 import {
   accountFeesPayer,
@@ -41,15 +41,11 @@ type Action =
   | "login_link"
   | "refresh"
   | "start_migration"
-  | "switch_over"
-  | "switch_back"
   | "cancel_migration";
 
 /** Actions that change which account a business's money lands on. */
 const OWNER_ONLY: ReadonlySet<Action> = new Set<Action>([
   "start_migration",
-  "switch_over",
-  "switch_back",
   "cancel_migration",
 ]);
 
@@ -57,7 +53,6 @@ interface Payload {
   action?: Action;
   business_id?: string;
   target?: "primary" | "pending";
-  account_id?: string;
 }
 
 interface BusinessRow {
@@ -86,99 +81,6 @@ async function loadBusiness(businessId: string): Promise<BusinessRow | null> {
     .eq("id", businessId)
     .maybeSingle();
   return (data as BusinessRow | null) ?? null;
-}
-
-/**
- * Give each of the business's kiosks a card reader Location on `toAccount` before its
- * money moves there. A Stripe Terminal Location belongs to one account and a reader can
- * only take a card for the account its Location is on, so without this the desk's
- * readers would stay on the old account and every card sale there would fail.
- *
- * Each new Location copies the name and address of the kiosk's Location on
- * `fromAccount`, and kiosks sharing one there (two desks at one dock) share the copy.
- * kiosk-connection-token picks the Location by the account the kiosk charges on, so
- * the rows written here take effect the moment the business's account changes, and not
- * before. Skipped: kiosks with their own account (kiosks.stripe_account_id, they do not
- * follow the business) and kiosks with no Location (no reader). Safe to run again: a
- * kiosk that already has a Location on `toAccount` keeps it. Throws on any failure, so
- * the caller does not switch with the readers half ready.
- */
-async function ensureKioskLocations(
-  businessId: string,
-  fromAccount: string,
-  toAccount: string,
-): Promise<void> {
-  const stripe = getStripe()!;
-  const { data, error } = await db
-    .from("kiosks")
-    .select("id, kiosk_terminal_locations(stripe_account_id, location_id)")
-    .eq("business_id", businessId)
-    .is("stripe_account_id", null);
-  if (error) throw new Error(error.message);
-
-  const kiosks = (data ?? []).map((k) => {
-    const rows = (k.kiosk_terminal_locations ?? []) as { stripe_account_id: string; location_id: string }[];
-    return {
-      id: k.id as string,
-      from: rows.find((r) => r.stripe_account_id === fromAccount)?.location_id ?? null,
-      to: rows.find((r) => r.stripe_account_id === toAccount)?.location_id ?? null,
-    };
-  });
-
-  // Old Location -> its copy, seeded from kiosks already done so a sibling reuses it.
-  const copies = new Map<string, string>();
-  for (const k of kiosks) if (k.from && k.to) copies.set(k.from, k.to);
-
-  for (const k of kiosks) {
-    if (k.to || !k.from) continue;
-    let copy = copies.get(k.from);
-    if (!copy) {
-      const old = await stripe.terminal.locations.retrieve(k.from, {}, { stripeAccount: fromAccount });
-      if ("deleted" in old && old.deleted) {
-        throw new Error(`The card reader location ${k.from} was deleted in Stripe.`);
-      }
-      const { display_name, address } = old as Stripe.Terminal.Location;
-      const created = await stripe.terminal.locations.create(
-        {
-          display_name,
-          address: {
-            line1: address.line1 ?? undefined,
-            line2: address.line2 ?? undefined,
-            city: address.city ?? undefined,
-            state: address.state ?? undefined,
-            postal_code: address.postal_code ?? undefined,
-            country: address.country ?? "US",
-          },
-        },
-        // A retry after a half-done run gets the same Location back, not a second one.
-        { stripeAccount: toAccount, idempotencyKey: `kiosk-location:${k.from}:${toAccount}` },
-      );
-      copy = created.id;
-      copies.set(k.from, copy);
-    }
-    const { error: insertError } = await db
-      .from("kiosk_terminal_locations")
-      .insert({ kiosk_id: k.id, stripe_account_id: toAccount, location_id: copy });
-    if (insertError) throw new Error(insertError.message);
-  }
-}
-
-/** ensureKioskLocations for a switch: null when ready, else the error to answer with. */
-async function readersReady(
-  businessId: string,
-  fromAccount: string,
-  toAccount: string,
-): Promise<Response | null> {
-  try {
-    await ensureKioskLocations(businessId, fromAccount, toAccount);
-    return null;
-  } catch (err) {
-    console.error("[stripe-connect] kiosk reader locations failed:", err);
-    return json({
-      error:
-        `The card readers could not be set up on that account, so nothing was switched. ${stripeErrorMessage(err)}`,
-    }, 502);
-  }
 }
 
 /** Hosted onboarding link, used both for first setup and for fixing requirements. */
@@ -345,9 +247,10 @@ Deno.serve(withSentry("stripe-connect", async (req) => {
      * Start moving a business off platform-paid Connect fees.
      *
      * Creates a SECOND account with the fee-free controller and parks it in
-     * stripe_account_id_pending. The live account keeps taking every charge until
-     * switch_over runs, so this is safe to call at any time. Calling it again while
-     * a pending account exists re-links that one instead of creating another.
+     * stripe_account_id_pending. The live account keeps taking every charge until we
+     * switch the business over (stripe-account-switch), so this is safe to call at any
+     * time. Calling it again while a pending account exists re-links that one instead
+     * of creating another.
      */
     case "start_migration": {
       if (biz.stripe_account_id_pending) {
@@ -381,91 +284,6 @@ Deno.serve(withSentry("stripe-connect", async (req) => {
         return await onboardingLink(businessId, account.id);
       } catch (err) {
         console.error("[stripe-connect] migration start failed:", err);
-        return json({ error: stripeErrorMessage(err) }, 502);
-      }
-    }
-
-    /**
-     * Make the pending account the live one.
-     *
-     * Gated on charges_enabled so there is never a moment where the business points
-     * at an account that cannot take money. The old account moves to the legacy list
-     * rather than being forgotten: its balance still has to pay out, and refunds of
-     * charges it took are routed by stripe_transactions.connected_account_id.
-     */
-    case "switch_over": {
-      if (!biz.stripe_account_id_pending) {
-        return json({ error: "There is no new account waiting to switch to." }, 400);
-      }
-      try {
-        const account = await stripe.accounts.retrieve(biz.stripe_account_id_pending);
-        if (!account.charges_enabled) {
-          return json({
-            error:
-              "Stripe has not enabled charges on the new account yet. Finish onboarding first.",
-          }, 400);
-        }
-        if (biz.stripe_account_id) {
-          const readers = await readersReady(biz.id, biz.stripe_account_id, account.id);
-          if (readers) return readers;
-        }
-        const legacy = [...(biz.stripe_account_id_legacy ?? [])];
-        if (biz.stripe_account_id && !legacy.includes(biz.stripe_account_id)) {
-          legacy.push(biz.stripe_account_id);
-        }
-        await db
-          .from("businesses")
-          .update({
-            stripe_account_id: account.id,
-            stripe_account_id_pending: null,
-            stripe_account_id_legacy: legacy,
-            ...accountStatusColumns(account),
-          })
-          .eq("id", businessId);
-        return json({ ok: true });
-      } catch (err) {
-        console.error("[stripe-connect] switch over failed:", err);
-        return json({ error: stripeErrorMessage(err) }, 502);
-      }
-    }
-
-    /**
-     * The undo for switch_over. Accepts ONLY an id already in this business's legacy
-     * list, and the account being replaced takes the other one's place, so the two
-     * can be swapped back and forth without the list drifting.
-     */
-    case "switch_back": {
-      const accountId = (payload.account_id ?? "").trim();
-      if (!accountId || !(biz.stripe_account_id_legacy ?? []).includes(accountId)) {
-        return json({ error: "That is not one of this business's previous accounts." }, 400);
-      }
-      try {
-        const account = await stripe.accounts.retrieve(accountId);
-        if (!account.charges_enabled) {
-          return json({
-            error:
-              "Stripe is not allowing charges on that account, so payments cannot go back to it.",
-          }, 400);
-        }
-        if (biz.stripe_account_id) {
-          const readers = await readersReady(biz.id, biz.stripe_account_id, account.id);
-          if (readers) return readers;
-        }
-        const legacy = (biz.stripe_account_id_legacy ?? []).filter((id) => id !== accountId);
-        if (biz.stripe_account_id && !legacy.includes(biz.stripe_account_id)) {
-          legacy.push(biz.stripe_account_id);
-        }
-        await db
-          .from("businesses")
-          .update({
-            stripe_account_id: account.id,
-            stripe_account_id_legacy: legacy,
-            ...accountStatusColumns(account),
-          })
-          .eq("id", businessId);
-        return json({ ok: true });
-      } catch (err) {
-        console.error("[stripe-connect] switch back failed:", err);
         return json({ error: stripeErrorMessage(err) }, 502);
       }
     }

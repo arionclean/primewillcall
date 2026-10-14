@@ -689,9 +689,9 @@ business's current account.
   `tml_...`) a kiosk's card readers use on each account (`stripe_account_id`) it has charged
   on; primary key (`kiosk_id`, `stripe_account_id`). A Location belongs to one account, so
   `kiosk-connection-token` returns the one for the account the kiosk charges on NOW, and a
-  business's switch to its new Stripe account moves its readers with it. `stripe-connect`'s
-  `switch_over` / `switch_back` create the target account's rows (copying the old
-  Location's name and address) before they switch, and refuse to switch if they cannot.
+  business's switch to its new Stripe account moves its readers with it. The internal
+  `stripe-account-switch` function creates the target account's rows (copying the old
+  Location's name and address) before it switches, and refuses to switch if it cannot.
   Backfilled from `kiosks.terminal_location_id`. Owner may read; only the edge functions
   write. See docs/stripe-fee-free-accounts.md.
 

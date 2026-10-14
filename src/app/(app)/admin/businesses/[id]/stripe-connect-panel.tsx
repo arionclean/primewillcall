@@ -18,19 +18,14 @@ type ConnectRequest = {
     | "login_link"
     | "refresh"
     | "start_migration"
-    | "switch_over"
-    | "switch_back"
     | "cancel_migration";
   target?: "primary" | "pending";
-  account_id?: string;
 };
 
 type ConnectResponse = {
   url?: string;
   ok?: true;
   configured?: boolean;
-  /** The new account waiting to take over, from `status`. */
-  pending?: { id: string; chargesEnabled: boolean } | null;
 };
 
 /**
@@ -72,8 +67,6 @@ type BusinessPaymentsFields = {
 
 type StripeConnectPanelProps = {
   business: BusinessPaymentsFields;
-  /** How many iPads (kiosks) charge on this business's account. */
-  kioskCount?: number;
   /** True when the page loaded from a Stripe onboarding return_url. */
   justReturned?: boolean;
 };
@@ -139,7 +132,6 @@ const DOT: Record<Tone, string> = {
 
 export function StripeConnectPanel({
   business,
-  kioskCount = 0,
   justReturned = false,
 }: StripeConnectPanelProps) {
   const router = useRouter();
@@ -149,8 +141,6 @@ export function StripeConnectPanel({
   // null while the first status call is in flight, so the panel does not flash
   // "not switched on" at someone whose platform is configured fine.
   const [configured, setConfigured] = useState<boolean | null>(null);
-  // The new account has finished Stripe's setup and only waits for the switch.
-  const [readyToSwitch, setReadyToSwitch] = useState(false);
 
   const connected = business.stripe_fees_payer === "account";
   const status = accountStatus(business);
@@ -177,10 +167,9 @@ export function StripeConnectPanel({
       return;
     }
     setConfigured(data.configured ?? false);
-    setReadyToSwitch(Boolean(data.pending?.chargesEnabled));
   }, [business.id]);
 
-  function run(request: ConnectRequest, done = "Saved.") {
+  function run(request: ConnectRequest) {
     setError(null);
     setNotice(null);
     startTransition(async () => {
@@ -194,7 +183,7 @@ export function StripeConnectPanel({
         return;
       }
       if (data?.ok) {
-        setNotice(done);
+        setNotice("Saved.");
         await loadStatus();
         router.refresh();
       }
@@ -222,39 +211,7 @@ export function StripeConnectPanel({
         </p>
       )}
 
-      {readyToSwitch ? (
-        /*
-         * The switch is the owner's button, not automatic: a business with iPads has to
-         * reconnect their card readers afterwards, so it must happen when the desk is
-         * closed. stripe-connect sets the readers up on the new account before it
-         * switches, and refuses to switch if it cannot.
-         */
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <span className={cn("mt-1.5 size-2 shrink-0 rounded-full", DOT.pending)} aria-hidden />
-            <div className="space-y-0.5">
-              <p className="text-sm font-medium">New Stripe account ready</p>
-              <p className="text-xs text-muted-foreground">
-                Payments still go to the current account until you switch.
-                {kioskCount > 0 &&
-                  ` Switch when the desk is closed. Then, on ${
-                    kioskCount === 1 ? "the iPad" : `each of the ${kioskCount} iPads`
-                  }, close and reopen the app and connect the card reader again.`}
-              </p>
-            </div>
-          </div>
-          <Button type="button" disabled={busy} onClick={() =>
-              run(
-                { action: "switch_over" },
-                kioskCount > 0
-                  ? "Switched. Now close and reopen the app on each iPad and connect the card reader again."
-                  : "Switched. New payments go to the new account.",
-              )
-            }>
-            Switch to the new account
-          </Button>
-        </div>
-      ) : connected ? (
+      {connected ? (
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-start gap-3">
             <span
