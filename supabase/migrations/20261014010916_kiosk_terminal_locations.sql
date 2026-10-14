@@ -9,8 +9,9 @@
 -- So the Location is now kept per kiosk PER ACCOUNT. kiosk-connection-token hands the
 -- tablet the Location for whichever account the kiosk charges on right now, which
 -- means the business's switch to its new account (one row update, as before) moves
--- the readers with it, and switching back moves them back. stripe-connect creates the
--- new account's Locations, copied from the old ones, before it lets the switch happen.
+-- the readers with it, and switching back moves them back. stripe-account-switch (the
+-- internal switch) creates the new account's Locations, copied from the old ones,
+-- before it lets the switch happen.
 --
 -- Written only by the edge functions (service role). Owner may read.
 
@@ -23,7 +24,7 @@ create table if not exists public.kiosk_terminal_locations (
 );
 
 comment on table public.kiosk_terminal_locations is
-  'The Stripe Terminal Location (tml_...) a kiosk''s readers use on each Stripe account (acct_...) it has charged on. kiosk-connection-token returns the one for the account the kiosk charges on now; stripe-connect creates the new account''s rows before a switch.';
+  'The Stripe Terminal Location (tml_...) a kiosk''s readers use on each Stripe account (acct_...) it has charged on. kiosk-connection-token returns the one for the account the kiosk charges on now; stripe-account-switch creates the new account''s rows before a switch.';
 
 -- Every kiosk's current Location, under the account it charges on today.
 insert into public.kiosk_terminal_locations (kiosk_id, stripe_account_id, location_id)
