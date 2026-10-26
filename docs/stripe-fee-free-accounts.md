@@ -18,7 +18,7 @@ everything the business sees and move the fee off Prime:
 
 | Property | Value | Effect |
 | --- | --- | --- |
-| `stripe_dashboard.type` | `express` | Business keeps the same Express dashboard |
+| `stripe_dashboard.type` | `full` | Business gets its own Stripe login (Standard). Stripe refuses `express` here, and `none` (used 2026-08-19 to 2026-10-26) leaves no login at all |
 | `fees.payer` | `account` | Stripe bills the business. **No Connect fee to Prime** |
 | `losses.payments` | `stripe` | Stripe carries negative balances, not Prime |
 | `requirement_collection` | `stripe` | Stripe still runs onboarding and KYC |

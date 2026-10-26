@@ -24,9 +24,10 @@ import {
   accountStatusColumns,
   appBaseUrl,
   connectControllerParams,
+  dashboardOf,
   getStripe,
-  isFeeFreeAccount,
   STRIPE_META,
+  STRIPE_DASHBOARD_URL,
   stripeConfigured,
   stripeErrorMessage,
 } from "../_shared/stripe.ts";
@@ -36,6 +37,7 @@ import { withSentry } from "../_shared/sentry.ts";
 
 type Action =
   | "status"
+  | "accounts"
   | "create"
   | "onboarding_link"
   | "login_link"
@@ -232,12 +234,62 @@ Deno.serve(withSentry("stripe-connect", async (req) => {
         (payload.target === "pending" ? biz.stripe_account_id_pending : biz.stripe_account_id);
       if (!accountId) return json({ error: "This business has no Stripe account yet." }, 400);
       try {
+        // Only an Express account has a login link. The owner of a full-dashboard
+        // account signs in to Stripe with their own login, and an account with no
+        // dashboard has nothing to open: asking Stripe for a link anyway is a 400,
+        // which came back as a 502 and raised an alert on every click. With no url
+        // the button opens the account in Prime's own dashboard instead.
+        const account = await stripe.accounts.retrieve(accountId);
+        const dashboard = dashboardOf(account);
+        if (dashboard === "full") return json({ url: STRIPE_DASHBOARD_URL });
+        if (dashboard === "none") return json({ url: null });
         const link = await stripe.accounts.createLoginLink(accountId);
         return json({ url: link.url });
       } catch (err) {
         console.error("[stripe-connect] login link failed:", err);
         return json({ error: stripeErrorMessage(err) }, 502);
       }
+    }
+
+    /**
+     * Every Stripe account this business has: the one in use, one waiting for a
+     * switch, and the ones it used before. Each is read from Stripe, so which login
+     * it has, and whether Stripe has finished setting it up, is Stripe's answer. One
+     * that cannot be read keeps its row, with the reason, instead of hiding the others.
+     */
+    case "accounts": {
+      const rows: { id: string; role: "current" | "waiting" | "previous" }[] = [];
+      const add = (id: string | null, role: "current" | "waiting" | "previous") => {
+        if (id && !rows.some((r) => r.id === id)) rows.push({ id, role });
+      };
+      add(biz.stripe_account_id, "current");
+      add(biz.stripe_account_id_pending, "waiting");
+      for (const id of biz.stripe_account_id_legacy ?? []) add(id, "previous");
+
+      const accounts = await Promise.all(rows.map(async (row) => {
+        try {
+          const account = await stripe.accounts.retrieve(row.id);
+          return {
+            ...row,
+            dashboard: dashboardOf(account),
+            opened: account.created ? new Date(account.created * 1000).toISOString() : null,
+            detailsSubmitted: Boolean(account.details_submitted),
+            chargesEnabled: Boolean(account.charges_enabled),
+            error: null,
+          };
+        } catch (err) {
+          console.error(`[stripe-connect] account read failed for ${row.id}:`, err);
+          return {
+            ...row,
+            dashboard: null,
+            opened: null,
+            detailsSubmitted: false,
+            chargesEnabled: false,
+            error: stripeErrorMessage(err),
+          };
+        }
+      }));
+      return json({ accounts });
     }
 
     /** Pull the live account state into the businesses row. */
@@ -256,13 +308,15 @@ Deno.serve(withSentry("stripe-connect", async (req) => {
     }
 
     /**
-     * Start moving a business off platform-paid Connect fees.
+     * Start moving a business onto a Standard account: its own Stripe login, and
+     * Stripe's fees billed to the business, not Prime.
      *
-     * Creates a SECOND account with the fee-free controller and parks it in
+     * Creates a SECOND account (connectControllerParams) and parks it in
      * stripe_account_id_pending. The live account keeps taking every charge until we
      * switch the business over (stripe-account-switch), so this is safe to call at any
      * time. Calling it again while a pending account exists re-links that one instead
-     * of creating another.
+     * of creating another. Not a button: the owner finishes a waiting account from its
+     * card on the business page (onboarding_link, target pending).
      */
     case "start_migration": {
       if (biz.stripe_account_id_pending) {
@@ -271,10 +325,13 @@ Deno.serve(withSentry("stripe-connect", async (req) => {
       if (!biz.stripe_account_id) {
         return json({ error: "Set up payments for this business first." }, 400);
       }
-      if (isFeeFreeAccount(biz.stripe_fees_payer)) {
-        return json({ error: "This business is already on fee-free pricing." }, 400);
-      }
       try {
+        // A business already on a Standard account has nothing to move to. One on the
+        // no-login kind (Key West since 2026-10-14) does: same fees, plus its login.
+        const current = await stripe.accounts.retrieve(biz.stripe_account_id);
+        if (dashboardOf(current) === "full") {
+          return json({ error: "This business already has its own Stripe login." }, 400);
+        }
         const account = await stripe.accounts.create({
           controller: connectControllerParams(),
           country: "US",

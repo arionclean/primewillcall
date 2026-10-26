@@ -16,9 +16,7 @@ type ConnectRequest = {
     | "create"
     | "onboarding_link"
     | "login_link"
-    | "refresh"
-    | "start_migration"
-    | "cancel_migration";
+    | "refresh";
   target?: "primary" | "pending";
 };
 
@@ -62,7 +60,6 @@ type BusinessPaymentsFields = {
   stripe_requirements_due: number;
   stripe_account_id_pending: string | null;
   stripe_account_id_legacy: string[];
-  stripe_fees_payer: string | null;
 };
 
 type StripeConnectPanelProps = {
@@ -142,7 +139,11 @@ export function StripeConnectPanel({
   // "not switched on" at someone whose platform is configured fine.
   const [configured, setConfigured] = useState<boolean | null>(null);
 
-  const connected = business.stripe_fees_payer === "account";
+  // Set up means the business has a Stripe account; the status line says how it is
+  // doing. It used to mean "Stripe bills the business its own fees", which only the
+  // fee-free accounts pass, so a business live on Express (Skyline, Jet Ski) was
+  // offered "Set up payments" and that button started a move to a new account.
+  const connected = Boolean(business.stripe_account_id);
   const status = accountStatus(business);
   const needsAttention =
     connected &&
@@ -256,11 +257,7 @@ export function StripeConnectPanel({
             type="button"
             size="lg"
             disabled={busy}
-            onClick={() =>
-              run({
-                action: business.stripe_account_id ? "start_migration" : "create",
-              })
-            }
+            onClick={() => run({ action: "create" })}
           >
             Set up payments with Stripe
             <ExternalLink />

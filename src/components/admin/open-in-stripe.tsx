@@ -8,20 +8,23 @@ import { stripeAccountUrl } from "@/lib/payments/stripe-reports";
 import { cn } from "@/lib/utils";
 
 /**
- * "Open in Stripe": opens the business's own Stripe dashboard in a new tab, through a
- * one-time login link from `stripe-connect`, so no Stripe sign-in is needed. It opens
- * `accountId`, which may be an account the business was moved away from (a dispute on
- * a sale taken before the move lives there). An account Stripe makes no such link for
- * (one that is not an Express account) opens on its page in Prime's dashboard instead.
+ * "Open in Stripe": opens the business's own Stripe dashboard in a new tab. An Express
+ * account opens through a one-time login link from `stripe-connect`, so no Stripe
+ * sign-in is needed; a full-dashboard account opens Stripe's sign-in, for the
+ * business's own Stripe login. It opens `accountId`, which may be an account the
+ * business was moved away from (a dispute on a sale taken before the move lives
+ * there). An account with no Stripe login opens on its page in Prime's dashboard.
  */
 export function OpenInStripe({
   businessId,
   accountId,
+  label = "Open in Stripe",
   className,
 }: {
   /** Null when the account's business is unknown: Prime's dashboard page is all there is. */
   businessId: string | null;
   accountId: string;
+  label?: string;
   className?: string;
 }) {
   const [opening, setOpening] = useState(false);
@@ -33,7 +36,8 @@ export function OpenInStripe({
     let url = stripeAccountUrl(accountId);
     if (businessId) {
       setOpening(true);
-      const { data } = await invokeEdgeFunction<{ url?: string }>("stripe-connect", {
+      // No url (an account with no Stripe login) keeps Prime's dashboard page.
+      const { data } = await invokeEdgeFunction<{ url?: string | null }>("stripe-connect", {
         business_id: businessId,
         action: "login_link",
         account_id: accountId,
@@ -51,7 +55,7 @@ export function OpenInStripe({
 
   return (
     <button type="button" onClick={open} disabled={opening} className={cn("inline-flex items-center gap-1", className)}>
-      Open in Stripe
+      {label}
       {opening ? (
         <Loader2 className="size-3 animate-spin" aria-hidden />
       ) : (

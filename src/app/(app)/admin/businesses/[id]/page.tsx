@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 import { EditBusinessForm } from "./edit-form";
+import { StripeAccounts } from "./stripe-accounts";
 import { StripeConnectPanel } from "./stripe-connect-panel";
 
 export default async function EditBusinessPage({
@@ -61,6 +62,17 @@ export default async function EditBusinessPage({
           </CardContent>
         </Card>
       </section>
+
+      {business.stripe_account_id && (
+        <section className="mt-8">
+          <h2 className="mb-1 text-sm font-semibold">Stripe accounts</h2>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Payments for this business are processed by Stripe. Each account below is
+            opened, verified and held by Stripe.
+          </p>
+          <StripeAccounts businessId={business.id} />
+        </section>
+      )}
     </div>
   );
 }

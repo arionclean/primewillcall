@@ -615,14 +615,17 @@ were onboarded. Use Prime's PLATFORM secret key (env `STRIPE_SECRET_KEY`), the s
 whose connected accounts back each business.
 
 **Account shape.** New accounts are created with controller properties
-(`connectControllerParams()` in `src/lib/stripe/server.ts`), never `type: "express"`. The
-shorthand sets `controller.fees.payer = application_express`, which bills Stripe's Connect
-fees ($2 per monthly active account + 0.25% of payout volume) to PRIME. Spelling the
-controller out (`stripe_dashboard.type: express`, `fees.payer: account`,
-`losses.payments: stripe`) gives the business the identical Express dashboard and Stripe-run
-onboarding while Stripe bills the business and charges the platform nothing. The Xano-era
-fleet is still on the old shape; each one migrates via the owner-only flow on
-`/admin/businesses/[id]` using the three columns below. Full runbook, including the kiosk
+(`connectControllerParams()` in `supabase/functions/_shared/stripe.ts`), never
+`type: "express"`. The shorthand sets `controller.fees.payer = application_express`, which
+bills Stripe's Connect fees ($2 per monthly active account + 0.25% of payout volume) to
+PRIME. New accounts are Standard (`stripe_dashboard.type: full`, `fees.payer: account`,
+`losses.payments: stripe`, since 2026-10-26): the business has its own Stripe login, Stripe
+runs onboarding and bills the business, and the platform pays nothing. Stripe refuses an
+Express dashboard with `fees.payer: account`. Accounts made between 2026-08-19 and
+2026-10-26 have no dashboard at all (Key West's current one, Skyline's and Jet Ski's
+waiting ones); the type is permanent, so they need replacing. Each business migrates using
+the three columns below; the owner sees every account as a card on
+`/admin/businesses/[id]` (`stripe-connect` action `accounts`). Full runbook, including the kiosk
 Terminal step that is deliberately not built yet, in
 [`docs/stripe-fee-free-accounts.md`](stripe-fee-free-accounts.md).
 

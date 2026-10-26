@@ -651,7 +651,10 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   business's connected account with a platform `application_fee` (Prime's cut). Built:
   per-business Connect onboarding on `/admin/businesses/[id]` (a single "Set up payments
   with Stripe" CTA that creates the account and hands off to Stripe's hosted onboarding,
-  then a plain-language status line plus Express dashboard login and refresh; buttons
+  then a plain-language status line and refresh; below it, **Stripe accounts**: one card
+  per account the business has (in use, waiting, used before), read live from Stripe
+  through `stripe-connect` (`accounts`), with Open Stripe Express or Sign in to Stripe
+  where Stripe has a dashboard and Finish setup with Stripe on a waiting one; buttons
   only, no account-id input anywhere); a single global platform fee
   (`STRIPE_PLATFORM_FEE_BPS`, default 25 bps = 0.25%, historically the Connect fee passed
   through, now margin on any fee-free account); a single webhook, the **`stripe-webhook`
@@ -702,11 +705,15 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   "Disputes" in [`docs/DATABASE.md`](docs/DATABASE.md).
   **Account shape**: accounts are created with controller properties
   (`connectControllerParams()`), never `type: "express"` (the shorthand puts Stripe's
-  Connect fees, $2 per active account + 0.25% of payout volume, on PRIME). The business
-  keeps the same Express dashboard and Stripe-run onboarding; Stripe just bills it instead
-  of us. The Xano-era fleet is still on the old shape, and Stripe cannot convert an account,
-  so each one migrates through the owner-only flow on `/admin/businesses/[id]`: create
-  replacement account -> onboard -> switch over, using
+  Connect fees, $2 per active account + 0.25% of payout volume, on PRIME). New accounts are
+  **Standard** (`stripe_dashboard: full`, since 2026-10-26): the business signs in to Stripe
+  with its own login and Stripe bills it instead of us. From 2026-08-19 to 2026-10-26 they
+  were made with NO dashboard (Stripe only allows Express when the platform pays), which
+  left the owner with no Stripe login: Key West's account since the 2026-10-14 switch, and
+  the ones waiting for Skyline and Jet Ski. The dashboard type is permanent, so those need
+  new accounts. The Xano-era fleet is Express, and Stripe cannot convert an account, so each
+  one migrates: create replacement account (`start_migration`, not a button) -> the owner
+  finishes it from its card on `/admin/businesses/[id]` -> switch over, using
   `businesses.stripe_account_id_pending` / `_legacy` / `stripe_fees_payer`. Both accounts
   run side by side, so the switch is one gated row update with no window where charges fail.
   **Kiosk readers follow the switch** (2026-10-13): a Terminal Location belongs to one
