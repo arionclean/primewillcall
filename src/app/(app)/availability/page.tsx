@@ -5,6 +5,7 @@ import { parseLocalYmd, timeLabel, todayLocalIso } from "@/lib/dates";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 import { AvailabilityBoard, type TourDay } from "./board";
+import { InfoTip } from "@/components/ui/info-tip";
 
 /**
  * Availability board: open or close booking times per day. The recurring
@@ -125,12 +126,10 @@ export default async function AvailabilityPage({
   return (
     <div>
       <header className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Availability</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Open or close booking times for a specific day. Closed times stop
-          showing on the public Groupon page right away. Bookings that already
-          exist are not changed.
-        </p>
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-semibold tracking-tight">Availability</h1>
+          <InfoTip text="Open or close booking times for a specific day. Closed times stop showing on the public Groupon page right away. Bookings that already exist are not changed." />
+        </div>
       </header>
 
       <AvailabilityBoard date={date} today={today} tours={tours} />

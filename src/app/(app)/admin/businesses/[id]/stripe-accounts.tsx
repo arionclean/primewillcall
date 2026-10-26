@@ -194,12 +194,8 @@ function AccountCard({ account: a, businessId }: { account: StripeAccount; busin
             className={cn(buttonVariants({ variant: "outline", size: "sm" }), "w-full")}
           />
         ) : (
-          !setup && (
-            <p className="text-xs text-muted-foreground">
-              {a.error
-                ? "Stripe could not be reached for this account."
-                : "Stripe does not provide a dashboard for this account."}
-            </p>
+          a.error && (
+            <p className="text-xs text-muted-foreground">Stripe could not be reached for this account.</p>
           )
         )}
       </div>

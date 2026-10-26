@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
 import { SubmitButton } from "@/components/ui/submit-button";
+import { InfoTip } from "@/components/ui/info-tip";
 import { cn } from "@/lib/utils";
 
 import { resolveUnmatched, ignoreUnmatched } from "./actions";
@@ -126,11 +127,10 @@ export default async function UnmatchedPage({
   return (
     <div>
       <header className="mb-5">
-        <h1 className="text-2xl font-semibold tracking-tight">Unrecognized bookings</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Bookings that arrived by email without a tour we recognize. Pick the right one
-          once and we will use it for that product from then on.
-        </p>
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-semibold tracking-tight">Unrecognized bookings</h1>
+          <InfoTip text="Bookings that arrived by email without a tour we recognize. Pick the right one once and we will use it for that product from then on." />
+        </div>
       </header>
 
       <div role="tablist" aria-label="Review lanes" className="mb-4 flex gap-1 border-b">

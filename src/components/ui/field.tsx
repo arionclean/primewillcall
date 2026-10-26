@@ -1,10 +1,12 @@
 import { cn } from "@/lib/utils";
 
+import { InfoTip } from "./info-tip";
 import { Label } from "./label";
 
 type FieldProps = {
   label: string;
   htmlFor?: string;
+  /** Help that is not needed every time: shown on hover of an (i) beside the label. */
   hint?: string;
   error?: string;
   children: React.ReactNode;
@@ -21,11 +23,11 @@ export function Field({
 }: FieldProps) {
   return (
     <div className={cn("space-y-2", className)}>
-      <Label htmlFor={htmlFor}>{label}</Label>
+      <div className="flex items-center gap-1.5">
+        <Label htmlFor={htmlFor}>{label}</Label>
+        {hint && <InfoTip text={hint} label={`About ${label}`} />}
+      </div>
       {children}
-      {hint && !error && (
-        <p className="text-xs text-muted-foreground">{hint}</p>
-      )}
       {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
   );

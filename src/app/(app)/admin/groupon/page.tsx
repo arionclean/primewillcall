@@ -1,6 +1,7 @@
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 import { GrouponFeesForm, type GrouponProductRow } from "./groupon-form";
+import { InfoTip } from "@/components/ui/info-tip";
 
 /**
  * Owner-only config: the per-product Groupon convenience fee. This is the price
@@ -44,12 +45,10 @@ export default async function GrouponConfigPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">Groupon fees</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Set the convenience fee charged per guest when a customer redeems a
-          Groupon voucher on the public booking page. Turn a product off to stop
-          accepting Groupon for it.
-        </p>
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-semibold tracking-tight">Groupon fees</h1>
+          <InfoTip text="The convenience fee charged per guest when a customer redeems a Groupon voucher on the public booking page. Turn a product off to stop accepting Groupon for it." />
+        </div>
       </div>
 
       {error ? (

@@ -191,7 +191,6 @@ export function ScheduleForm({
               label="Source"
               htmlFor="source-picker"
               error={state.fieldErrors?.source_channel}
-              hint="Where this booking came from."
             >
               <Select
                 id="source-picker"

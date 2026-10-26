@@ -35,9 +35,6 @@ export default async function EditBusinessPage({
           <h1 className="text-2xl font-semibold tracking-tight">
             {business.name}
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Edit business details.
-          </p>
         </div>
         <Link
           href="/admin/businesses"

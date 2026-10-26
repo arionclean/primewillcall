@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { InfoTip } from "@/components/ui/info-tip";
 import { cn } from "@/lib/utils";
 import { getCurrentStaff } from "@/lib/auth";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
@@ -35,11 +36,10 @@ async function OwnerToursList() {
     <div>
       <header className="mb-6 flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Tours</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Every tour Prime runs. A business can sell one under its own name
-            and prices, but the capacity and departure times stay shared.
-          </p>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight">Tours</h1>
+            <InfoTip text="Every tour Prime runs. A business can sell one under its own name and prices, but the capacity and departure times stay shared." />
+          </div>
         </div>
         <Link
           href="/admin/tours/new"
@@ -140,9 +140,6 @@ async function ManagerToursList({ businessId }: { businessId: string }) {
     <div>
       <header className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight">Tours</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Tours available to your team.
-        </p>
       </header>
 
       {error && (

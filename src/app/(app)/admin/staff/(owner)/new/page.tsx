@@ -1,6 +1,7 @@
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 import { NewStaffForm } from "./form";
+import { InfoTip } from "@/components/ui/info-tip";
 
 export default async function NewStaffPage({
   searchParams,
@@ -23,14 +24,18 @@ export default async function NewStaffPage({
   return (
     <div>
       <header className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          {isAccount ? "Add account" : "Add team member"}
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {isAccount
-            ? "A shared login for one desk or tablet. Pick a password you can type on the device."
-            : "They'll get an email invite to set their password and sign in."}
-        </p>
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {isAccount ? "Add account" : "Add team member"}
+          </h1>
+          <InfoTip
+            text={
+              isAccount
+                ? "A shared login for one desk or tablet. Pick a password you can type on the device."
+                : "They'll get an email invite to set their password and sign in."
+            }
+          />
+        </div>
       </header>
       <NewStaffForm
         businesses={businesses ?? []}

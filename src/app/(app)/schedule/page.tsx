@@ -180,9 +180,6 @@ export default async function SchedulePage() {
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">New booking</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Add a booking to today&apos;s schedule.
-          </p>
         </div>
         <Link
           href="/dashboard"
