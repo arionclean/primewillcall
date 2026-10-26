@@ -1721,6 +1721,8 @@ export type Database = {
           can_create_bookings: boolean
           card_flow: string
           closing_report_email: string | null
+          commission_from_cents: number
+          commission_step_cents: number | null
           created_at: string
           edge_region: string | null
           id: string
@@ -1750,6 +1752,8 @@ export type Database = {
           can_create_bookings?: boolean
           card_flow?: string
           closing_report_email?: string | null
+          commission_from_cents?: number
+          commission_step_cents?: number | null
           created_at?: string
           edge_region?: string | null
           id?: string
@@ -1779,6 +1783,8 @@ export type Database = {
           can_create_bookings?: boolean
           card_flow?: string
           closing_report_email?: string | null
+          commission_from_cents?: number
+          commission_step_cents?: number | null
           created_at?: string
           edge_region?: string | null
           id?: string

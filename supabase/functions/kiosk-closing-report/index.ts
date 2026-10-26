@@ -133,8 +133,8 @@ Deno.serve(withSentry("kiosk-closing-report", async (req) => {
 
   const businessDate = businessDateOf(body.business_date, report.dateLabel);
 
-  // From build 27 the commission is the sellers' own, worked out here. Each seller
-  // who reached $500 today earns 10%; the night's commission is the sum.
+  // From build 27 the commission is the sellers' own, worked out here by the
+  // kiosk's rule (seller_commissions); the night's commission is the sum.
   if (body.commission_auto === true) {
     const auto = await kioskCommissions(sb, slug, businessDate);
     if ("error" in auto) {

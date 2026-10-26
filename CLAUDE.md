@@ -618,7 +618,9 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   [`docs/DATABASE.md`](docs/DATABASE.md).
   **The commission is per seller** (2026-10-12, tablet build 27): a seller whose sales
   at a kiosk for the day reach $500 earns 10% of all of them, in whole dollars ($550
-  earns $55). Nobody types it any more. `seller_commissions()` is the one place the
+  earns $55). kiosk1 pays by milestones instead (2026-10-26): from $1,000, 10% of the
+  last $500 step reached ($1,385 earns $100, $1,500 earns $150). Both are per kiosk
+  (`kiosks.commission_from_cents` / `commission_step_cents`). Nobody types it any more. `seller_commissions()` is the one place the
   rule lives; the tablet's **Commission** button on the sales screen lists each seller
   through `kiosk-read`, the close records the sum (`commission_auto: true`), and the
   owner sees each person's total on Team -> **Sales** (`team_commissions`). See

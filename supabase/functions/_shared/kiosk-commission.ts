@@ -1,7 +1,8 @@
 // Desk commission, per seller, per kiosk, per New York day.
 //
-// The rule itself (10% of the day's sales once a seller reaches $500, in whole
-// dollars) is the `seller_commissions` database function, the one place it lives.
+// The rule itself (10% of the day's sales once a seller reaches the kiosk's
+// starting point, $500 at most desks; kiosk1 pays by $500 milestones from $1,000)
+// is the `seller_commissions` database function, the one place it lives.
 // This is the single read of it, shared by kiosk-read (the tablet's Commission
 // button) and kiosk-closing-report (the close), so the two never disagree.
 
