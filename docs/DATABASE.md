@@ -356,9 +356,16 @@ before. The column, the owner's correction and Cash close are unchanged either w
 `seller_commissions(p_from date, p_to date, p_kiosk_slug text = NULL)` returns one row
 per seller, per kiosk, per New York day in the range: `business_date, kiosk_slug,
 business_id, employee_id, employee_name, sales, sales_cents, commission_cents`. The rule
-lives here and nowhere else: a seller whose sales at a kiosk for the day reach $500 earns
-10% of ALL of that day's sales, rounded to whole dollars ($550 earns $55, $499 earns
-nothing). Sales are the kiosk's `cash_sales` rows, cash and card alike, net of refunds,
+lives here and nowhere else: a seller whose sales at a kiosk for the day reach the kiosk's
+`commission_from_cents` (default $500) earns 10% of ALL of that day's sales, rounded to
+whole dollars ($550 earns $55, $499 earns nothing). A kiosk with `commission_step_cents`
+pays by milestones instead: the sales are rounded DOWN to that step before the 10%.
+kiosk1 (Key West) is the one that does, from $1,000 in $500 steps: $1,000 earns $100,
+$1,385 still $100, $1,500 earns $150 (2026-10-26, checked against every kiosk1 night
+since 2026-09-12). Both are columns on `kiosks`, set by SQL; no screen edits them, and
+nothing on the tablet changes when they do. Team -> Sales works past days out again
+from the sales, so a change rewrites that kiosk's history there, while a recorded close
+keeps the commission it was saved with. Sales are the kiosk's `cash_sales` rows, cash and card alike, net of refunds,
 voided and failed ones left out (the same rows the tablet's sales screen totals). Each
 kiosk counts on its own, because the commission is paid from that kiosk's cash. Who sold
 it is the PIN on the sale (`cash_sales.employee_id`); a sale with no PIN earns nobody a
