@@ -275,6 +275,7 @@ Deno.serve(withSentry("stripe-connect", async (req) => {
             opened: account.created ? new Date(account.created * 1000).toISOString() : null,
             detailsSubmitted: Boolean(account.details_submitted),
             chargesEnabled: Boolean(account.charges_enabled),
+            requirementsDue: account.requirements?.currently_due?.length ?? 0,
             error: null,
           };
         } catch (err) {
@@ -285,6 +286,7 @@ Deno.serve(withSentry("stripe-connect", async (req) => {
             opened: null,
             detailsSubmitted: false,
             chargesEnabled: false,
+            requirementsDue: 0,
             error: stripeErrorMessage(err),
           };
         }
@@ -314,14 +316,14 @@ Deno.serve(withSentry("stripe-connect", async (req) => {
      * Creates a SECOND account (connectControllerParams) and parks it in
      * stripe_account_id_pending. The live account keeps taking every charge until we
      * switch the business over (stripe-account-switch), so this is safe to call at any
-     * time. Calling it again while a pending account exists re-links that one instead
-     * of creating another. Not a button: the owner finishes a waiting account from its
-     * card on the business page (onboarding_link, target pending).
+     * time. The owner starts it from Add Stripe account on the business page.
+     *
+     * A waiting Standard account is re-linked, never doubled. A waiting account with no
+     * Stripe login (made 2026-08-19 to 2026-10-26, Skyline's and Jet Ski's) is set aside
+     * into stripe_account_id_legacy, so its money and history still show with the
+     * business, and a Standard one takes its place.
      */
     case "start_migration": {
-      if (biz.stripe_account_id_pending) {
-        return await onboardingLink(businessId, biz.stripe_account_id_pending);
-      }
       if (!biz.stripe_account_id) {
         return json({ error: "Set up payments for this business first." }, 400);
       }
@@ -331,6 +333,12 @@ Deno.serve(withSentry("stripe-connect", async (req) => {
         const current = await stripe.accounts.retrieve(biz.stripe_account_id);
         if (dashboardOf(current) === "full") {
           return json({ error: "This business already has its own Stripe login." }, 400);
+        }
+        const legacy = [...(biz.stripe_account_id_legacy ?? [])];
+        if (biz.stripe_account_id_pending) {
+          const waiting = await stripe.accounts.retrieve(biz.stripe_account_id_pending);
+          if (dashboardOf(waiting) === "full") return await onboardingLink(businessId, waiting.id);
+          if (!legacy.includes(waiting.id)) legacy.push(waiting.id);
         }
         const account = await stripe.accounts.create({
           controller: connectControllerParams(),
@@ -348,7 +356,7 @@ Deno.serve(withSentry("stripe-connect", async (req) => {
         });
         await db
           .from("businesses")
-          .update({ stripe_account_id_pending: account.id })
+          .update({ stripe_account_id_pending: account.id, stripe_account_id_legacy: legacy })
           .eq("id", businessId);
         return await onboardingLink(businessId, account.id);
       } catch (err) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink, Loader2 } from "lucide-react";
+import { ExternalLink, Loader2, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { OpenInStripe } from "@/components/admin/open-in-stripe";
@@ -21,6 +21,8 @@ type StripeAccount = {
   detailsSubmitted: boolean;
   /** Whether Stripe lets the account take payments. */
   chargesEnabled: boolean;
+  /** How many details Stripe is asking for right now. */
+  requirementsDue: number;
   error: string | null;
 };
 
@@ -44,18 +46,33 @@ const DAY = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
 });
 
+const CARD_LABEL = "text-[11px] font-medium tracking-wider text-muted-foreground uppercase";
+
 /**
  * Every Stripe account this business has (the one in use, one waiting for a switch,
- * the ones it used before), one card each, with a way into Stripe for each account
- * Stripe has a screen for. Read live from Stripe through `stripe-connect`, so which
- * screen an account has is Stripe's answer, never ours.
+ * the ones it used before), one card each, plus Add Stripe account while the business
+ * has no Standard account (its own Stripe login) in use or waiting. Read live from
+ * Stripe through `stripe-connect`, so which screen an account has, and whether Stripe
+ * has finished setting it up, is Stripe's answer, never ours.
+ *
+ * Back from Stripe's sign-up form (`justReturned`), it also copies the active
+ * account's state into our row, since what the business just submitted is not there yet.
  */
-export function StripeAccounts({ businessId }: { businessId: string }) {
+export function StripeAccounts({
+  businessId,
+  justReturned = false,
+}: {
+  businessId: string;
+  justReturned?: boolean;
+}) {
   const [accounts, setAccounts] = useState<StripeAccount[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let current = true;
+    if (justReturned) {
+      void invokeEdgeFunction("stripe-connect", { business_id: businessId, action: "refresh" });
+    }
     void invokeEdgeFunction<{ accounts: StripeAccount[] }>("stripe-connect", {
       business_id: businessId,
       action: "accounts",
@@ -67,7 +84,7 @@ export function StripeAccounts({ businessId }: { businessId: string }) {
     return () => {
       current = false;
     };
-  }, [businessId]);
+  }, [businessId, justReturned]);
 
   if (error) {
     return (
@@ -77,54 +94,71 @@ export function StripeAccounts({ businessId }: { businessId: string }) {
     );
   }
 
-  if (accounts?.length === 0) {
-    return <p className="text-sm text-muted-foreground">This business has no Stripe account yet.</p>;
+  if (!accounts) {
+    return (
+      <div className="grid gap-3 sm:grid-cols-2">
+        {[0, 1].map((i) => (
+          <Card key={i} className="space-y-4 p-5" aria-busy>
+            <div className="h-3 w-24 animate-pulse rounded bg-muted" />
+            <div className="h-5 w-28 animate-pulse rounded bg-muted" />
+            <div className="h-3 w-full animate-pulse rounded bg-muted" />
+            <div className="h-3 w-full animate-pulse rounded bg-muted" />
+          </Card>
+        ))}
+      </div>
+    );
   }
 
+  const active = accounts.find((a) => a.role === "current");
+  const waiting = accounts.find((a) => a.role === "waiting");
+  // A Standard account in use or on its way leaves nothing to add.
+  const canAdd = active?.dashboard !== "full" && waiting?.dashboard !== "full";
+
   return (
-    <div className="space-y-3">
-      <div className="grid gap-3 sm:grid-cols-2">
-        {accounts
-          ? accounts.map((a) => <AccountCard key={a.id} account={a} businessId={businessId} />)
-          : [0, 1].map((i) => (
-              <Card key={i} className="space-y-4 p-5" aria-busy>
-                <div className="h-3 w-24 animate-pulse rounded bg-muted" />
-                <div className="h-5 w-28 animate-pulse rounded bg-muted" />
-                <div className="h-3 w-full animate-pulse rounded bg-muted" />
-                <div className="h-3 w-full animate-pulse rounded bg-muted" />
-              </Card>
-            ))}
-      </div>
-      <p className="text-xs text-muted-foreground">
-        Balances, payouts and bank details for these accounts are held and managed by Stripe.
-      </p>
+    <div className="grid gap-3 sm:grid-cols-2">
+      {accounts.map((a) => (
+        <AccountCard key={a.id} account={a} businessId={businessId} />
+      ))}
+      {canAdd && (
+        <AddAccountCard
+          businessId={businessId}
+          hasAccount={Boolean(active)}
+          replacesWaiting={Boolean(waiting)}
+        />
+      )}
     </div>
   );
 }
 
 /**
- * What a waiting account still needs, in Stripe's terms: the owner's details first,
- * then Stripe's own review. Null once Stripe has verified it (or for any other role).
+ * What an account still needs from the business, in Stripe's terms, and where the
+ * button sends them: the active account when Stripe asks for more to keep it taking
+ * payments, a waiting one until the business has finished signing up.
  */
-function waitingNote(a: StripeAccount): string | null {
-  if (a.role !== "waiting" || a.error) return null;
-  if (!a.detailsSubmitted) return "Stripe needs a few details from the business before this account can be used.";
-  if (!a.chargesEnabled) return "Stripe is reviewing the details for this account.";
+function pendingSetup(a: StripeAccount): { note: string; target: "primary" | "pending" | null } | null {
+  if (a.error) return null;
+  if (a.role === "current" && (!a.chargesEnabled || a.requirementsDue > 0)) {
+    return { note: "Stripe needs more details to keep this account taking payments.", target: "primary" };
+  }
+  if (a.role === "waiting") {
+    if (!a.detailsSubmitted) {
+      return { note: "Stripe needs the business's details before this account can be used.", target: "pending" };
+    }
+    if (!a.chargesEnabled) return { note: "Stripe is reviewing the details for this account.", target: null };
+  }
   return null;
 }
 
 function AccountCard({ account: a, businessId }: { account: StripeAccount; businessId: string }) {
   const status = STATUS[a.role];
   const dashboard = a.dashboard ? DASHBOARD[a.dashboard] : null;
-  const note = waitingNote(a);
+  const setup = pendingSetup(a);
 
   return (
     <Card className="flex flex-col p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
-            Stripe account
-          </p>
+          <p className={CARD_LABEL}>Stripe account</p>
           <p className="mt-1 font-mono text-base tracking-wide">•••• {a.id.slice(-4)}</p>
         </div>
         <Badge tone={status.tone}>
@@ -145,9 +179,13 @@ function AccountCard({ account: a, businessId }: { account: StripeAccount; busin
       </dl>
 
       <div className="mt-auto space-y-3 pt-5">
-        {note && <p className="text-xs text-muted-foreground">{note}</p>}
-        {a.role === "waiting" && !a.error && !a.detailsSubmitted ? (
-          <FinishSetup businessId={businessId} />
+        {setup && <p className="text-xs text-muted-foreground">{setup.note}</p>}
+        {setup?.target ? (
+          <StripeFormButton
+            businessId={businessId}
+            request={{ action: "onboarding_link", target: setup.target }}
+            label="Finish setup with Stripe"
+          />
         ) : dashboard?.action ? (
           <OpenInStripe
             businessId={businessId}
@@ -156,11 +194,13 @@ function AccountCard({ account: a, businessId }: { account: StripeAccount; busin
             className={cn(buttonVariants({ variant: "outline", size: "sm" }), "w-full")}
           />
         ) : (
-          <p className="text-xs text-muted-foreground">
-            {a.error
-              ? "Stripe could not be reached for this account."
-              : "Stripe does not provide a dashboard for this account."}
-          </p>
+          !setup && (
+            <p className="text-xs text-muted-foreground">
+              {a.error
+                ? "Stripe could not be reached for this account."
+                : "Stripe does not provide a dashboard for this account."}
+            </p>
+          )
         )}
       </div>
     </Card>
@@ -168,10 +208,81 @@ function AccountCard({ account: a, businessId }: { account: StripeAccount; busin
 }
 
 /**
- * Sends the owner to Stripe's own sign-up form for the waiting account, the only
- * way in: Stripe's links may not be emailed or texted, so it is a button here.
+ * Opens a new Standard account (the business's own Stripe login, Stripe's fees billed
+ * to the business) and hands off to Stripe's sign-up form. With an account in use it
+ * waits beside it until the business is switched over; with none it is the first.
+ * A second click confirms, since this opens a real account in Stripe.
  */
-function FinishSetup({ businessId }: { businessId: string }) {
+function AddAccountCard({
+  businessId,
+  hasAccount,
+  replacesWaiting,
+}: {
+  businessId: string;
+  hasAccount: boolean;
+  replacesWaiting: boolean;
+}) {
+  const [confirming, setConfirming] = useState(false);
+
+  return (
+    <Card className="flex flex-col border-dashed p-5 shadow-none">
+      <p className={CARD_LABEL}>New Stripe account</p>
+      <p className="mt-1 text-base font-medium">Standard</p>
+      <p className="mt-4 text-xs text-muted-foreground">
+        Comes with the business&apos;s own Stripe login. Stripe verifies the business before
+        the account can take payments.
+      </p>
+      {replacesWaiting && (
+        <p className="mt-2 text-xs text-muted-foreground">
+          Replaces the pending account, which has no Stripe dashboard.
+        </p>
+      )}
+
+      <div className="mt-auto space-y-3 pt-5">
+        {confirming ? (
+          <>
+            <p className="text-xs">
+              Stripe asks for the business&apos;s details next.
+              {hasAccount && " The active account keeps taking payments until the new one is ready."}
+            </p>
+            <div className="flex gap-2">
+              <StripeFormButton
+                businessId={businessId}
+                request={{ action: hasAccount ? "start_migration" : "create" }}
+                label="Continue to Stripe"
+                className="flex-1"
+              />
+              <Button type="button" size="sm" variant="ghost" onClick={() => setConfirming(false)}>
+                Cancel
+              </Button>
+            </div>
+          </>
+        ) : (
+          <Button type="button" size="sm" variant="outline" className="w-full" onClick={() => setConfirming(true)}>
+            <Plus aria-hidden />
+            Add Stripe account
+          </Button>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * Asks `stripe-connect` for one of Stripe's sign-up forms and goes there. The form is
+ * the only way in: Stripe's links may not be emailed or texted, so it is a button here.
+ */
+function StripeFormButton({
+  businessId,
+  request,
+  label,
+  className,
+}: {
+  businessId: string;
+  request: { action: "onboarding_link" | "start_migration" | "create"; target?: "primary" | "pending" };
+  label: string;
+  className?: string;
+}) {
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -180,8 +291,7 @@ function FinishSetup({ businessId }: { businessId: string }) {
     setError(null);
     const { data, error: err } = await invokeEdgeFunction<{ url?: string }>("stripe-connect", {
       business_id: businessId,
-      action: "onboarding_link",
-      target: "pending",
+      ...request,
     });
     if (data?.url) {
       window.location.href = data.url;
@@ -192,9 +302,9 @@ function FinishSetup({ businessId }: { businessId: string }) {
   }
 
   return (
-    <div className="space-y-2">
+    <div className={cn("space-y-2", className ?? "w-full")}>
       <Button type="button" size="sm" className="w-full" disabled={opening} onClick={open}>
-        Finish setup with Stripe
+        {label}
         {opening ? <Loader2 className="animate-spin" aria-hidden /> : <ExternalLink aria-hidden />}
       </Button>
       {error && <p className="text-xs text-red-700">{error}</p>}

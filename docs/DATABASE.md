@@ -771,11 +771,15 @@ role. `stripe_events`: RLS on, no policies (service-role only). `stripe_payouts`
 payouts or disputes); no write policies, the functions write with the service role.
 
 ### Flow
-- **Connect onboarding** (`/admin/businesses/[id]`, owner): create the connected account,
-  hosted onboarding link, Express-dashboard login link, refresh status, an owner-only
-  "link existing `acct_...`" field (attaches already-onboarded businesses with no
-  re-onboarding, no Xano access). Server actions in `[id]/payments-actions.ts`; webhook
-  `account.updated` keeps the status flags in sync. The platform fee is a single global rate
+- **Connect onboarding** (`/admin/businesses/[id]`, owner): the **Stripe accounts** cards,
+  one per account the business has (Active, Pending, Previous), read live from Stripe
+  through `stripe-connect` (`accounts`): Open Stripe Express (login link) or Sign in to
+  Stripe on an account with a dashboard, Finish setup with Stripe (hosted onboarding link)
+  when Stripe needs details, and an **Add Stripe account** card that opens a Standard
+  account (`create` for the first, `start_migration` beside a live one, which sets a
+  no-login waiting account aside into `_legacy`). There is no separate status box: the
+  Active badge is the status. Coming back from Stripe's form (`?stripe=return`) runs
+  `refresh`; webhook `account.updated` keeps the status flags in sync. The platform fee is a single global rate
   (`STRIPE_PLATFORM_FEE_BPS`, default 25 bps = 0.25%), applied as the application fee on
   every direct charge.
 - **Webhook** (`stripe-webhook` Supabase edge function, `supabase/functions/stripe-webhook/`):
