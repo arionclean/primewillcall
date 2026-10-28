@@ -379,37 +379,67 @@ Deno.serve(withSentry("payments", async (req) => {
 
       const { data: sale } = await db
         .from("stripe_transactions")
-        .select("id, business_id, source, source_original, source_moved_at")
+        .select("id, business_id, source, source_original, source_moved_at, booking_ref")
         .eq("id", id)
         .maybeSingle();
       if (!sale) return json({ error: "Sale not found." }, 404);
       if (!ownsBusiness(staff, sale.business_id)) {
         return json({ error: "Not authorized." }, 403);
       }
-      if (sale.source === target) return json({ ok: true });
 
-      const { error } = await db
-        .from("stripe_transactions")
-        .update({
-          source: target,
-          source_original: sale.source_moved_at ? sale.source_original : sale.source,
-          source_moved_at: movedAt,
-          source_moved_by: staff.id,
-        })
-        .eq("id", id);
-      if (error) {
-        console.error("[payments] move sale failed:", error);
-        return json({ error: "Could not move the sale. Try again." }, 500);
+      if (sale.source !== target) {
+        const { error } = await db
+          .from("stripe_transactions")
+          .update({
+            source: target,
+            source_original: sale.source_moved_at ? sale.source_original : sale.source,
+            source_moved_at: movedAt,
+            source_moved_by: staff.id,
+          })
+          .eq("id", id);
+        if (error) {
+          console.error("[payments] move sale failed:", error);
+          return json({ error: "Could not move the sale. Try again." }, 500);
+        }
+        await logStaffAction(db, {
+          staffId: staff.id,
+          businessId: sale.business_id,
+          employee,
+          entity: "stripe_transactions",
+          entityId: sale.id,
+          action: "moved",
+          payload: { from: sale.source, to: target },
+        });
       }
-      await logStaffAction(db, {
-        staffId: staff.id,
-        businessId: sale.business_id,
-        employee,
-        entity: "stripe_transactions",
-        entityId: sale.id,
-        action: "moved",
-        payload: { from: sale.source, to: target },
-      });
+
+      // A card sale is also a `cash_sales` row (keyed `<ref>:card`), and that copy
+      // is what the tablet adds up for its day's money and its close. Move it too,
+      // or the money stays on the old kiosk's iPad. Checked even when the charge
+      // already sits on the target, so a retry after a failed write here finishes.
+      const ref = (sale.booking_ref ?? "").trim();
+      if (ref) {
+        const { data: ledger } = await db
+          .from("cash_sales")
+          .select("id, kiosk_slug, kiosk_slug_original, source_moved_at")
+          .eq("business_id", sale.business_id)
+          .eq("dedup_key", `${ref}:card`)
+          .maybeSingle();
+        if (ledger && ledger.kiosk_slug !== target) {
+          const { error } = await db
+            .from("cash_sales")
+            .update({
+              kiosk_slug: target,
+              kiosk_slug_original: ledger.source_moved_at ? ledger.kiosk_slug_original : ledger.kiosk_slug,
+              source_moved_at: movedAt,
+              source_moved_by: staff.id,
+            })
+            .eq("id", ledger.id);
+          if (error) {
+            console.error("[payments] move sale (tablet copy) failed:", error);
+            return json({ error: "Could not move the sale. Try again." }, 500);
+          }
+        }
+      }
       return json({ ok: true });
     }
 
