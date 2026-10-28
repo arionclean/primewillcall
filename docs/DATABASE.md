@@ -872,7 +872,10 @@ payouts or disputes); no write policies, the functions write with the service ro
   the new kiosk into the SAME column the totals already read (`stripe_transactions.source`,
   `cash_sales.kiosk_slug`), so every reader stays correct with no change: the feed, the
   totals, the Source filter, and that kiosk's `/caja` (whose RLS is `source =
-  current_kiosk_slug()`). The pre-move value is kept in `source_original` /
+  current_kiosk_slug()`). A card sale has a second copy in `cash_sales` (keyed
+  `<ref>:card`), which is what the tablet totals its day's money and its close from, so
+  moving a card sale moves that row too (until 2026-10-28 it did not, and a moved card
+  sale kept counting on the old kiosk's iPad). The pre-move value is kept in `source_original` /
   `kiosk_slug_original`, with `source_moved_at` + `source_moved_by` for the trail, and the
   row shows "moved from Kiosk N".
   **The trigger is the point**: the webhook re-upserts a charge on every later Stripe event
