@@ -126,6 +126,40 @@ Deno.test("a line wrap inside a label still reads the guest", () => {
   assertEquals(r.diagnostics.missing, []);
 });
 
+// The Airbnb layout (2026-11-02): no "Customer email" or "Customer phone" line, so
+// the name runs straight into "Date". The guest's name here is made up.
+const AIRBNB = {
+  text:
+    "The following booking was just created.\n\nBooking ref. ABNB-108202771 Product booking ref.\n4TH-T152060132 [https://miamiskylinecruises.bokun.io/bookings/activity/152060132] Ext. booking\nref TAKNMCNZ Product Key West Day Trip from Miami: A Day in Paradise Supplier\nMiami Skyline Cruises Sold by Airbnb Booking channel Airbnb Customer\nKowalczyk, Paweł Jan Date Tue 3.Nov '26 @ 07:00 Rate Standard rate PAX\n2 Adults Extras Created Mon, November 02 2026 @ 16:01\n\nWant $50 in Bókun credit?",
+  company: "1712894857551x926333421634977800",
+  subject:
+    "New booking: Tue 3.Nov '26 @ 07:00 (4TH-T152060132) Ext. booking ref: TAKNMCNZ",
+};
+
+Deno.test("an Airbnb email, which has no email or phone line, still reads the guest", () => {
+  const r = parseBookingEmail(AIRBNB);
+
+  assertEquals(r.customerName, "Paweł Jan Kowalczyk");
+  assertEquals(r.Fname, "Paweł");
+  assertEquals(r.Lname, "Jan Kowalczyk");
+  assertEquals(r.email, null);
+  assertEquals(r.phone, null);
+  assertEquals(r.bookingChannel, "Airbnb");
+  assertEquals(r.adult, 2);
+  assertEquals(r.startsAtUtc, "2026-11-03T12:00:00.000Z");
+  assertEquals(r.diagnostics.missing, []);
+});
+
+Deno.test("Airbnb's placeholder name is no name", () => {
+  const r = parseBookingEmail({
+    ...AIRBNB,
+    text: AIRBNB.text.replace("Kowalczyk, Paweł Jan", "Airbnb-LastName, Airbnb-FirstName"),
+  });
+  assertEquals(r.customerName, null);
+  assertEquals(r.Fname, null);
+  assertEquals(r.Lname, null);
+});
+
 Deno.test("a foreign phone keeps its plus", () => {
   // "NO+47 912 34 567" is ten digits once the punctuation goes, the length of a
   // US number, so without the plus a Norwegian guest's texts would go to a stranger.

@@ -81,7 +81,12 @@ function splitName(raw: string | null): {
   Fname: string | null;
   Lname: string | null;
 } {
-  if (!raw) return { customerName: null, Fname: null, Lname: null };
+  // Airbnb hides some guests behind a placeholder ("Airbnb-LastName,
+  // Airbnb-FirstName"). That is no name, and booking it as one would put a guest
+  // called "Airbnb-FirstName" on the manifest.
+  if (!raw || /\bAirbnb-(?:First|Last)Name\b/i.test(raw)) {
+    return { customerName: null, Fname: null, Lname: null };
+  }
   let full = raw;
   if (raw.includes(",")) {
     const i = raw.indexOf(",");
@@ -206,7 +211,13 @@ export function parseBookingEmail(input: {
     /Booking channel\s+([\s\S]*?)\s+Customer\b/,
     "booking_channel",
   );
-  const customerRaw = req(/Customer\s+([\s\S]*?)\s+Customer email\b/, "customer");
+  // Airbnb sends no "Customer email" or "Customer phone" line, so the name runs
+  // straight into "Date": "Customer Banakiewicz, Bartłomiej Marcin Date Tue ...".
+  // Reading only up to "Customer email" lost every Airbnb guest's name.
+  const customerRaw = req(
+    /Customer\s+([\s\S]*?)\s+(?:Customer email|Customer phone|Date)\b/,
+    "customer",
+  );
   const email1 = matchOne(text, /Customer email\s+(\S+)/);
   const email2 = matchOne(text, /Customer email\s+(\S+)\s+Customer phone\b/);
   const correctEmail = !!email1 && !!email2 && email1 === email2;
