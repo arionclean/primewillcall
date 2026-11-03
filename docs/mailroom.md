@@ -245,6 +245,14 @@ not go through, and both reasons are worth keeping:
    and emails with no other field changing; a case in
    `_shared/parse-booking-email.test.ts`. The 6 guests were renamed from their stored
    emails the same day.
+4. **Airbnb has no email or phone line.** The name was read up to "Customer email",
+   and an Airbnb email has none: "Customer Banakiewicz, Bartłomiej Marcin Date ...".
+   The first Airbnb guest with a name (2026-11-02, for the next morning) landed as
+   "Guest" and the owner booked them again by hand. Fixed 2026-11-03: the name now
+   ends at "Customer email", "Customer phone" or "Date", which reads the same name
+   from the other 3,530 stored emails. Airbnb's placeholder ("Airbnb-LastName,
+   Airbnb-FirstName") reads as no name, so it still lands as "Guest" rather than as a
+   guest called Airbnb-FirstName. Cases in `_shared/parse-booking-email.test.ts`.
 
 ## When the alarm goes off
 
