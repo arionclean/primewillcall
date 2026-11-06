@@ -253,13 +253,55 @@ interface BookingRow {
     legacy_product_id: string | null;
     tour: { name: string; legacy_product_id: string | null } | null;
   } | null;
+  tour_pax_breakdown: BreakdownLine[] | null;
+  sales: { amount_cents: number; amount_refunded_cents: number | null; voided_at: string | null }[] | null;
+}
+
+/** One line of bookings.tour_pax_breakdown. A ticket line has a tier_id; a fee line has none. */
+interface BreakdownLine {
+  label: string;
+  qty: number;
+  tier_id?: string;
+  unit_price_cents: number;
+  line_total_cents: number;
 }
 
 const BOOKING_SELECT =
   "id, starts_at, status, pax_adult, pax_child, pax_infant, total_cents, due_cents, notes, checked_in_at, " +
   "public_token, legacy_id, legacy_reference, xano_internal_id, xano_booking_id, source_channel, peek, business_id, " +
+  "tour_pax_breakdown, " +
   "customer:customers(full_name, phone, email), " +
-  "business_tour:business_tours(name, legacy_product_id, tour:tours(name, legacy_product_id))";
+  "business_tour:business_tours(name, legacy_product_id, tour:tours(name, legacy_product_id)), " +
+  "sales:cash_sales(amount_cents, amount_refunded_cents, voided_at)";
+
+/**
+ * The price of each ticket for the printed ticket (tablet build 29+), from the
+ * snapshot taken when the booking was made. Null when there is none, or when the
+ * guests were edited since and the snapshot no longer counts them: a ticket that
+ * prices two guests on a booking for three would be wrong on paper.
+ */
+function priceLines(b: BookingRow) {
+  const lines = Array.isArray(b.tour_pax_breakdown) ? b.tour_pax_breakdown : [];
+  const tickets = lines.filter((l) => l.tier_id).reduce((n, l) => n + l.qty, 0);
+  if (tickets === 0 || tickets !== b.pax_adult + b.pax_child + b.pax_infant) return null;
+  return lines.map((l) => ({
+    label: l.label,
+    qty: l.qty,
+    unit_cents: l.unit_price_cents,
+    line_cents: l.line_total_cents,
+  }));
+}
+
+/**
+ * The total for the printed ticket. A booking the tablet sold is totalled from its
+ * sale (net of refunds): those bookings' total_cents is written 100x too low for card
+ * sales, and the till is what the guest actually paid. Any other booking, its total.
+ */
+function ticketTotalCents(b: BookingRow): number {
+  const sales = (b.sales ?? []).filter((s) => s.voided_at == null);
+  if (!b.source_channel?.startsWith("kiosk-sale") || sales.length === 0) return b.total_cents;
+  return sales.reduce((n, s) => n + s.amount_cents - (s.amount_refunded_cents ?? 0), 0);
+}
 
 function xanoStatus(status: string): string {
   // Xano's own spelling. The tablet strikes a row through on "canceled".
@@ -301,6 +343,9 @@ function toXanoBooking(b: BookingRow) {
     // booking total (the same rule balanceFields in _shared/xano-mirror.ts writes to Xano).
     price: b.due_cents > 0 ? b.due_cents : b.total_cents,
     payment_status: b.due_cents > 0 ? "pending" : "completed",
+    // The printed ticket's price per ticket and total (new here, no Xano twin).
+    price_lines: priceLines(b),
+    ticket_total_cents: ticketTotalCents(b),
     payment_qr: null,
     date: nyParts(at).ymd,
     date_timestamp: at.getTime(),
