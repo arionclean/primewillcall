@@ -125,6 +125,9 @@ verify_jwt = false
 [functions.kiosk-read]
 verify_jwt = false
 
+[functions.kiosk-availability]
+verify_jwt = false
+
 [functions.kiosk-login]
 verify_jwt = false
 
