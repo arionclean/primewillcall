@@ -16,9 +16,11 @@
 // Moving a business onto its new account (or back) is NOT here: it is internal, run by
 // us from SQL through stripe-account-switch, never a button in the app.
 //
-// Secrets: STRIPE_SECRET_KEY (Prime's PLATFORM key), APP_URL. SUPABASE_URL and
-// SUPABASE_SERVICE_ROLE_KEY are provided by the platform.
+// Secrets: STRIPE_SECRET_KEY (Prime's PLATFORM key), APP_URL, STRIPE_PUBLISHABLE_KEY
+// (for Stripe's embedded bank form). SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are
+// provided by the platform.
 
+import type Stripe from "npm:stripe@22.3.0";
 import {
   accountFeesPayer,
   accountStatusColumns,
@@ -31,9 +33,17 @@ import {
   stripeConfigured,
   stripeErrorMessage,
 } from "../_shared/stripe.ts";
+import { employeeFromRequest, logStaffAction } from "../_shared/audit.ts";
 import { corsHeaders, db, json } from "../_shared/sms.ts";
 import { requireStaff, type Staff } from "../_shared/staff-auth.ts";
 import { withSentry } from "../_shared/sentry.ts";
+
+/**
+ * The platform's PUBLISHABLE key (pk_live_...), handed to the browser with each
+ * account session so Stripe's embedded form can load. Public by design; a function
+ * secret only so every Stripe setting lives in one place.
+ */
+const STRIPE_PUBLISHABLE_KEY = Deno.env.get("STRIPE_PUBLISHABLE_KEY") ?? "";
 
 type Action =
   | "status"
@@ -41,12 +51,17 @@ type Action =
   | "create"
   | "onboarding_link"
   | "login_link"
+  | "account_session"
   | "refresh"
   | "start_migration"
   | "cancel_migration";
 
-/** Actions that change which account a business's money lands on. */
+/**
+ * Actions that change which account a business's money lands on, or the bank it is
+ * paid into (Stripe's account form can change the payout bank).
+ */
 const OWNER_ONLY: ReadonlySet<Action> = new Set<Action>([
+  "account_session",
   "start_migration",
   "cancel_migration",
 ]);
@@ -55,7 +70,7 @@ interface Payload {
   action?: Action;
   business_id?: string;
   target?: "primary" | "pending";
-  /** login_link only: one of THIS business's accounts (current, waiting or retired). */
+  /** login_link and account_session: one of THIS business's accounts (current, waiting or retired). */
   account_id?: string;
 }
 
@@ -76,6 +91,44 @@ function allowed(staff: Staff, businessId: string, action: Action): boolean {
   if (staff.role === "owner") return true;
   if (OWNER_ONLY.has(action)) return false;
   return staff.role === "business_manager" && staff.business_id === businessId;
+}
+
+/** Every account this business has had: in use, waiting, retired. */
+function ownAccountIds(biz: BusinessRow): string[] {
+  return [
+    biz.stripe_account_id,
+    biz.stripe_account_id_pending,
+    ...(biz.stripe_account_id_legacy ?? []),
+  ].filter((id): id is string => Boolean(id));
+}
+
+/**
+ * The bank an account pays out to, and whether Stripe has stopped paying into it. A
+ * payout the bank sends back (closed account, wrong numbers, a bank that refuses
+ * Stripe) marks it `errored`, and Stripe sends nothing more there until the business
+ * enters the bank again. Only the business can do that: it is not a requirement, so it
+ * never shows in `requirements.currently_due`, and an onboarding link (outstanding
+ * requirements only) does not offer it. An account with a Stripe login fixes it there;
+ * one with none uses Stripe's embedded account form (`account_session`).
+ */
+async function payoutBank(
+  stripe: Stripe,
+  account: Stripe.Account,
+): Promise<{ last4: string; rejected: boolean } | null> {
+  try {
+    const listed = account.external_accounts?.data ??
+      (await stripe.accounts.listExternalAccounts(account.id, { limit: 10 })).data;
+    const banks = listed.filter((x) => x.object === "bank_account");
+    const bank = banks.find((b) => b.default_for_currency) ?? banks[0];
+    if (!bank || bank.object !== "bank_account") return null;
+    return {
+      last4: bank.last4,
+      rejected: bank.status === "errored" || bank.status === "verification_failed",
+    };
+  } catch (err) {
+    console.error(`[stripe-connect] bank read failed for ${account.id}:`, err);
+    return null;
+  }
 }
 
 async function loadBusiness(businessId: string): Promise<BusinessRow | null> {
@@ -222,12 +275,7 @@ Deno.serve(withSentry("stripe-connect", async (req) => {
       // A sale taken before the business was moved to a new account (and a dispute on
       // it) lives on the account it was taken on, so a link can ask for that one. Only
       // this business's own accounts are accepted.
-      const own = [
-        biz.stripe_account_id,
-        biz.stripe_account_id_pending,
-        ...(biz.stripe_account_id_legacy ?? []),
-      ];
-      if (payload.account_id && !own.includes(payload.account_id)) {
+      if (payload.account_id && !ownAccountIds(biz).includes(payload.account_id)) {
         return json({ error: "That is not one of this business's Stripe accounts." }, 400);
       }
       const accountId = payload.account_id ||
@@ -248,6 +296,50 @@ Deno.serve(withSentry("stripe-connect", async (req) => {
       } catch (err) {
         console.error("[stripe-connect] login link failed:", err);
         return json({ error: stripeErrorMessage(err) }, 502);
+      }
+    }
+
+    /**
+     * Stripe's own account form (the embedded "account management" component) for one
+     * of this business's accounts: the only way an account with no Stripe login can
+     * change its payout bank. Onboarding links collect only what is missing, update
+     * links are refused when Stripe collects requirements, and Stripe's docs say such
+     * an account "must use embedded components". Stripe signs the account's own
+     * contact in with a code before it shows the bank, and that cannot be turned off
+     * while Stripe collects requirements. Owner only (see OWNER_ONLY), and recorded.
+     */
+    case "account_session": {
+      const accountId = payload.account_id;
+      if (!accountId || !ownAccountIds(biz).includes(accountId)) {
+        return json({ error: "That is not one of this business's Stripe accounts." }, 400);
+      }
+      if (!STRIPE_PUBLISHABLE_KEY) {
+        return json({ error: "Stripe's form is not available right now." }, 503);
+      }
+      try {
+        const session = await stripe.accountSessions.create({
+          account: accountId,
+          components: {
+            account_management: {
+              enabled: true,
+              features: { external_account_collection: true },
+            },
+          },
+        });
+        await logStaffAction(db, {
+          staffId: auth.staff.id,
+          businessId,
+          employee: await employeeFromRequest(db, req),
+          entity: "stripe_accounts",
+          entityId: accountId,
+          action: "opened_bank_form",
+        });
+        return json({ client_secret: session.client_secret, publishable_key: STRIPE_PUBLISHABLE_KEY });
+      } catch (err) {
+        // Stripe's own wording here can name the key it was refused for: log it, and
+        // tell the owner something plain.
+        console.error("[stripe-connect] account session failed:", err);
+        return json({ error: "Stripe's form could not be opened. Try again in a moment." }, 502);
       }
     }
 
@@ -276,6 +368,7 @@ Deno.serve(withSentry("stripe-connect", async (req) => {
             detailsSubmitted: Boolean(account.details_submitted),
             chargesEnabled: Boolean(account.charges_enabled),
             requirementsDue: account.requirements?.currently_due?.length ?? 0,
+            bank: await payoutBank(stripe, account),
             error: null,
           };
         } catch (err) {
@@ -287,6 +380,7 @@ Deno.serve(withSentry("stripe-connect", async (req) => {
             detailsSubmitted: false,
             chargesEnabled: false,
             requirementsDue: 0,
+            bank: null,
             error: stripeErrorMessage(err),
           };
         }

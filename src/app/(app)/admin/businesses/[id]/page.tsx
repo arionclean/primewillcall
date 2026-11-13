@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { buttonVariants } from "@/components/ui/button";
+import { InfoTip } from "@/components/ui/info-tip";
 import { cn } from "@/lib/utils";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -47,11 +48,10 @@ export default async function EditBusinessPage({
       <EditBusinessForm business={business} />
 
       <section className="mt-8">
-        <h2 className="mb-1 text-sm font-semibold">Stripe accounts</h2>
-        <p className="mb-3 text-xs text-muted-foreground">
-          Payments for this business are processed by Stripe. Each account below is
-          opened, verified and held by Stripe.
-        </p>
+        <div className="mb-3 flex items-center gap-2">
+          <h2 className="text-sm font-semibold">Stripe accounts</h2>
+          <InfoTip text="Payments for this business are processed by Stripe. Each account is opened, verified and held by Stripe." />
+        </div>
         <StripeAccounts businessId={business.id} justReturned={stripe === "return"} />
       </section>
     </div>

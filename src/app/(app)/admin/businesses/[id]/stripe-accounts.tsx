@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink, Loader2, Plus } from "lucide-react";
+import { AlertTriangle, ExternalLink, Loader2, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { OpenInStripe } from "@/components/admin/open-in-stripe";
@@ -9,6 +9,8 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { invokeEdgeFunction } from "@/lib/payments/edge";
 import { cn } from "@/lib/utils";
+
+import { StripeBankForm } from "./stripe-bank-form";
 
 /** One of the business's Stripe accounts, as `stripe-connect` (action `accounts`) reads it. */
 type StripeAccount = {
@@ -23,6 +25,11 @@ type StripeAccount = {
   chargesEnabled: boolean;
   /** How many details Stripe is asking for right now. */
   requirementsDue: number;
+  /**
+   * The bank it pays out to. `rejected`: the bank turned down a transfer, and Stripe
+   * sends nothing more there until the business enters the bank again.
+   */
+  bank: { last4: string; rejected: boolean } | null;
   error: string | null;
 };
 
@@ -67,12 +74,17 @@ export function StripeAccounts({
 }) {
   const [accounts, setAccounts] = useState<StripeAccount[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Bumped when Stripe's account form closes, so a fixed bank shows as fixed.
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
-    let current = true;
     if (justReturned) {
       void invokeEdgeFunction("stripe-connect", { business_id: businessId, action: "refresh" });
     }
+  }, [businessId, justReturned]);
+
+  useEffect(() => {
+    let current = true;
     void invokeEdgeFunction<{ accounts: StripeAccount[] }>("stripe-connect", {
       business_id: businessId,
       action: "accounts",
@@ -84,7 +96,7 @@ export function StripeAccounts({
     return () => {
       current = false;
     };
-  }, [businessId, justReturned]);
+  }, [businessId, reload]);
 
   if (error) {
     return (
@@ -117,14 +129,15 @@ export function StripeAccounts({
   return (
     <div className="grid gap-3 sm:grid-cols-2">
       {accounts.map((a) => (
-        <AccountCard key={a.id} account={a} businessId={businessId} />
+        <AccountCard
+          key={a.id}
+          account={a}
+          businessId={businessId}
+          onChanged={() => setReload((n) => n + 1)}
+        />
       ))}
       {canAdd && (
-        <AddAccountCard
-          businessId={businessId}
-          hasAccount={Boolean(active)}
-          replacesWaiting={Boolean(waiting)}
-        />
+        <AddAccountCard businessId={businessId} hasAccount={Boolean(active)} />
       )}
     </div>
   );
@@ -149,10 +162,20 @@ function pendingSetup(a: StripeAccount): { note: string; target: "primary" | "pe
   return null;
 }
 
-function AccountCard({ account: a, businessId }: { account: StripeAccount; businessId: string }) {
+function AccountCard({
+  account: a,
+  businessId,
+  onChanged,
+}: {
+  account: StripeAccount;
+  businessId: string;
+  onChanged: () => void;
+}) {
   const status = STATUS[a.role];
   const dashboard = a.dashboard ? DASHBOARD[a.dashboard] : null;
   const setup = pendingSetup(a);
+  const bankRejected = Boolean(a.bank?.rejected);
+  const [bankFormOpen, setBankFormOpen] = useState(false);
 
   return (
     <Card className="flex flex-col p-5">
@@ -176,9 +199,22 @@ function AccountCard({ account: a, businessId }: { account: StripeAccount; busin
           <dt className="text-muted-foreground">Dashboard</dt>
           <dd>{dashboard?.label ?? "Unknown"}</dd>
         </div>
+        <div className="flex justify-between gap-4">
+          <dt className="text-muted-foreground">Bank</dt>
+          <dd className={cn(bankRejected && "text-amber-700 dark:text-amber-300")}>
+            {a.bank ? `•••• ${a.bank.last4}` : "Unknown"}
+          </dd>
+        </div>
       </dl>
 
       <div className="mt-auto space-y-3 pt-5">
+        {bankRejected && (
+          <p className="flex gap-1.5 text-xs text-amber-700 dark:text-amber-300">
+            <AlertTriangle className="mt-px size-3.5 shrink-0" aria-hidden />
+            The bank turned down a transfer from Stripe. Payouts are on hold until the bank is
+            entered again.
+          </p>
+        )}
         {setup && <p className="text-xs text-muted-foreground">{setup.note}</p>}
         {setup?.target ? (
           <StripeFormButton
@@ -186,6 +222,11 @@ function AccountCard({ account: a, businessId }: { account: StripeAccount; busin
             request={{ action: "onboarding_link", target: setup.target }}
             label="Finish setup with Stripe"
           />
+        ) : bankRejected && a.dashboard === "none" ? (
+          // No Stripe login to fix it from: Stripe's own form, inside the app.
+          <Button type="button" size="sm" className="w-full" onClick={() => setBankFormOpen(true)}>
+            Update bank
+          </Button>
         ) : dashboard?.action ? (
           <OpenInStripe
             businessId={businessId}
@@ -199,6 +240,17 @@ function AccountCard({ account: a, businessId }: { account: StripeAccount; busin
           )
         )}
       </div>
+
+      {bankFormOpen && (
+        <StripeBankForm
+          businessId={businessId}
+          accountId={a.id}
+          onClose={() => {
+            setBankFormOpen(false);
+            onChanged();
+          }}
+        />
+      )}
     </Card>
   );
 }
@@ -212,11 +264,9 @@ function AccountCard({ account: a, businessId }: { account: StripeAccount; busin
 function AddAccountCard({
   businessId,
   hasAccount,
-  replacesWaiting,
 }: {
   businessId: string;
   hasAccount: boolean;
-  replacesWaiting: boolean;
 }) {
   const [confirming, setConfirming] = useState(false);
 
@@ -224,15 +274,6 @@ function AddAccountCard({
     <Card className="flex flex-col border-dashed p-5 shadow-none">
       <p className={CARD_LABEL}>New Stripe account</p>
       <p className="mt-1 text-base font-medium">Standard</p>
-      <p className="mt-4 text-xs text-muted-foreground">
-        Comes with the business&apos;s own Stripe login. Stripe verifies the business before
-        the account can take payments.
-      </p>
-      {replacesWaiting && (
-        <p className="mt-2 text-xs text-muted-foreground">
-          Replaces the pending account, which has no Stripe dashboard.
-        </p>
-      )}
 
       <div className="mt-auto space-y-3 pt-5">
         {confirming ? (

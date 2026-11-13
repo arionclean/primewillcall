@@ -673,8 +673,9 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   key at all**: `src/lib/stripe/server.ts`, the Connect server actions, the payments server
   actions and the payment-link route are deleted. Supabase secrets: `STRIPE_SECRET_KEY`
   (Prime's PLATFORM key), `STRIPE_WEBHOOK_SECRET`, `STRIPE_WEBHOOK_SECRET_CONNECTED`,
-  `STRIPE_PLATFORM_FEE_BPS`, `APP_URL` (onboarding return + checkout redirect links), and
-  `REFUND_PIN`. A test key against a live connected account is the failure that reads "the
+  `STRIPE_PLATFORM_FEE_BPS`, `APP_URL` (onboarding return + checkout redirect links),
+  `REFUND_PIN`, and `STRIPE_PUBLISHABLE_KEY` (Prime's public pk_live key, handed to the
+  browser for Stripe's embedded bank form on the business page). A test key against a live connected account is the failure that reads "the
   provided key does not have access to account acct_...". See `docs/DATABASE.md`
   "Payments (Stripe)".
   Also built: the **`/admin/payments`** transactions dashboard (owner + business_manager;
