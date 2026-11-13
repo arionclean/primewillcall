@@ -35,7 +35,8 @@ type StripeAccount = {
 
 const STATUS: Record<StripeAccount["role"], { label: string; tone: "success" | "warning" | "neutral" }> = {
   current: { label: "Active", tone: "success" },
-  waiting: { label: "Pending", tone: "warning" },
+  // A waiting account is ready, just not in use yet: grey, so nothing reads as a problem.
+  waiting: { label: "New", tone: "neutral" },
   previous: { label: "Previous", tone: "neutral" },
 };
 
