@@ -772,7 +772,7 @@ payouts or disputes); no write policies, the functions write with the service ro
 
 ### Flow
 - **Connect onboarding** (`/admin/businesses/[id]`, owner): the **Stripe accounts** cards,
-  one per account the business has (Active, Pending, Previous), read live from Stripe
+  one per account the business has (Active, New in grey, Previous), read live from Stripe
   through `stripe-connect` (`accounts`): Open Stripe Express (login link) or Sign in to
   Stripe on an account with a dashboard, Finish setup with Stripe (hosted onboarding link)
   when Stripe needs details, and an **Add Stripe account** card that opens a Standard
