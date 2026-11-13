@@ -44,29 +44,24 @@ export function appBaseUrl(): string {
  * of payout volume). Do NOT go back to `type: "express"`, which assigns
  * `fees.payer = "application_express"` and puts all of that on Prime.
  *
- * The dashboard is `none`, and that is forced by the fee choice. Stripe rejects
- * an Express dashboard whenever the business pays its own fees:
- * "When stripe_dashboard[type]=express, your platform must collect fees and be
- * liable for negative balances." Accounts v2 enforces the same rule
- * (`account_controller_express_dash_without_application_losses_or_fees`), so this
- * is not something a newer API unlocks. That leaves `full`, which hands the
- * business an ordinary Stripe account, or `none`, which keeps the account inside
- * PrimeWillCall. We want the second.
+ * The dashboard is `full`: these are Standard accounts, and the business signs in
+ * to Stripe with its own login. Stripe rejects an Express dashboard whenever the
+ * business pays its own fees ("When stripe_dashboard[type]=express, your platform
+ * must collect fees and be liable for negative balances"), which leaves `full` or
+ * `none`. From 2026-08-19 to 2026-10-26 this was `none`, which kept the account
+ * inside PrimeWillCall but left the owner with no Stripe login at all (Key West's
+ * account from the 2026-10-14 switch, and the ones waiting for Skyline and Jet
+ * Ski). The owner wants her login, so `full`. The dashboard type is permanent:
+ * an account made under the old setting keeps it, and only a new account changes it.
  *
- * `none` is only unsupported when requirement collection AND loss liability both
- * sit with the platform. Here Stripe carries both, so it is allowed, and Stripe
- * still runs hosted onboarding and KYC.
+ * Stripe carries loss liability and runs onboarding and KYC, as `full` requires.
  *
- * Two consequences for callers:
- *   - `accounts.createLoginLink` is Express-only. Never call it for these.
- *   - There is no self-serve dashboard, and `account_update` links are not
- *     available when Stripe is liable for losses. A business that needs to change
- *     its own bank details later needs Connect embedded components, which are not
- *     built yet.
+ * For callers: `accounts.createLoginLink` is Express-only. The owner of a full
+ * account signs in at dashboard.stripe.com instead (see `dashboardOf`).
  */
 export function connectControllerParams(): Stripe.AccountCreateParams.Controller {
   return {
-    stripe_dashboard: { type: "none" },
+    stripe_dashboard: { type: "full" },
     fees: { payer: "account" },
     losses: { payments: "stripe" },
     requirement_collection: "stripe",
@@ -84,6 +79,25 @@ export function isFeeFreeAccount(feesPayer: string | null | undefined): boolean 
 /** `controller.fees.payer` off a retrieved account, or null if Stripe omitted it. */
 export function accountFeesPayer(account: Stripe.Account): string | null {
   return account.controller?.fees?.payer ?? null;
+}
+
+/** Which Stripe screen an account's owner can sign in to: none, Express, or the full one. */
+export type DashboardType = "full" | "express" | "none";
+
+/** Where the owner of a full-dashboard account signs in, with their own Stripe login. */
+export const STRIPE_DASHBOARD_URL = "https://dashboard.stripe.com/";
+
+/**
+ * The dashboard an account has. Stripe returns `controller.stripe_dashboard.type`
+ * on every account, old Express ones included (checked on all seven of the
+ * platform's, 2026-10-26); the account type is only a fallback.
+ */
+export function dashboardOf(account: Stripe.Account): DashboardType {
+  const type = account.controller?.stripe_dashboard?.type;
+  if (type === "full" || type === "express" || type === "none") return type;
+  if (account.type === "standard") return "full";
+  if (account.type === "express") return "express";
+  return "none";
 }
 
 /** Metadata keys written on every charge (mirrors src/lib/stripe/server.ts). */

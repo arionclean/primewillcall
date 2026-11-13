@@ -134,7 +134,6 @@ export function EditBusinessForm({ business }: EditBusinessFormProps) {
           <Field
             label="Support phone"
             htmlFor="phone"
-            hint="The number customers should call for help."
             error={state.fieldErrors?.phone}
           >
             <PhoneInput

@@ -33,10 +33,6 @@ export default async function CustomersPage() {
     <div className="space-y-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Customers</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Search guests by name, phone, or email. Open one to see their booking
-          history.
-        </p>
       </header>
 
       <CustomersList initial={initial} isOwner={staff.role === "owner"} />

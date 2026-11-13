@@ -2,12 +2,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { buttonVariants } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { InfoTip } from "@/components/ui/info-tip";
 import { cn } from "@/lib/utils";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 import { EditBusinessForm } from "./edit-form";
-import { StripeConnectPanel } from "./stripe-connect-panel";
+import { StripeAccounts } from "./stripe-accounts";
 
 export default async function EditBusinessPage({
   params,
@@ -22,7 +22,7 @@ export default async function EditBusinessPage({
   const { data: business } = await supabase
     .from("businesses")
     .select(
-      "id, name, phone, contact_email, google_review_url, logo_url, stripe_account_id, stripe_charges_enabled, stripe_payouts_enabled, stripe_details_submitted, stripe_requirements_due, stripe_account_id_pending, stripe_account_id_legacy, stripe_fees_payer",
+      "id, name, phone, contact_email, google_review_url, logo_url",
     )
     .eq("id", id)
     .maybeSingle();
@@ -36,9 +36,6 @@ export default async function EditBusinessPage({
           <h1 className="text-2xl font-semibold tracking-tight">
             {business.name}
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Edit business details.
-          </p>
         </div>
         <Link
           href="/admin/businesses"
@@ -51,15 +48,11 @@ export default async function EditBusinessPage({
       <EditBusinessForm business={business} />
 
       <section className="mt-8">
-        <h2 className="mb-1 text-sm font-semibold">Payments</h2>
-        <p className="mb-3 text-xs text-muted-foreground">
-          Set this business up to take card payments and get paid out.
-        </p>
-        <Card>
-          <CardContent className="py-6">
-            <StripeConnectPanel business={business} justReturned={stripe === "return"} />
-          </CardContent>
-        </Card>
+        <div className="mb-3 flex items-center gap-2">
+          <h2 className="text-sm font-semibold">Stripe accounts</h2>
+          <InfoTip text="Payments for this business are processed by Stripe. Each account is opened, verified and held by Stripe." />
+        </div>
+        <StripeAccounts businessId={business.id} justReturned={stripe === "return"} />
       </section>
     </div>
   );

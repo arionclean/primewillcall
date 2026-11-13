@@ -1,9 +1,11 @@
 import { cn } from "@/lib/utils";
 
 import { Card, CardContent } from "./card";
+import { InfoTip } from "./info-tip";
 
 type FormSectionProps = {
   title: string;
+  /** What the section is for: shown on hover of an (i) beside the title. */
   description?: string;
   /** Extra classes to apply to the inner CardContent (e.g. grid layout). */
   contentClassName?: string;
@@ -22,11 +24,9 @@ export function FormSection({
 }: FormSectionProps) {
   return (
     <section className="space-y-3">
-      <div className="px-1">
+      <div className="flex items-center gap-1.5 px-1">
         <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
-        {description && (
-          <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>
-        )}
+        {description && <InfoTip text={description} label={`About ${title}`} />}
       </div>
       <Card>
         <CardContent className={cn("py-6", contentClassName)}>

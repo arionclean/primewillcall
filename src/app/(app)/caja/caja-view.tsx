@@ -103,9 +103,7 @@ export function CajaView({
       <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Caja</h1>
-          <p className="text-sm text-muted-foreground">
-            {kioskLabel ? `${kioskLabel} · ` : ""}Your sales for the day.
-          </p>
+          {kioskLabel && <p className="text-sm text-muted-foreground">{kioskLabel}</p>}
         </div>
         <div className="flex items-center gap-2">
           <Button

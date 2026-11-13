@@ -88,7 +88,6 @@ export function NewBusinessForm() {
           <Field
             label="Support phone"
             htmlFor="phone"
-            hint="Optional. The number customers should call for help."
             error={state.fieldErrors?.phone}
           >
             <PhoneInput id="phone" name="phone" />

@@ -615,14 +615,17 @@ were onboarded. Use Prime's PLATFORM secret key (env `STRIPE_SECRET_KEY`), the s
 whose connected accounts back each business.
 
 **Account shape.** New accounts are created with controller properties
-(`connectControllerParams()` in `src/lib/stripe/server.ts`), never `type: "express"`. The
-shorthand sets `controller.fees.payer = application_express`, which bills Stripe's Connect
-fees ($2 per monthly active account + 0.25% of payout volume) to PRIME. Spelling the
-controller out (`stripe_dashboard.type: express`, `fees.payer: account`,
-`losses.payments: stripe`) gives the business the identical Express dashboard and Stripe-run
-onboarding while Stripe bills the business and charges the platform nothing. The Xano-era
-fleet is still on the old shape; each one migrates via the owner-only flow on
-`/admin/businesses/[id]` using the three columns below. Full runbook, including the kiosk
+(`connectControllerParams()` in `supabase/functions/_shared/stripe.ts`), never
+`type: "express"`. The shorthand sets `controller.fees.payer = application_express`, which
+bills Stripe's Connect fees ($2 per monthly active account + 0.25% of payout volume) to
+PRIME. New accounts are Standard (`stripe_dashboard.type: full`, `fees.payer: account`,
+`losses.payments: stripe`, since 2026-10-26): the business has its own Stripe login, Stripe
+runs onboarding and bills the business, and the platform pays nothing. Stripe refuses an
+Express dashboard with `fees.payer: account`. Accounts made between 2026-08-19 and
+2026-10-26 have no dashboard at all (Key West's current one, Skyline's and Jet Ski's
+waiting ones); the type is permanent, so they need replacing. Each business migrates using
+the three columns below; the owner sees every account as a card on
+`/admin/businesses/[id]` (`stripe-connect` action `accounts`). Full runbook, including the kiosk
 Terminal step that is deliberately not built yet, in
 [`docs/stripe-fee-free-accounts.md`](stripe-fee-free-accounts.md).
 
@@ -768,11 +771,28 @@ role. `stripe_events`: RLS on, no policies (service-role only). `stripe_payouts`
 payouts or disputes); no write policies, the functions write with the service role.
 
 ### Flow
-- **Connect onboarding** (`/admin/businesses/[id]`, owner): create the connected account,
-  hosted onboarding link, Express-dashboard login link, refresh status, an owner-only
-  "link existing `acct_...`" field (attaches already-onboarded businesses with no
-  re-onboarding, no Xano access). Server actions in `[id]/payments-actions.ts`; webhook
-  `account.updated` keeps the status flags in sync. The platform fee is a single global rate
+- **Connect onboarding** (`/admin/businesses/[id]`, owner): the **Stripe accounts** cards,
+  one per account the business has (Active, Pending, Previous), read live from Stripe
+  through `stripe-connect` (`accounts`): Open Stripe Express (login link) or Sign in to
+  Stripe on an account with a dashboard, Finish setup with Stripe (hosted onboarding link)
+  when Stripe needs details, and an **Add Stripe account** card that opens a Standard
+  account (`create` for the first, `start_migration` beside a live one, which sets a
+  no-login waiting account aside into `_legacy`). Each card also shows the payout **Bank**
+  (last 4). When the bank turned down a transfer, Stripe marks it `errored` and sends
+  nothing more there until the business enters it again (not a requirement, so it never
+  shows in `currently_due`): the card says payouts are on hold. An account with a Stripe
+  login fixes the bank there. One with no login gets **Update bank**: Stripe's embedded
+  account-management form in a dialog (`stripe-bank-form.tsx`, `@stripe/connect-js`),
+  fed by `stripe-connect` `account_session` (owner only, own accounts only, logged as
+  "Opened Stripe's bank form"; needs the `STRIPE_PUBLISHABLE_KEY` secret). It is the only
+  way: an onboarding link only collects outstanding requirements, `account_update` links
+  are refused when Stripe collects requirements, and Stripe's docs say such accounts
+  "must use embedded components". Stripe signs the account's contact in with a code
+  first, and that cannot be turned off while Stripe collects requirements.
+  Found 2026-11-13: one bounce also halted payouts on the business's other account paying
+  into the same bank. There is no separate status box: the
+  Active badge is the status. Coming back from Stripe's form (`?stripe=return`) runs
+  `refresh`; webhook `account.updated` keeps the status flags in sync. The platform fee is a single global rate
   (`STRIPE_PLATFORM_FEE_BPS`, default 25 bps = 0.25%), applied as the application fee on
   every direct charge.
 - **Webhook** (`stripe-webhook` Supabase edge function, `supabase/functions/stripe-webhook/`):

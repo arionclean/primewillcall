@@ -114,6 +114,7 @@ const LABELS: Record<string, string> = {
   "messaging_rules.deleted": "Removed a message rule",
   "messaging_settings.updated": "Changed messaging settings",
   "kiosks.updated": "Changed a tablet's settings",
+  "stripe_accounts.opened_bank_form": "Opened Stripe's bank form",
   // Tablet housekeeping
   app_launch: "Opened the app",
   app_foreground: "Returned to the app",
@@ -290,7 +291,7 @@ export const EVENT_GROUPS = {
   },
   setup: {
     label: "Settings and setup",
-    events: crud(SETUP_ENTITIES),
+    events: [...crud(SETUP_ENTITIES), "stripe_accounts.opened_bank_form"],
   },
   tablet: {
     label: "Tablet housekeeping",

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { buttonVariants } from "@/components/ui/button";
+import { InfoTip } from "@/components/ui/info-tip";
 import { cn } from "@/lib/utils";
 import { getCurrentStaff } from "@/lib/auth";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
@@ -62,13 +63,10 @@ async function OwnerEditTourView({ tourId }: { tourId: string }) {
     <div>
       <header className="mb-6 flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {tour.name}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Capacity and departure times are shared by every business selling
-            this tour.
-          </p>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight">{tour.name}</h1>
+            <InfoTip text="Capacity and departure times are shared by every business selling this tour." />
+          </div>
         </div>
         <Link
           href="/admin/tours"
@@ -134,9 +132,6 @@ async function ManagerEditTourView({
           <h1 className="text-2xl font-semibold tracking-tight">
             {businessTour.name}
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Update the name and prices for this tour.
-          </p>
         </div>
         <Link
           href="/admin/tours"

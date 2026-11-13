@@ -259,15 +259,7 @@ export function MeetingPointPicker({
 
   return (
     <div className="space-y-3">
-      <Field
-        label="Meeting point address"
-        htmlFor="meeting_point_address_search"
-        hint={
-          autocompleteState === "unavailable"
-            ? "Address autocomplete is not configured. Click the map below to drop a pin manually."
-            : undefined
-        }
-      >
+      <Field label="Meeting point address" htmlFor="meeting_point_address_search">
         <div className="relative">
           <Input
             id="meeting_point_address_search"
@@ -314,6 +306,11 @@ export function MeetingPointPicker({
             </ul>
           )}
         </div>
+        {autocompleteState === "unavailable" && (
+          <p className="text-xs text-muted-foreground">
+            Address autocomplete is not configured. Click the map below to drop a pin manually.
+          </p>
+        )}
       </Field>
 
       {/* Show the map only once we have something meaningful to show:

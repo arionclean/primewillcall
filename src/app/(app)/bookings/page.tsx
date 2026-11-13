@@ -61,7 +61,7 @@ export default async function BookingsPage({
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Bookings</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Bookings for the selected date. {friendlyLabel}.
+            {friendlyLabel}
           </p>
         </div>
         {caps.canCreateBookings ? (

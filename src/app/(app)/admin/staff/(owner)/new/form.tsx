@@ -229,7 +229,6 @@ export function NewStaffForm({
         <Field
           label="Email"
           htmlFor="email"
-          hint="They'll sign in with this address."
           error={state.fieldErrors?.email}
         >
           <Input

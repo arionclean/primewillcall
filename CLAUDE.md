@@ -649,10 +649,13 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
 - **Payments (Stripe)** are largely built (Supabase-native replication of the live Xano
   Connect model; Xano is never written to). Model: Stripe Connect **direct charges** on each
   business's connected account with a platform `application_fee` (Prime's cut). Built:
-  per-business Connect onboarding on `/admin/businesses/[id]` (a single "Set up payments
-  with Stripe" CTA that creates the account and hands off to Stripe's hosted onboarding,
-  then a plain-language status line plus Express dashboard login and refresh; buttons
-  only, no account-id input anywhere); a single global platform fee
+  per-business Connect onboarding on `/admin/businesses/[id]` (the **Stripe accounts**
+  cards: one per account the business has (Active, Pending, Previous), read live from
+  Stripe through `stripe-connect` (`accounts`), with Open Stripe Express or Sign in to
+  Stripe where Stripe has a dashboard, Finish setup with Stripe when Stripe needs details,
+  and an **Add Stripe account** card that opens a Standard account and hands off to
+  Stripe's hosted onboarding; no separate status box; buttons only, no account-id input
+  anywhere); a single global platform fee
   (`STRIPE_PLATFORM_FEE_BPS`, default 25 bps = 0.25%, historically the Connect fee passed
   through, now margin on any fee-free account); a single webhook, the **`stripe-webhook`
   Supabase edge function** (official signature verify, `stripe_events` idempotency, handles
@@ -670,8 +673,9 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   key at all**: `src/lib/stripe/server.ts`, the Connect server actions, the payments server
   actions and the payment-link route are deleted. Supabase secrets: `STRIPE_SECRET_KEY`
   (Prime's PLATFORM key), `STRIPE_WEBHOOK_SECRET`, `STRIPE_WEBHOOK_SECRET_CONNECTED`,
-  `STRIPE_PLATFORM_FEE_BPS`, `APP_URL` (onboarding return + checkout redirect links), and
-  `REFUND_PIN`. A test key against a live connected account is the failure that reads "the
+  `STRIPE_PLATFORM_FEE_BPS`, `APP_URL` (onboarding return + checkout redirect links),
+  `REFUND_PIN`, and `STRIPE_PUBLISHABLE_KEY` (Prime's public pk_live key, handed to the
+  browser for Stripe's embedded bank form on the business page). A test key against a live connected account is the failure that reads "the
   provided key does not have access to account acct_...". See `docs/DATABASE.md`
   "Payments (Stripe)".
   Also built: the **`/admin/payments`** transactions dashboard (owner + business_manager;
@@ -702,11 +706,16 @@ RLS policy for every table are in [`docs/DATABASE.md`](docs/DATABASE.md).
   "Disputes" in [`docs/DATABASE.md`](docs/DATABASE.md).
   **Account shape**: accounts are created with controller properties
   (`connectControllerParams()`), never `type: "express"` (the shorthand puts Stripe's
-  Connect fees, $2 per active account + 0.25% of payout volume, on PRIME). The business
-  keeps the same Express dashboard and Stripe-run onboarding; Stripe just bills it instead
-  of us. The Xano-era fleet is still on the old shape, and Stripe cannot convert an account,
-  so each one migrates through the owner-only flow on `/admin/businesses/[id]`: create
-  replacement account -> onboard -> switch over, using
+  Connect fees, $2 per active account + 0.25% of payout volume, on PRIME). New accounts are
+  **Standard** (`stripe_dashboard: full`, since 2026-10-26): the business signs in to Stripe
+  with its own login and Stripe bills it instead of us. From 2026-08-19 to 2026-10-26 they
+  were made with NO dashboard (Stripe only allows Express when the platform pays), which
+  left the owner with no Stripe login: Key West's account since the 2026-10-14 switch, and
+  the ones waiting for Skyline and Jet Ski. The dashboard type is permanent, so those need
+  new accounts. The Xano-era fleet is Express, and Stripe cannot convert an account, so each
+  one migrates: Add Stripe account on `/admin/businesses/[id]` (`start_migration`; a
+  no-login waiting account is set aside into `_legacy`) -> the owner finishes Stripe's
+  form -> switch over, using
   `businesses.stripe_account_id_pending` / `_legacy` / `stripe_fees_payer`. Both accounts
   run side by side, so the switch is one gated row update with no window where charges fail.
   **Kiosk readers follow the switch** (2026-10-13): a Terminal Location belongs to one
